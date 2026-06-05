@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- simple truck/van silhouette -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M3,11v5h1a1,1 0 0 0 1,-1v-1h10v1a1,1 0 0 0 1,1h1v-5H3zM20,8h-3V5a1,1 0 0 0 -1,-1H3a1,1 0 0 0 -1,1v6h1v-1h16v-1zM6.5,18a1.5,1.5 0 1 0 0,-3 1.5,1.5 0 0 0 0,3zM17.5,18a1.5,1.5 0 1 0 0,-3 1.5,1.5 0 0 0 0,3z"/>
+</vector>
