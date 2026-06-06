@@ -69,7 +69,7 @@ fun AddDetailsScreen(
     val handlingFee  = selectedHandling.extraFee
     val totalFee     = deliveryFee + handlingFee
 
-    val canConfirm = contactNumber.length == 11 && weightKg.isNotBlank()
+    val canConfirm = contactNumber.length == 10 && weightKg.isNotBlank()
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(
@@ -136,7 +136,7 @@ fun AddDetailsScreen(
                         val formatted = buildString {
                             digits.forEachIndexed { i, c ->
                                 if (i == 0) append("+63 ")
-                                else if (i == 4 || i == 7) append(' ')
+                                else if (i == 3 || i == 6) append(' ')
                                 append(c)
                             }
                         }

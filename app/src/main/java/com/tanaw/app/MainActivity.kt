@@ -9,7 +9,7 @@ import androidx.compose.runtime.getValue
 import com.tanaw.app.ui.components.TanawBottomNavBar
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import com.tanaw.app.ui.screens.ProfileScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import com.tanaw.app.ui.screens.LocationItem
@@ -304,7 +304,19 @@ fun TanawNavHost(
 
 
         composable(Routes.PROFILE) {
-            // ProfileScreen() — coming soon
+            ProfileScreen(
+                onLogout = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onMenuClick = { menuId ->
+                    // TODO: handle menu navigation later
+                },
+                onEditField = { fieldKey, currentValue ->
+                    // TODO: handle field editing later
+                }
+            )
         }
 
         // ── Pickup Location Picker ─────────────────────────────────────────
