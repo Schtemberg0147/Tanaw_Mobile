@@ -23,7 +23,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.tanaw.app.ui.screens.ActiveBookingsScreen
+import com.tanaw.app.ui.screens.AddDetailsScreen
 import com.tanaw.app.ui.screens.BookingStatus
+import com.tanaw.app.ui.screens.BookingSuccessScreen
+import com.tanaw.app.ui.screens.BookingSummaryScreen
 import com.tanaw.app.ui.screens.LoginScreen
 import com.tanaw.app.ui.screens.ForgotPasswordScreen
 import com.tanaw.app.ui.screens.CreateAccountScreen
@@ -39,6 +42,9 @@ import com.tanaw.app.ui.screens.VerifyPhoneScreen
 import com.tanaw.app.ui.theme.TanawTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tanaw.app.ui.screens.MockData
+import com.tanaw.app.viewmodel.BookingViewModel
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 object Routes {
@@ -54,6 +60,9 @@ object Routes {
     const val PROFILE         = "profile"
     const val PICKUP_LOCATION = "pickup_location"
     const val DESTINATION     = "destination"
+    const val ADD_DETAILS       = "add_details"
+    const val BOOKING_SUMMARY   = "booking_summary"
+    const val BOOKING_SUCCESS   = "booking_success"
 }
 
 // ─── Hardcoded mock credentials ───────────────────────────────────────────────
@@ -96,6 +105,7 @@ fun TanawNavHost(
 ) {
     var selectedPickup      by remember { mutableStateOf<LocationItem?>(null) }
     var selectedDestination by remember { mutableStateOf<LocationItem?>(null) }
+    val bookingVM: BookingViewModel = viewModel()
 
     NavHost(
         navController    = navController,
@@ -227,8 +237,14 @@ fun TanawNavHost(
                 destination        = selectedDestination,
                 onPickupClick      = { navController.navigate(Routes.PICKUP_LOCATION) },
                 onDestinationClick = { navController.navigate(Routes.DESTINATION) },
-                onContinue         = { vehicle ->
-                    // TODO: navigate to booking confirmation screen
+                onContinue = { vehicle, distance ->
+                    // Set ALL values first
+                    bookingVM.selectedVehicle  = vehicle
+                    bookingVM.distanceKm       = distance
+                    bookingVM.pickupName       = selectedPickup?.name ?: ""
+                    bookingVM.destinationName  = selectedDestination?.name ?: ""
+                    // Navigate AFTER everything is saved
+                    navController.navigate(Routes.ADD_DETAILS)
                 }
             )
         }
@@ -311,6 +327,61 @@ fun TanawNavHost(
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.ADD_DETAILS) {
+            val vehicle = bookingVM.selectedVehicle ?: return@composable
+            AddDetailsScreen(
+                vehicle         = vehicle,
+                distanceKm      = bookingVM.distanceKm,
+                pickupName      = bookingVM.pickupName,
+                destinationName = bookingVM.destinationName,
+                onBack          = { navController.popBackStack() },
+                onConfirm       = { contact, weight, handling, notes, total ->
+                    bookingVM.contactNumber = contact
+                    bookingVM.weightKg      = weight
+                    bookingVM.handling      = handling
+                    bookingVM.notes         = notes
+                    bookingVM.totalFee      = total
+                    navController.navigate(Routes.BOOKING_SUMMARY)
+                }
+            )
+        }
+
+        composable(Routes.BOOKING_SUMMARY) {
+            val vehicle = bookingVM.selectedVehicle ?: return@composable
+            BookingSummaryScreen(
+                vehicle         = vehicle,
+                distanceKm      = bookingVM.distanceKm,
+                pickupName      = bookingVM.pickupName,
+                destinationName = bookingVM.destinationName,
+                weightKg        = bookingVM.weightKg,
+                handling        = bookingVM.handling,
+                notes           = bookingVM.notes,
+                totalFee        = bookingVM.totalFee,
+                onBack           = { navController.popBackStack() },
+                onConfirmBooking = {
+                    bookingVM.bookingReference = "SHP-NE-8063"
+                    navController.navigate(Routes.BOOKING_SUCCESS)
+                }
+            )
+        }
+
+        composable(Routes.BOOKING_SUCCESS) {
+            BookingSuccessScreen(
+                bookingReference = bookingVM.bookingReference,
+                pickupName       = bookingVM.pickupName,
+                destinationName  = bookingVM.destinationName,
+                vehicleName      = bookingVM.selectedVehicle?.name ?: "",
+                totalFee         = bookingVM.totalFee,
+                onTrackShipment  = { navController.navigate(Routes.HOME) },
+                onBookAnother    = {
+                    bookingVM.reset()
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                }
             )
         }
     }

@@ -5,7 +5,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -17,9 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.SmallTopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-
 import com.tanaw.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,9 +51,17 @@ fun ProfileScreen(
 
     Scaffold(
         topBar = {
-            SmallTopAppBar(
-                title = { Text("My Profile", color = Color.White) },
-                colors = TopAppBarDefaults.smallTopAppBarColors(containerColor = Color(0xFF0B63D6)),
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = "My Profile",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
         },
@@ -59,8 +77,7 @@ fun ProfileScreen(
         ) {
             // Header card with avatar and basic info
             Card(
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
@@ -76,14 +93,14 @@ fun ProfileScreen(
                             modifier = Modifier
                                 .size(72.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFCEE6FF)),
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = initialsFromName(fullName),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 24.sp,
-                                color = Color(0xFF0B63D6)
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
 
@@ -92,13 +109,13 @@ fun ProfileScreen(
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .background(Color.White)
+                                .background(MaterialTheme.colorScheme.surface)
                                 .padding(2.dp)
                         ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_camera),
                                 contentDescription = "Edit photo",
-                                tint = Color(0xFF0B63D6),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -107,11 +124,26 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = fullName, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                        Text(
+                            text = fullName,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text(text = email, style = MaterialTheme.typography.bodySmall, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = email,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = memberSince, style = MaterialTheme.typography.labelSmall, color = Color(0xFF6B7280))
+                        Text(
+                            text = memberSince,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -119,7 +151,12 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Personal information section
-            Text("Personal Information", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Personal Information",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
             ProfileField(label = "Full Name", value = fullName, onEdit = { onEditField("fullName", fullName) })
@@ -141,13 +178,17 @@ fun ProfileScreen(
             // Logout button
             Button(
                 onClick = onLogout,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB00020)),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Log Out", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Log Out",
+                    color = MaterialTheme.colorScheme.onError,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -157,14 +198,23 @@ fun ProfileScreen(
 
 @Composable
 private fun ProfileField(label: String, value: String, onEdit: () -> Unit) {
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .clickable(onClick = onEdit)
-        .padding(vertical = 8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onEdit)
+            .padding(vertical = 8.dp)
     ) {
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color(0xFF6B7280))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -177,21 +227,78 @@ private fun MenuItemRow(text: String, onClick: () -> Unit) {
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = text, modifier = Modifier.weight(1f))
-        Icon(painter = painterResource(id = R.drawable.ic_chevron_right), contentDescription = null, tint = Color.Gray)
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Icon(
+            painter = painterResource(id = R.drawable.ic_chevron_right),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
 private fun BottomNavigationBar(selectedIndex: Int, onSelect: (Int) -> Unit) {
     NavigationBar {
-        NavigationBarItem(selected = selectedIndex == 0, onClick = { onSelect(0) }, icon = { Icon(painter = painterResource(id = R.drawable.ic_nav_book), contentDescription = "Book") }, label = { Text("BOOK") })
-        NavigationBarItem(selected = selectedIndex == 1, onClick = { onSelect(1) }, icon = { Icon(painter = painterResource(id = R.drawable.ic_nav_track), contentDescription = "Track") }, label = { Text("TRACK") })
-        NavigationBarItem(selected = selectedIndex == 2, onClick = { onSelect(2) }, icon = { Icon(painter = painterResource(id = R.drawable.ic_nav_history), contentDescription = "History") }, label = { Text("HISTORY") })
-        NavigationBarItem(selected = selectedIndex == 3, onClick = { onSelect(3) }, icon = { Icon(painter = painterResource(id = R.drawable.ic_nav_profile), contentDescription = "Profile") }, label = { Text("PROFILE") })
+        NavigationBarItem(
+            selected = selectedIndex == 0,
+            onClick = { onSelect(0) },
+            icon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_nav_book),
+                    contentDescription = "Book",
+                    tint = if (selectedIndex == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            label = { Text("BOOK") }
+        )
+        NavigationBarItem(
+            selected = selectedIndex == 1,
+            onClick = { onSelect(1) },
+            icon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_nav_track),
+                    contentDescription = "Track",
+                    tint = if (selectedIndex == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            label = { Text("TRACK") }
+        )
+        NavigationBarItem(
+            selected = selectedIndex == 2,
+            onClick = { onSelect(2) },
+            icon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_nav_history),
+                    contentDescription = "History",
+                    tint = if (selectedIndex == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            label = { Text("HISTORY") }
+        )
+        NavigationBarItem(
+            selected = selectedIndex == 3,
+            onClick = { onSelect(3) },
+            icon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_nav_profile),
+                    contentDescription = "Profile",
+                    tint = if (selectedIndex == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            label = { Text("PROFILE") }
+        )
     }
 }
 
 private fun initialsFromName(name: String): String {
-    return name.split(" ").filter { it.isNotBlank() }.mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase()
+    return name.split(" ")
+        .filter { it.isNotBlank() }
+        .mapNotNull { it.firstOrNull()?.toString() }
+        .take(2)
+        .joinToString("")
+        .uppercase()
 }

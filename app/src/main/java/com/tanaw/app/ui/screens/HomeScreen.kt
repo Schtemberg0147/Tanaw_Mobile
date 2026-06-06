@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.ui.screens.MockData.computeDistance
 import com.tanaw.app.ui.theme.*
 import java.util.Calendar
 
@@ -44,7 +45,7 @@ fun HomeScreen(
     destination         : LocationItem? = null,
     onPickupClick       : () -> Unit,
     onDestinationClick  : () -> Unit,
-    onContinue          : (Vehicle) -> Unit
+    onContinue          : (Vehicle, Int) -> Unit
 ) {
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
 
@@ -178,7 +179,7 @@ fun HomeScreen(
             BottomSelectionBar(
                 vehicle    = selectedVehicle!!,
                 distanceKm = distanceKm ?: 0,
-                onContinue = { onContinue(selectedVehicle!!) },
+                onContinue = { onContinue(selectedVehicle!!, distanceKm ?: 0) },
                 modifier   = Modifier.align(Alignment.BottomCenter)
             )
         }

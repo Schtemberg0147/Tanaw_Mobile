@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material3.*
@@ -18,19 +19,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.BorderStroke
 import com.tanaw.app.R
-import com.tanaw.app.ui.theme.*
+import com.tanaw.app.ui.theme.BackgroundGray
+import com.tanaw.app.ui.theme.HintGray
+import com.tanaw.app.ui.theme.NavyPrimary
+import com.tanaw.app.ui.theme.OrangeAccent
 
-// ─── Forgot Password Screen ───────────────────────────────────────────────────
-/**
- * ForgotPasswordScreen
- *
- * @param onSendResetLink   Called with the entered email when user taps Send Reset Link
- * @param onBackToSignIn    Navigate back to LoginScreen
- * @param isLoading         Show loading indicator on the Send button
- * @param errorMessage      Non-null shows an inline error below the input
- */
 @Composable
 fun ForgotPasswordScreen(
     onSendResetLink: (email: String) -> Unit,
@@ -43,11 +37,9 @@ fun ForgotPasswordScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundGray),  // light blue-gray background
+            .background(BackgroundGray),
         contentAlignment = Alignment.Center
     ) {
-
-        // ── White card ───────────────────────────────────────────────────────
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -62,10 +54,8 @@ fun ForgotPasswordScreen(
                     .padding(horizontal = 28.dp, vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-
-                // ── Icon with orange notification dot ────────────────────────
+                // Icon with small accent dot
                 Box(contentAlignment = Alignment.TopEnd) {
-                    // Lock/refresh icon background
                     Box(
                         modifier = Modifier
                             .size(72.dp)
@@ -81,7 +71,7 @@ fun ForgotPasswordScreen(
                             modifier = Modifier.size(36.dp)
                         )
                     }
-                    // Orange notification dot
+
                     Box(
                         modifier = Modifier
                             .size(18.dp)
@@ -95,7 +85,6 @@ fun ForgotPasswordScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // ── Title ────────────────────────────────────────────────────
                 Text(
                     text = "Forgot Password?",
                     fontSize = 22.sp,
@@ -106,7 +95,6 @@ fun ForgotPasswordScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // ── Subtitle ─────────────────────────────────────────────────
                 Text(
                     text = "Enter your email address and we'll send you a link to reset your password.",
                     fontSize = 13.sp,
@@ -117,11 +105,11 @@ fun ForgotPasswordScreen(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // ── Email input ──────────────────────────────────────────────
-                TanawTextField(
+                // Email input using Material3 OutlinedTextField
+                OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    placeholder = "your@gmail.com",
+                    placeholder = { Text(text = "your@gmail.com", color = HintGray) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Email,
@@ -130,10 +118,23 @@ fun ForgotPasswordScreen(
                             modifier = Modifier.size(18.dp)
                         )
                     },
+                    singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    colors = TextFieldDefaults.colors(
+                        focusedIndicatorColor = NavyPrimary,
+                        unfocusedIndicatorColor = Color(0xFFE6E6E6),
+                        cursorColor = NavyPrimary,
+                        focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
+                        focusedPlaceholderColor = HintGray,
+                        unfocusedPlaceholderColor = HintGray
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
                 )
 
-                // ── Inline error ─────────────────────────────────────────────
                 if (errorMessage != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -146,7 +147,6 @@ fun ForgotPasswordScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // ── Send Reset Link button ───────────────────────────────────
                 Button(
                     onClick = { onSendResetLink(email) },
                     modifier = Modifier
@@ -175,7 +175,6 @@ fun ForgotPasswordScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // ── Back to Sign In outline button ───────────────────────────
                 OutlinedButton(
                     onClick = onBackToSignIn,
                     modifier = Modifier
@@ -195,7 +194,7 @@ fun ForgotPasswordScreen(
             }
         }
 
-        // ── Orange bottom accent bar ─────────────────────────────────────────
+        // Orange bottom accent bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()

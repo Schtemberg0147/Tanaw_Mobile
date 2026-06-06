@@ -57,20 +57,22 @@ object MockData {
         LocationItem("d4", "Agri-Terminal",  "San Jose City"),
         LocationItem("d5", "Cold Storage B", "Guimba"),
     )
-}
 
-fun computeDistance(pickup: LocationItem, destination: LocationItem): Int {
-    val key = pickup.id to destination.id
-    return when (key) {
-        "l1" to "d1" -> 25
-        "l1" to "d2" -> 38
-        "l1" to "d3" -> 52
-        "l2" to "d1" -> 18
-        "l2" to "d2" -> 30
-        "l2" to "d3" -> 44
-        "l3" to "d1" -> 60
-        "l3" to "d2" -> 45
-        "l3" to "d3" -> 20
-        else         -> 38
+    fun computeDistance(pickup: LocationItem, destination: LocationItem): Int {
+        val key = pickup.id to destination.id
+        return when (key) {
+            "l1" to "d1" -> 25
+            "l1" to "d2" -> 38
+            "l1" to "d3" -> 52
+            "l2" to "d1" -> 18
+            "l2" to "d2" -> 30
+            "l2" to "d3" -> 44
+            "l3" to "d1" -> 60
+            "l3" to "d2" -> 45
+            "l3" to "d3" -> 20
+            else         -> 38
+        }
     }
 }
+
+
