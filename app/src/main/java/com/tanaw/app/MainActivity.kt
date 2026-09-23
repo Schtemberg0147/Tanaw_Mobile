@@ -1,5 +1,9 @@
 package com.tanaw.app
 
+import dagger.hilt.android.AndroidEntryPoint
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.runtime.collectAsState
+import com.tanaw.app.feature.auth.LoginViewModel
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,11 +17,9 @@ import com.tanaw.app.ui.screens.ProfileScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import com.tanaw.app.ui.screens.LocationItem
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -27,7 +29,7 @@ import com.tanaw.app.ui.screens.AddDetailsScreen
 import com.tanaw.app.ui.screens.BookingStatus
 import com.tanaw.app.ui.screens.BookingSuccessScreen
 import com.tanaw.app.ui.screens.BookingSummaryScreen
-import com.tanaw.app.ui.screens.LoginScreen
+import com.tanaw.app.feature.auth.LoginScreen
 import com.tanaw.app.ui.screens.ForgotPasswordScreen
 import com.tanaw.app.ui.screens.CreateAccountScreen
 import com.tanaw.app.ui.screens.DestinationScreen
@@ -40,10 +42,7 @@ import com.tanaw.app.ui.screens.TrackDetailScreen
 import com.tanaw.app.ui.screens.VerifyEmailScreen
 import com.tanaw.app.ui.screens.VerifyPhoneScreen
 import com.tanaw.app.ui.theme.TanawTheme
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.tanaw.app.ui.screens.MockData
 import com.tanaw.app.viewmodel.BookingViewModel
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -65,11 +64,9 @@ object Routes {
     const val BOOKING_SUCCESS   = "booking_success"
 }
 
-// ─── Hardcoded mock credentials ───────────────────────────────────────────────
-private const val MOCK_EMAIL    = "test@tanaw.com"
-private const val MOCK_PASSWORD = "password123"
 
 // ─── MainActivity ─────────────────────────────────────────────────────────────
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,47 +116,23 @@ fun TanawNavHost(
                 .savedStateHandle
                 .get<String>("success_message")
 
-            // Login UI state — lives here so it resets on back-navigation
-            var isLoading    by remember { mutableStateOf(false) }
-            var errorMessage by remember { mutableStateOf<String?>(null) }
-            val scope        = rememberCoroutineScope()
+            val loginViewModel: LoginViewModel = hiltViewModel()
+            val uiState by loginViewModel.uiState.collectAsState()
+
+            // Navigate once login succeeds, then tell the ViewModel we've
+            // acted on it so it doesn't fire again if this screen is re-entered.
+            LaunchedEffect(uiState.isLoginSuccessful) {
+                if (uiState.isLoginSuccessful) {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                    loginViewModel.consumeLoginSuccess()
+                }
+            }
 
             LoginScreen(
                 onLoginClick = { email, password ->
-
-                    // ── Validation ─────────────────────────────────────────
-                    when {
-                        email.isBlank() && password.isBlank() -> {
-                            errorMessage = "Please enter your email and password."
-                            return@LoginScreen
-                        }
-                        email.isBlank() -> {
-                            errorMessage = "Email address is required."
-                            return@LoginScreen
-                        }
-                        password.isBlank() -> {
-                            errorMessage = "Password is required."
-                            return@LoginScreen
-                        }
-                    }
-
-                    // ── Simulate network call ──────────────────────────────
-                    scope.launch {
-                        isLoading    = true
-                        errorMessage = null
-                        delay(1_500L)           // fake 1.5 s loading state
-                        isLoading = false
-
-                        if (email.trim() == MOCK_EMAIL && password == MOCK_PASSWORD) {
-                            // Success — go to Home, clear back-stack
-                            navController.navigate(Routes.HOME) {
-                                popUpTo(Routes.LOGIN) { inclusive = true }
-                            }
-                        } else {
-                            // Wrong credentials
-                            errorMessage = "Incorrect email or password. Please try again."
-                        }
-                    }
+                    loginViewModel.login(email, password)
                 },
                 onForgotPassword = {
                     navController.navigate(Routes.FORGOT_PASSWORD)
@@ -168,8 +141,8 @@ fun TanawNavHost(
                     navController.navigate(Routes.CREATE_ACCOUNT)
                 },
                 successMessage = successMessage,
-                isLoading      = isLoading,
-                errorMessage   = errorMessage,
+                isLoading      = uiState.isLoading,
+                errorMessage   = uiState.errorMessage,
             )
         }
 

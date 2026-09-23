@@ -31,6 +31,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.feature.auth.TanawInputLabel
+import com.tanaw.app.feature.auth.TanawTextField
 import com.tanaw.app.ui.theme.*
 
 // ─── Password Strength ────────────────────────────────────────────────────────

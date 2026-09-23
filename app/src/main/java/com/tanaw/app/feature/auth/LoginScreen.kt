@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.auth
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -8,11 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -129,7 +124,7 @@ fun LoginScreen(
                 placeholder = "email@gmail.com",
                 leadingIcon = {
                     Icon(
-                        imageVector        = Icons.Outlined.Email,
+                        painter            = painterResource(id = R.drawable.ic_mail_check),
                         contentDescription = null,
                         tint               = HintGray,
                         modifier           = Modifier.size(18.dp)
@@ -149,7 +144,7 @@ fun LoginScreen(
                 placeholder   = "••••••••",
                 leadingIcon   = {
                     Icon(
-                        imageVector        = Icons.Outlined.Lock,
+                        painter = painterResource(id = R.drawable.ic_shield_lock),
                         contentDescription = null,
                         tint               = HintGray,
                         modifier           = Modifier.size(18.dp)
@@ -158,10 +153,9 @@ fun LoginScreen(
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(
-                            imageVector = if (passwordVisible)
-                                Icons.Outlined.Visibility
-                            else
-                                Icons.Outlined.VisibilityOff,
+                            painter = painterResource(
+                                id = if (passwordVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
+                            ),
                             contentDescription = if (passwordVisible) "Hide password" else "Show password",
                             tint     = HintGray,
                             modifier = Modifier.size(18.dp)

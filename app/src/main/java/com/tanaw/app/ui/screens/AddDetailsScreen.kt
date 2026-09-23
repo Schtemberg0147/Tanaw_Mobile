@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +25,8 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tanaw.app.feature.auth.TanawInputLabel
+import com.tanaw.app.feature.auth.TanawTextField
 import com.tanaw.app.ui.theme.*
 
 
@@ -86,7 +89,7 @@ fun AddDetailsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = NavyPrimary)
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = NavyPrimary)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -124,15 +127,15 @@ fun AddDetailsScreen(
                 TanawInputLabel(text = "ORDER CONTACT NUMBER")
                 Spacer(modifier = Modifier.height(6.dp))
                 TanawTextField(
-                    value         = contactNumber,
+                    value = contactNumber,
                     onValueChange = { input ->
                         val digits = input.filter { it.isDigit() }.take(11)
                         contactNumber = digits
                     },
-                    placeholder   = "+63 912 345 6789",
+                    placeholder = "+63 912 345 6789",
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     visualTransformation = VisualTransformation { text ->
-                        val digits    = text.text.take(11)
+                        val digits = text.text.take(11)
                         val formatted = buildString {
                             digits.forEachIndexed { i, c ->
                                 if (i == 0) append("+63 ")
@@ -145,17 +148,18 @@ fun AddDetailsScreen(
                             object : OffsetMapping {
                                 override fun originalToTransformed(offset: Int): Int =
                                     when {
-                                        offset == 0  -> 0
-                                        offset <= 4  -> offset + 4
-                                        offset <= 7  -> offset + 5
-                                        else         -> offset + 6
+                                        offset == 0 -> 0
+                                        offset <= 4 -> offset + 4
+                                        offset <= 7 -> offset + 5
+                                        else -> offset + 6
                                     }
+
                                 override fun transformedToOriginal(offset: Int): Int =
                                     when {
-                                        offset <= 4  -> 0
-                                        offset <= 8  -> offset - 4
+                                        offset <= 4 -> 0
+                                        offset <= 8 -> offset - 4
                                         offset <= 12 -> offset - 5
-                                        else         -> offset - 6
+                                        else -> offset - 6
                                     }
                             }
                         )

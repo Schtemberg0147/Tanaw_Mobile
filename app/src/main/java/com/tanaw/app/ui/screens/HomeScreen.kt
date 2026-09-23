@@ -37,6 +37,7 @@ import java.util.Calendar
  * @param onDestinationClick Open the destination picker
  * @param onContinue        Called with selected vehicle when Continue is tapped
  */
+
 @Composable
 fun HomeScreen(
     userName            : String = "Maria Santos",
