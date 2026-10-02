@@ -1,9 +1,10 @@
 package com.tanaw.app.feature.auth
 
-// Replaces the `var isLoading` / `var errorMessage` remember { } pair that
-// used to live inside TanawNavHost's composable(Routes.LOGIN) block.
+import com.tanaw.app.data.repository.UserRole
+
 data class LoginUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val isLoginSuccessful: Boolean = false
+    val isLoginSuccessful: Boolean = false,
+    val userRole: UserRole = UserRole.CUSTOMER
 )

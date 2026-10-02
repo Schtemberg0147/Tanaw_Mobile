@@ -1,28 +1,26 @@
-package com.tanaw.app.ui.screens
-
+package com.tanaw.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import com.tanaw.app.R
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import com.tanaw.app.R
 
 @Composable
 fun TimelineStepWithLine(label: String, completed: Boolean, showTimer: Boolean = false) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // dot or check
             if (completed) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_check), // use your check icon
+                    painter = painterResource(id = R.drawable.ic_check),
                     contentDescription = null,
                     tint = Color(0xFF0A8A3A),
                     modifier = Modifier.size(18.dp)
@@ -34,7 +32,6 @@ fun TimelineStepWithLine(label: String, completed: Boolean, showTimer: Boolean =
                         .background(Color(0xFFE6E6EE), shape = CircleShape)
                 )
             }
-            // vertical line
             Spacer(modifier = Modifier.height(4.dp))
             Box(modifier = Modifier.width(2.dp).height(36.dp).background(Color(0xFFE6E6EE)))
         }
@@ -49,5 +46,3 @@ fun TimelineStepWithLine(label: String, completed: Boolean, showTimer: Boolean =
         }
     }
 }
-
-

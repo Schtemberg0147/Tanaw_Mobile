@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.auth
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,34 +15,26 @@ import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.ui.theme.*
 
-// ─── Verify Phone Screen ──────────────────────────────────────────────────────
-/**
- * @param phoneNumber   The phone number the code was sent to
- * @param onVerify      Called with the 6-digit OTP string when user taps Verify
- * @param onResend      Called when user taps Resend after countdown expires
- * @param onBack        Navigate back
- * @param isLoading     Show loading indicator on the button
- * @param errorMessage  Non-null shows an inline error below the OTP boxes
- */
 @Composable
 fun VerifyPhoneScreen(
-    phoneNumber  : String  = "+63 912 345 6789",
-    onVerify     : (otp: String) -> Unit,
-    onResend     : () -> Unit,
-    onBack       : () -> Unit,
-    isLoading    : Boolean = false,
-    errorMessage : String? = null,
+    phoneNumber          : String  = "+63 912 345 6789",
+    onVerify             : (otp: String) -> Unit,
+    onResend             : () -> Unit,
+    onBack               : () -> Unit,
+    isLoading            : Boolean = false,
+    errorMessage         : String? = null,
+    resendSuccessMessage : String? = null,
 ) {
     OtpVerifyContent(
-        target       = phoneNumber,
-        targetColor  = OrangeAccent,      // phone number shown in orange, matching your mockup
-        heading      = "Verify your number",
-        isLoading    = isLoading,
+        target = phoneNumber,
+        targetColor = OrangeAccent,
+        heading = "Verify your number",
+        isLoading = isLoading,
         errorMessage = errorMessage,
-        onVerify     = onVerify,
-        onResend     = onResend
+        resendSuccessMessage = resendSuccessMessage,
+        onVerify = onVerify,
+        onResend = onResend
     ) {
-        // ── Top bar — no back arrow on phone screen per mockup ────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -50,16 +42,15 @@ fun VerifyPhoneScreen(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text       = "Verify Number",
-                fontSize   = 17.sp,
+                text = "Verify Number",
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
-                color      = NavyPrimary
+                color = NavyPrimary
             )
         }
 
         Spacer(modifier = Modifier.height(40.dp))
 
-        // ── Icon badge — same visual style as email screen ────────────────
         Box(contentAlignment = Alignment.TopEnd) {
             Box(
                 modifier = Modifier
@@ -71,9 +62,9 @@ fun VerifyPhoneScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Image(
-                    painter            = painterResource(id = R.drawable.ic_mail_check),
+                    painter = painterResource(id = R.drawable.ic_mail_check),
                     contentDescription = null,
-                    modifier           = Modifier.size(40.dp)
+                    modifier = Modifier.size(40.dp)
                 )
             }
             Box(

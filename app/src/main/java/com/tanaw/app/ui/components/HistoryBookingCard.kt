@@ -1,24 +1,20 @@
-package com.tanaw.app.ui.screens
-import com.tanaw.app.R
-import androidx.compose.foundation.Image
+package com.tanaw.app.ui.components
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-
-
-
-
+import com.tanaw.app.data.model.HistoryBooking
 
 @Composable
 fun StatusBadge(status: BookingStatus) {
@@ -64,12 +60,10 @@ fun HistoryBookingCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // left route visual (fixed small column)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.width(36.dp)
             ) {
-                // Top dot
                 Box(
                     modifier = Modifier
                         .size(12.dp)
@@ -77,7 +71,6 @@ fun HistoryBookingCard(
                         .background(MaterialTheme.colorScheme.primary)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                // Vertical line
                 Box(
                     modifier = Modifier
                         .width(2.dp)
@@ -85,7 +78,6 @@ fun HistoryBookingCard(
                         .background(Color(0xFFE6E6EE))
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                // Bottom dot
                 Box(
                     modifier = Modifier
                         .size(12.dp)
@@ -96,7 +88,6 @@ fun HistoryBookingCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // center column takes remaining space
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -167,7 +158,6 @@ fun HistoryBookingCard(
                 }
             }
 
-            // right column: price + actions
             Column(
                 horizontalAlignment = Alignment.End,
                 modifier = Modifier.widthIn(min = 88.dp, max = 120.dp)
@@ -209,4 +199,3 @@ fun HistoryBookingCard(
         }
     }
 }
-

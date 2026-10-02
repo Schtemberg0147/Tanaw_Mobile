@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.booking
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -9,15 +9,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tanaw.app.ui.theme.*
+import com.tanaw.app.ui.theme.TanawTheme
 
-// ─── Booking Timeline Step ────────────────────────────────────────────────────
 enum class TimelineStatus { DONE, PENDING, WAITING }
 
 data class TimelineStep(
@@ -27,16 +25,6 @@ data class TimelineStep(
     val status   : TimelineStatus
 )
 
-// ─── Booking Success Screen ───────────────────────────────────────────────────
-/**
- * @param bookingReference  e.g. "SHP-NE-8063"
- * @param pickupName        Pickup display name
- * @param destinationName   Destination display name
- * @param vehicleName       Selected vehicle name
- * @param totalFee          Final total fee
- * @param onTrackShipment   Navigate to Track screen
- * @param onBookAnother     Navigate back to Home/Book screen
- */
 @Composable
 fun BookingSuccessScreen(
     bookingReference : String = "SHP-NE-8063",
@@ -47,6 +35,8 @@ fun BookingSuccessScreen(
     onTrackShipment  : () -> Unit,
     onBookAnother    : () -> Unit,
 ) {
+    val extendedColors = TanawTheme.extendedColors
+
     val timelineSteps = listOf(
         TimelineStep("Booking Submitted",    "",                          "JUST NOW", TimelineStatus.DONE),
         TimelineStep("Pending Admin Review", "Usually within 30 minutes", "",         TimelineStatus.PENDING),
@@ -56,139 +46,132 @@ fun BookingSuccessScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundGray)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // ── Success icon ─────────────────────────────────────────────────────
         Box(contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
                     .size(100.dp)
-                    .background(Color.White, RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
             )
             Box(
                 modifier = Modifier
                     .size(72.dp)
-                    .background(Color(0xFF2ECC71), RoundedCornerShape(16.dp)),
+                    .background(extendedColors.successBannerBackground, RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✓", fontSize = 32.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("✓", fontSize = 32.sp, color = extendedColors.onSuccessBannerText, fontWeight = FontWeight.Bold)
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ── Title ────────────────────────────────────────────────────────────
         Text(
             text       = "Booking Submitted!",
-            fontSize   = 26.sp,
+            style      = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.ExtraBold,
-            color      = NavyPrimary
+            color      = MaterialTheme.colorScheme.primary
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
-            text      = "Your booking is pending admin review. You'll\nreceive a notification once a driver is assigned.",
-            fontSize  = 13.sp,
-            color     = HintGray,
-            textAlign = TextAlign.Center,
+            text       = "Your booking is pending admin review. You'll\nreceive a notification once a driver is assigned.",
+            style      = MaterialTheme.typography.bodyMedium,
+            color      = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign  = TextAlign.Center,
             lineHeight = 20.sp,
-            modifier  = Modifier.padding(horizontal = 32.dp)
+            modifier   = Modifier.padding(horizontal = 32.dp)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ── Booking reference card ───────────────────────────────────────────
         Card(
             modifier  = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             shape     = RoundedCornerShape(16.dp),
-            colors    = CardDefaults.cardColors(containerColor = Color.White),
+            colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            // Green accent top bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
-                    .background(Color(0xFF2ECC71))
+                    .background(extendedColors.onSuccessBannerText)
             )
 
             Column(
                 modifier            = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("BOOKING REFERENCE", fontSize = 10.sp, color = HintGray, letterSpacing = 1.sp)
+                Text("BOOKING REFERENCE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(bookingReference, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = NavyPrimary)
+                Text(bookingReference, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Save this number to track your shipment", fontSize = 12.sp, color = HintGray)
+                Text("Save this number to track your shipment", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Route
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(10.dp).background(NavyPrimary, RoundedCornerShape(50)))
+                    Box(modifier = Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
-                        Text(pickupName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
-                        Text("Pickup", fontSize = 11.sp, color = HintGray)
+                        Text(pickupName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Pickup", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Row {
                     Box(modifier = Modifier.width(10.dp), contentAlignment = Alignment.Center) {
-                        Box(modifier = Modifier.width(2.dp).height(20.dp).background(BorderGray))
+                        Box(modifier = Modifier.width(2.dp).height(20.dp).background(MaterialTheme.colorScheme.outline))
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(10.dp).background(OrangeAccent, RoundedCornerShape(50)))
+                    Box(modifier = Modifier.size(10.dp).background(MaterialTheme.colorScheme.secondary, RoundedCornerShape(50)))
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
-                        Text(destinationName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
-                        Text("Drop-off", fontSize = 11.sp, color = HintGray)
+                        Text(destinationName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Drop-off", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Vehicle + Schedule
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("⊡ VEHICLE", fontSize = 10.sp, color = HintGray, letterSpacing = 0.5.sp)
+                        Text("⊡ VEHICLE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(vehicleName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+                        Text(vehicleName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("📅 SCHEDULE", fontSize = 10.sp, color = HintGray, letterSpacing = 0.5.sp)
+                        Text("📅 SCHEDULE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Oct 24, 2023 · 08:00 AM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextDark)
+                        Text("Oct 24, 2023 · 08:00 AM", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("TOTAL VALUE", fontSize = 10.sp, color = HintGray, letterSpacing = 0.5.sp)
-                    Text("₱${"%,d".format(totalFee)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = NavyPrimary)
+                    Text("TOTAL VALUE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
+                    Text("₱${"%,d".format(totalFee)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ── Timeline ─────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -201,7 +184,6 @@ fun BookingSuccessScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ── Buttons ──────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -212,18 +194,21 @@ fun BookingSuccessScreen(
                 onClick  = onTrackShipment,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape    = RoundedCornerShape(12.dp),
-                colors   = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor   = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("TRACK SHIPMENT", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = 1.sp)
+                Text("TRACK SHIPMENT", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary, letterSpacing = 1.sp)
             }
 
             OutlinedButton(
                 onClick  = onBookAnother,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape    = RoundedCornerShape(12.dp),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = NavyPrimary)
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("BOOK ANOTHER DELIVERY", fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("BOOK ANOTHER DELIVERY", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             }
         }
 
@@ -231,18 +216,17 @@ fun BookingSuccessScreen(
     }
 }
 
-// ─── Timeline Row ─────────────────────────────────────────────────────────────
 @Composable
 private fun TimelineRow(step: TimelineStep, isLast: Boolean) {
+    val extendedColors = TanawTheme.extendedColors
     val dotColor = when (step.status) {
-        TimelineStatus.DONE    -> Color(0xFF2ECC71)
-        TimelineStatus.PENDING -> OrangeAccent
-        TimelineStatus.WAITING -> BorderGray
+        TimelineStatus.DONE    -> extendedColors.onSuccessBannerText
+        TimelineStatus.PENDING -> MaterialTheme.colorScheme.secondary
+        TimelineStatus.WAITING -> MaterialTheme.colorScheme.outline
     }
-    val textColor = if (step.status == TimelineStatus.WAITING) HintGray else TextDark
+    val textColor = if (step.status == TimelineStatus.WAITING) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
 
     Row(modifier = Modifier.fillMaxWidth()) {
-        // Dot + connector line
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
@@ -254,26 +238,25 @@ private fun TimelineRow(step: TimelineStep, isLast: Boolean) {
                     modifier = Modifier
                         .width(2.dp)
                         .height(40.dp)
-                        .background(BorderGray)
+                        .background(MaterialTheme.colorScheme.outline)
                 )
             }
         }
 
         Spacer(modifier = Modifier.width(14.dp))
 
-        // Text
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column {
-                Text(step.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                Text(step.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = textColor)
                 if (step.subtitle.isNotEmpty()) {
-                    Text(step.subtitle, fontSize = 12.sp, color = HintGray)
+                    Text(step.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (step.time.isNotEmpty()) {
-                Text(step.time, fontSize = 12.sp, color = HintGray)
+                Text(step.time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

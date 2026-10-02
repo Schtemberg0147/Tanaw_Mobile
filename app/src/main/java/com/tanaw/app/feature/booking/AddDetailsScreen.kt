@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.booking
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,13 +10,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -25,12 +23,10 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tanaw.app.feature.auth.TanawInputLabel
-import com.tanaw.app.feature.auth.TanawTextField
-import com.tanaw.app.ui.theme.*
+import com.tanaw.app.data.model.Vehicle
+import com.tanaw.app.ui.components.TanawInputLabel
+import com.tanaw.app.ui.components.TanawTextField
 
-
-// ─── Special Handling Options ─────────────────────────────────────────────────
 enum class SpecialHandling(val label: String, val extraFee: Int) {
     NONE("None", 0),
     FRAGILE("Fragile", 500),
@@ -39,15 +35,6 @@ enum class SpecialHandling(val label: String, val extraFee: Int) {
     PERISHABLE("Perishable", 600),
 }
 
-// ─── Add More Details Screen ──────────────────────────────────────────────────
-/**
- * @param vehicle           The vehicle selected in HomeScreen
- * @param distanceKm        Computed distance between pickup and destination
- * @param pickupName        Display name of pickup location
- * @param destinationName   Display name of destination
- * @param onBack            Navigate back to HomeScreen
- * @param onConfirm         Called with all details when Confirm is tapped
- */
 @Composable
 fun AddDetailsScreen(
     vehicle         : Vehicle,
@@ -74,14 +61,13 @@ fun AddDetailsScreen(
 
     val canConfirm = contactNumber.length == 10 && weightKg.isNotBlank()
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 100.dp)
         ) {
-            // ── Top bar ──────────────────────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -89,28 +75,30 @@ fun AddDetailsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = NavyPrimary)
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text       = "Add More Details",
-                    fontSize   = 20.sp,
+                    style      = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color      = NavyPrimary
+                    color      = MaterialTheme.colorScheme.primary
                 )
             }
 
-            // Progress bar
             LinearProgressIndicator(
                 progress   = { 0.75f },
                 modifier   = Modifier.fillMaxWidth().height(4.dp),
-                color      = NavyPrimary,
-                trackColor = BorderGray
+                color      = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.outline
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ── Route summary card ───────────────────────────────────────────
             RouteCard(
                 pickupName      = pickupName,
                 destinationName = destinationName,
@@ -120,9 +108,13 @@ fun AddDetailsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // ── Order Contact ────────────────────────────────────────────────
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("Cargo Details", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = NavyPrimary)
+                Text(
+                    text       = "Cargo Details",
+                    style      = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color      = MaterialTheme.colorScheme.primary
+                )
                 Spacer(modifier = Modifier.height(14.dp))
                 TanawInputLabel(text = "ORDER CONTACT NUMBER")
                 Spacer(modifier = Modifier.height(6.dp))
@@ -168,11 +160,6 @@ fun AddDetailsScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // ── Cargo details section ────────────────────────────────────
-                Text("Cargo Details", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = NavyPrimary)
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Est. weight
                 TanawInputLabel(text = "EST. WEIGHT")
                 Spacer(modifier = Modifier.height(6.dp))
                 OutlinedTextField(
@@ -180,24 +167,23 @@ fun AddDetailsScreen(
                     onValueChange = { weightKg = it.filter { c -> c.isDigit() } },
                     modifier      = Modifier.fillMaxWidth(),
                     shape         = RoundedCornerShape(12.dp),
-                    placeholder   = { Text("6000", color = HintGray) },
-                    suffix        = { Text("kg", color = HintGray, fontWeight = FontWeight.Medium) },
+                    placeholder   = { Text("6000", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    suffix        = { Text("kg", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine    = true,
                     colors        = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor   = NavyPrimary,
-                        unfocusedBorderColor = BorderGray,
-                        focusedContainerColor   = InputGray,
-                        unfocusedContainerColor = InputGray,
-                        cursorColor          = NavyPrimary,
-                        focusedTextColor     = TextDark,
-                        unfocusedTextColor   = TextDark,
+                        focusedBorderColor   = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedContainerColor   = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        cursorColor          = MaterialTheme.colorScheme.primary,
+                        focusedTextColor     = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor   = MaterialTheme.colorScheme.onSurface,
                     )
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Special handling chips
                 TanawInputLabel(text = "SPECIAL HANDLING")
                 Spacer(modifier = Modifier.height(10.dp))
                 HandlingChips(
@@ -207,7 +193,6 @@ fun AddDetailsScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Notes to driver
                 TanawInputLabel(text = "NOTES TO DRIVER")
                 Spacer(modifier = Modifier.height(6.dp))
                 OutlinedTextField(
@@ -215,26 +200,25 @@ fun AddDetailsScreen(
                     onValueChange = { notes = it },
                     modifier      = Modifier.fillMaxWidth().height(120.dp),
                     shape         = RoundedCornerShape(12.dp),
-                    placeholder   = { Text("e.g., Gate code 1234, call upon arrival", color = HintGray, fontSize = 13.sp) },
+                    placeholder   = { Text("e.g., Gate code 1234, call upon arrival", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) },
                     colors        = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor      = NavyPrimary,
-                        unfocusedBorderColor    = BorderGray,
-                        focusedContainerColor   = InputGray,
-                        unfocusedContainerColor = InputGray,
-                        cursorColor             = NavyPrimary,
-                        focusedTextColor        = TextDark,
-                        unfocusedTextColor      = TextDark,
+                        focusedBorderColor      = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor    = MaterialTheme.colorScheme.outline,
+                        focusedContainerColor   = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        cursorColor             = MaterialTheme.colorScheme.primary,
+                        focusedTextColor        = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor      = MaterialTheme.colorScheme.onSurface,
                     )
                 )
             }
         }
 
-        // ── Sticky bottom fee bar ────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Row(
@@ -242,30 +226,55 @@ fun AddDetailsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("TOTAL FEE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = HintGray, letterSpacing = 0.5.sp)
-                    Text("₱${"%,d".format(totalFee)}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = NavyPrimary)
-                    Text("DELIVERY FEE    ₱${"%,d".format(deliveryFee)}", fontSize = 11.sp, color = HintGray)
-                    if (handlingFee > 0)
-                        Text("SPECIAL HANDLING    ₱${"%,d".format(handlingFee)}", fontSize = 11.sp, color = HintGray)
+                    Text(
+                        text          = "TOTAL FEE",
+                        style         = MaterialTheme.typography.labelSmall,
+                        fontWeight    = FontWeight.Bold,
+                        color         = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text       = "₱${"%,d".format(totalFee)}",
+                        fontSize   = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text  = "DELIVERY FEE    ₱${"%,d".format(deliveryFee)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (handlingFee > 0) {
+                        Text(
+                            text  = "SPECIAL HANDLING    ₱${"%,d".format(handlingFee)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Button(
                     onClick  = { onConfirm(contactNumber, weightKg, selectedHandling, notes, totalFee) },
                     enabled  = canConfirm,
                     shape    = RoundedCornerShape(12.dp),
                     colors   = ButtonDefaults.buttonColors(
-                        containerColor         = NavyPrimary,
-                        disabledContainerColor = NavyPrimary.copy(alpha = 0.4f)
+                        containerColor         = MaterialTheme.colorScheme.primary,
+                        contentColor           = MaterialTheme.colorScheme.onPrimary,
+                        disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
                     ),
                     modifier = Modifier.height(52.dp)
                 ) {
-                    Text("Confirm →", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    Text(
+                        text       = "Confirm →",
+                        style      = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color      = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         }
     }
 }
 
-// ─── Route Card (reused in Summary too) ──────────────────────────────────────
 @Composable
 fun RouteCard(
     pickupName      : String,
@@ -277,7 +286,7 @@ fun RouteCard(
     Card(
         modifier  = modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape     = RoundedCornerShape(14.dp),
-        colors    = CardDefaults.cardColors(containerColor = Color.White),
+        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -288,62 +297,62 @@ fun RouteCard(
             ) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(10.dp).background(NavyPrimary, RoundedCornerShape(50)))
+                        Box(modifier = Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("PICK-UP", fontSize = 10.sp, color = HintGray, letterSpacing = 0.5.sp)
-                            Text(pickupName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextDark)
+                            Text("PICK-UP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
+                            Text(pickupName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     Row {
                         Box(modifier = Modifier.width(10.dp), contentAlignment = Alignment.Center) {
-                            Box(modifier = Modifier.width(2.dp).height(16.dp).background(BorderGray))
+                            Box(modifier = Modifier.width(2.dp).height(16.dp).background(MaterialTheme.colorScheme.outline))
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(10.dp).background(OrangeAccent, RoundedCornerShape(50)))
+                        Box(modifier = Modifier.size(10.dp).background(MaterialTheme.colorScheme.secondary, RoundedCornerShape(50)))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("DESTINATION", fontSize = 10.sp, color = HintGray, letterSpacing = 0.5.sp)
-                            Text(destinationName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextDark)
+                            Text("DESTINATION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
+                            Text(destinationName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
                 if (onEdit != null) {
-                    Text("EDIT", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrangeAccent,
-                        modifier = Modifier.clickable { onEdit() })
+                    Text(
+                        text       = "EDIT",
+                        style      = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color      = MaterialTheme.colorScheme.secondary,
+                        modifier   = Modifier.clickable { onEdit() }
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = BorderGray)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Distance · ETA · Road type
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("⇅ $distanceKm km", fontSize = 12.sp, color = HintGray)
-                Text("⏱ Est. 1h 15min", fontSize = 12.sp, color = HintGray)
-                Text("⊙ Toll Road", fontSize = 12.sp, color = HintGray)
+                Text("⇅ $distanceKm km", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("⏱ Est. 1h 15min", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("⊙ Toll Road", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
-// ─── Handling Chips ───────────────────────────────────────────────────────────
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HandlingChips(
     selected : SpecialHandling,
     onSelect : (SpecialHandling) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // Row 1
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SpecialHandling.entries.take(3).forEach { option ->
                 ChipItem(option, selected, onSelect)
             }
         }
-        // Row 2
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SpecialHandling.entries.drop(3).forEach { option ->
                 ChipItem(option, selected, onSelect)
@@ -364,18 +373,18 @@ private fun ChipItem(
             .clip(RoundedCornerShape(8.dp))
             .border(
                 width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) NavyPrimary else BorderGray,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                 shape = RoundedCornerShape(8.dp)
             )
-            .background(if (isSelected) NavyPrimary.copy(alpha = 0.05f) else Color.White)
+            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface)
             .clickable { onSelect(option) }
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         Text(
             text       = option.label,
-            fontSize   = 13.sp,
+            style      = MaterialTheme.typography.bodyMedium,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            color      = if (isSelected) NavyPrimary else TextDark
+            color      = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )
     }
 }

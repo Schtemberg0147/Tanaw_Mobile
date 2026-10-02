@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.auth
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -54,7 +54,6 @@ fun ForgotPasswordScreen(
                     .padding(horizontal = 28.dp, vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Icon with small accent dot
                 Box(contentAlignment = Alignment.TopEnd) {
                     Box(
                         modifier = Modifier
@@ -105,7 +104,6 @@ fun ForgotPasswordScreen(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // Email input using Material3 OutlinedTextField
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -194,7 +192,6 @@ fun ForgotPasswordScreen(
             }
         }
 
-        // Orange bottom accent bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()

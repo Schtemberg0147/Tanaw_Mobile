@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tanaw.app.data.repository.AuthRepository
 import com.tanaw.app.data.repository.AuthResult
+import com.tanaw.app.data.repository.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,9 +21,6 @@ class LoginViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
-    // Same signature LoginScreen already calls: onLoginClick(email, password).
-    // Validation logic here is copied over unchanged from the old
-    // `when { ... }` block in TanawNavHost.
     fun login(email: String, password: String) {
         when {
             email.isBlank() && password.isBlank() -> {
@@ -44,7 +42,13 @@ class LoginViewModel @Inject constructor(
 
             when (val result = authRepository.login(email, password)) {
                 is AuthResult.Success -> {
-                    _uiState.update { it.copy(isLoading = false, isLoginSuccessful = true) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isLoginSuccessful = true,
+                            userRole = result.role
+                        )
+                    }
                 }
                 is AuthResult.Error -> {
                     _uiState.update { it.copy(isLoading = false, errorMessage = "Invalid Credentials") }
@@ -53,8 +57,6 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    // Called once TanawNavHost has acted on isLoginSuccessful (navigated to Home),
-    // so re-entering the login screen later doesn't immediately re-trigger navigation.
     fun consumeLoginSuccess() {
         _uiState.update { it.copy(isLoginSuccessful = false) }
     }

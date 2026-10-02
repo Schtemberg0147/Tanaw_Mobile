@@ -5,83 +5,81 @@ val localProperties = Properties().apply {
 }
 
 plugins {
-    // 1. Android application initializes everything and auto-injects Kotlin natively under AGP 9.0+
     alias(libs.plugins.android.application)
-
-    // 2. Load the specific Jetpack Compose compiler compiler
     alias(libs.plugins.kotlin.compose)
-
-    // 3. Annotation processors and Hilt tools go last
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.dagger.hilt.android)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
     namespace = "com.tanaw.app"
-    compileSdk = 36 // Required for stable compatibility with AGP 9+ dependencies
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.tanaw.app"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SUPABASE_URL", "\"${localProperties["SUPABASE_URL"]}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProperties["SUPABASE_ANON_KEY"]}\"")
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
         compose = true
-    }
-    defaultConfig {
-        buildConfigField("String", "SUPABASE_URL", "\"${localProperties["SUPABASE_URL"]}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProperties["SUPABASE_ANON_KEY"]}\"")
-    }
-    buildFeatures {
         buildConfig = true
     }
 }
 
 dependencies {
-    // Hilt Dependencies
+    // Hilt & KSP Metadata
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.1")
-    implementation("androidx.compose.material:material-icons-extended")
-    // Supabase Dependencies
-    implementation(platform("io.github.jan-tennert.supabase:bom:3.7.0"))
-    implementation("io.github.jan-tennert.supabase:auth-kt")
-    implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.ktor:ktor-client-android:3.5.2")
+    implementation(libs.kotlinx.coroutines.android)
 
-    // ViewModel + Compose integration
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.4")
-    implementation("androidx.hilt:hilt-navigation-compose:1.4.0")
+    // Compose extras
+    implementation(libs.androidx.compose.material.icons.extended)
 
-    // Base Compose UI Dependencies from your TOML catalog
+    // Supabase
+    implementation(platform(libs.bom))
+    implementation(libs.auth.kt)
+    implementation(libs.postgrest.kt)
+    implementation(libs.ktor.client.android)
+
+    // Lifecycle / ViewModel
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    // Core / Activity
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx) // <-- CHANGE DASH TO DOT HERE
     implementation(libs.androidx.activity.compose)
+
+    // Compose BOM + UI
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
-    // Testing Blocks
+    // Unit tests
     testImplementation(libs.junit)
+
+    // Instrumented tests
+    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4) // <-- CHANGE DASHES TO DOTS HERE
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+
+    // Debug-only tooling
     debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)    // <-- CHANGE DASH TO DOT HERE
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

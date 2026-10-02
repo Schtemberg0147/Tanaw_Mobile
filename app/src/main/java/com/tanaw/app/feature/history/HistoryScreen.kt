@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.history
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,7 +8,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.tanaw.app.ui.screens.MockData.computeDistance
+import com.tanaw.app.data.model.HistoryBooking
+import com.tanaw.app.data.model.MockData
+import com.tanaw.app.data.model.MockData.computeDistance
+import com.tanaw.app.ui.components.BookingStatus
+import com.tanaw.app.ui.components.HistoryBookingCard
 
 @Composable
 fun HistoryScreen(
@@ -16,7 +20,6 @@ fun HistoryScreen(
     onRebook: (String) -> Unit,
     onViewDetails: (String, BookingStatus) -> Unit
 ) {
-    // Build sample bookings directly from MockData
     val completedBookings = remember {
         val pickup = MockData.pickupLocations.first()
         val destGapan = MockData.recentDestinations.firstOrNull { it.name.contains("Gapan", ignoreCase = true) }
@@ -81,7 +84,7 @@ fun HistoryScreen(
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
                 text = "Booking History",
-                style = MaterialTheme.typography.titleLarge.copy()
+                style = MaterialTheme.typography.titleLarge
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(text = "Completed and cancelled bookings", style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray))

@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.booking
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,13 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
-import com.tanaw.app.ui.theme.*
+import com.tanaw.app.data.model.LocationItem
+import com.tanaw.app.data.model.MockData
 
-// ─── Pickup Location Picker ───────────────────────────────────────────────────
-/**
- * @param onConfirm   Called with the chosen LocationItem
- * @param onBack      Navigate back
- */
 @Composable
 fun PickupLocationScreen(
     onConfirm : (LocationItem) -> Unit,
@@ -42,12 +38,6 @@ fun PickupLocationScreen(
     )
 }
 
-// ─── Destination Picker ───────────────────────────────────────────────────────
-/**
- * @param origin      The already-confirmed pickup location (shown in route summary)
- * @param onConfirm   Called with the chosen LocationItem
- * @param onBack      Navigate back
- */
 @Composable
 fun DestinationScreen(
     origin    : LocationItem?,
@@ -62,10 +52,8 @@ fun DestinationScreen(
     )
 }
 
-// ─── Mode enum ────────────────────────────────────────────────────────────────
 private enum class LocationPickerMode { PICKUP, DESTINATION }
 
-// ─── Shared Location Picker ───────────────────────────────────────────────────
 @Composable
 private fun LocationPickerScreen(
     mode      : LocationPickerMode,
@@ -76,7 +64,6 @@ private fun LocationPickerScreen(
     var query           by remember { mutableStateOf("") }
     var selectedLocation by remember { mutableStateOf<LocationItem?>(null) }
 
-    // Filtered lists driven by search query
     val pickupResults = remember(query) {
         if (query.isBlank()) MockData.pickupLocations
         else MockData.pickupLocations.filter {
@@ -99,22 +86,19 @@ private fun LocationPickerScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFBFC8D4))) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
 
-        // ── Mock map background ───────────────────────────────────────────
         MockMapBackground(mode = mode)
 
-        // ── Search panel (top sheet) ──────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp))
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.surface)
         ) {
             Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Search bar row
             Row(
                 modifier          = Modifier
                     .fillMaxWidth()
@@ -125,15 +109,14 @@ private fun LocationPickerScreen(
                     Icon(
                         imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint               = NavyPrimary
+                        tint               = MaterialTheme.colorScheme.primary
                     )
                 }
                 Spacer(modifier = Modifier.width(4.dp))
-                // Navy dot
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .background(NavyPrimary, shape = RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(50))
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 BasicTextField(
@@ -142,7 +125,7 @@ private fun LocationPickerScreen(
                     modifier      = Modifier.weight(1f),
                     textStyle     = TextStyle(
                         fontSize   = 15.sp,
-                        color      = NavyPrimary,
+                        color      = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Normal
                     ),
                     singleLine    = true,
@@ -150,9 +133,9 @@ private fun LocationPickerScreen(
                         if (query.isEmpty()) {
                             Text(
                                 text     = if (mode == LocationPickerMode.PICKUP)
-                                    "Search pick-up location..." else "Search pick-up location...",
-                                fontSize = 15.sp,
-                                color    = HintGray
+                                    "Search pick-up location..." else "Search destination...",
+                                style    = MaterialTheme.typography.bodyMedium,
+                                color    = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         inner()
@@ -160,13 +143,11 @@ private fun LocationPickerScreen(
                 )
             }
 
-            HorizontalDivider(color = BorderGray, thickness = 1.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 1.dp)
 
-            // Location list
             LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
 
                 if (mode == LocationPickerMode.PICKUP) {
-                    // Current location row
                     item {
                         CurrentLocationRow(
                             city    = "Cabanatuan City",
@@ -177,7 +158,7 @@ private fun LocationPickerScreen(
                                 )
                             }
                         )
-                        HorizontalDivider(color = BorderGray.copy(alpha = 0.5f))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                     }
                     items(pickupResults) { loc ->
                         LocationRow(
@@ -188,7 +169,6 @@ private fun LocationPickerScreen(
                         )
                     }
                 } else {
-                    // Recent section
                     if (recentResults.isNotEmpty()) {
                         item {
                             SectionLabel("RECENT")
@@ -202,7 +182,6 @@ private fun LocationPickerScreen(
                             )
                         }
                     }
-                    // Suggested section
                     if (suggestedResults.isNotEmpty()) {
                         item { SectionLabel("SUGGESTED") }
                         items(suggestedResults) { loc ->
@@ -218,14 +197,13 @@ private fun LocationPickerScreen(
             }
         }
 
-        // ── "Drag map to adjust" pill ─────────────────────────────────────
         if (selectedLocation == null) {
             val pillText = if (mode == LocationPickerMode.PICKUP)
                 "DRAG MAP TO ADJUST" else "Drag map to set destination"
             val pillBg   = if (mode == LocationPickerMode.PICKUP)
-                Color.White else NavyPrimary
+                MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary
             val pillText2Color = if (mode == LocationPickerMode.PICKUP)
-                NavyPrimary else Color.White
+                MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary
 
             Box(
                 modifier = Modifier
@@ -234,12 +212,12 @@ private fun LocationPickerScreen(
                     .clip(RoundedCornerShape(50))
                     .background(pillBg)
                     .border(if (mode == LocationPickerMode.PICKUP) 1.dp else 0.dp,
-                        BorderGray, RoundedCornerShape(50))
+                        MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
                     .padding(horizontal = 20.dp, vertical = 10.dp)
             ) {
                 Text(
                     text       = pillText,
-                    fontSize   = 12.sp,
+                    style      = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color      = pillText2Color,
                     letterSpacing = if (mode == LocationPickerMode.PICKUP) 0.5.sp else 0.sp
@@ -247,36 +225,33 @@ private fun LocationPickerScreen(
             }
         }
 
-        // ── Crosshair / pin icon in map center ────────────────────────────
         if (mode == LocationPickerMode.PICKUP) {
             Text(
                 text     = "+",
                 fontSize = 28.sp,
-                color    = NavyPrimary,
+                color    = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Light,
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            // Destination pin box
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .offset(y = 20.dp)
                     .size(44.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(NavyPrimary),
+                    .background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector        = Icons.Outlined.LocationOn,
                     contentDescription = null,
-                    tint               = Color.White,
+                    tint               = MaterialTheme.colorScheme.onPrimary,
                     modifier           = Modifier.size(26.dp)
                 )
             }
         }
 
-        // ── Bottom sheet confirmation ──────────────────────────────────────
         if (selectedLocation != null || mode == LocationPickerMode.PICKUP) {
             val displayLocation = selectedLocation ?: LocationItem(
                 "current", "Cabanatuan City Hub Alpha", "Cabanatuan City, Nueva Ecija"
@@ -293,10 +268,8 @@ private fun LocationPickerScreen(
     }
 }
 
-// ─── Mock Map Background ──────────────────────────────────────────────────────
 @Composable
 private fun MockMapBackground(mode: LocationPickerMode) {
-    // Simulates a map — dark grid for pickup (satellite), green terrain for destination
     val bgColor  = if (mode == LocationPickerMode.PICKUP) Color(0xFF3A4A5C) else Color(0xFF7A9E7E)
     val gridColor = if (mode == LocationPickerMode.PICKUP)
         Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.12f)
@@ -306,14 +279,12 @@ private fun MockMapBackground(mode: LocationPickerMode) {
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Horizontal grid lines
         Column(modifier = Modifier.fillMaxSize()) {
             repeat(20) {
                 HorizontalDivider(color = gridColor, thickness = 1.dp)
                 Spacer(modifier = Modifier.weight(1f))
             }
         }
-        // Vertical grid lines
         Row(modifier = Modifier.fillMaxSize()) {
             repeat(10) {
                 VerticalDivider(color = gridColor, thickness = 1.dp)
@@ -323,7 +294,6 @@ private fun MockMapBackground(mode: LocationPickerMode) {
     }
 }
 
-// ─── Confirm Bottom Sheet ─────────────────────────────────────────────────────
 @Composable
 private fun ConfirmBottomSheet(
     mode      : LocationPickerMode,
@@ -336,89 +306,85 @@ private fun ConfirmBottomSheet(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        // Drag handle
         Box(
             modifier = Modifier
                 .width(40.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(BorderGray)
+                .background(MaterialTheme.colorScheme.outline)
                 .align(Alignment.CenterHorizontally)
         )
         Spacer(modifier = Modifier.height(16.dp))
 
         if (mode == LocationPickerMode.PICKUP) {
-            // ── Pickup confirmation layout ─────────────────────────────────
             Text(
                 text          = "PICK-UP LOCATION",
-                fontSize      = 10.sp,
+                style         = MaterialTheme.typography.labelSmall,
                 fontWeight    = FontWeight.Bold,
-                color         = HintGray,
+                color         = MaterialTheme.colorScheme.onSurfaceVariant,
                 letterSpacing = 0.5.sp
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text       = location.name,
-                fontSize   = 18.sp,
+                style      = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color      = NavyPrimary
+                color      = MaterialTheme.colorScheme.primary
             )
             Text(
                 text     = location.subName,
-                fontSize = 13.sp,
-                color    = HintGray
+                style    = MaterialTheme.typography.bodySmall,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            // ── Destination confirmation layout ────────────────────────────
             Row(verticalAlignment = Alignment.Top) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
                             .size(12.dp)
-                            .border(2.dp, NavyPrimary, RoundedCornerShape(50))
+                            .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
                     )
                     Box(
                         modifier = Modifier
                             .width(2.dp)
                             .height(28.dp)
-                            .background(BorderGray)
+                            .background(MaterialTheme.colorScheme.outline)
                     )
                     Box(
                         modifier = Modifier
                             .size(12.dp)
-                            .background(OrangeAccent, shape = RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.secondary, shape = RoundedCornerShape(50))
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text(text = "Origin", fontSize = 11.sp, color = HintGray)
+                    Text("Origin", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text       = origin?.name ?: "Cabanatuan City Hub Alpha",
-                        fontSize   = 14.sp,
+                        style      = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color      = NavyPrimary
+                        color      = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text       = location.name,
                         fontSize   = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color      = NavyPrimary
+                        color      = MaterialTheme.colorScheme.primary
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Route info row
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
-                    .background(InputGray)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Row(
@@ -430,30 +396,29 @@ private fun ConfirmBottomSheet(
                         Icon(
                             painter            = painterResource(id = R.drawable.ic_car),
                             contentDescription = null,
-                            tint               = NavyPrimary,
+                            tint               = MaterialTheme.colorScheme.primary,
                             modifier           = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text       = "38 km  •  1h 15min",
-                            fontSize   = 13.sp,
+                            style      = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color      = NavyPrimary
+                            color      = MaterialTheme.colorScheme.primary
                         )
                     }
-                    // Toll road badge
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(OrangeAccent.copy(alpha = 0.12f))
-                            .border(1.dp, OrangeAccent.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))
+                            .border(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text          = "⊙ TOLL ROAD",
-                            fontSize      = 10.sp,
+                            style         = MaterialTheme.typography.labelSmall,
                             fontWeight    = FontWeight.SemiBold,
-                            color         = OrangeAccent,
+                            color         = MaterialTheme.colorScheme.secondary,
                             letterSpacing = 0.3.sp
                         )
                     }
@@ -463,21 +428,23 @@ private fun ConfirmBottomSheet(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Confirm button
         Button(
             onClick  = onConfirm,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
             shape  = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor   = MaterialTheme.colorScheme.onPrimary
+            )
         ) {
             Text(
                 text       = if (mode == LocationPickerMode.PICKUP)
                     "Confirm Pick-up Location" else "Confirm Pick-up Destination",
-                fontSize   = 15.sp,
+                style      = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color      = Color.White
+                color      = MaterialTheme.colorScheme.onPrimary
             )
         }
 
@@ -485,20 +452,18 @@ private fun ConfirmBottomSheet(
     }
 }
 
-// ─── Section Label ────────────────────────────────────────────────────────────
 @Composable
 private fun SectionLabel(text: String) {
     Text(
         text          = text,
-        fontSize      = 10.sp,
+        style         = MaterialTheme.typography.labelSmall,
         fontWeight    = FontWeight.Bold,
-        color         = HintGray,
+        color         = MaterialTheme.colorScheme.onSurfaceVariant,
         letterSpacing = 0.8.sp,
         modifier      = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
     )
 }
 
-// ─── Current Location Row ─────────────────────────────────────────────────────
 @Composable
 private fun CurrentLocationRow(city: String, onClick: () -> Unit) {
     Row(
@@ -511,7 +476,7 @@ private fun CurrentLocationRow(city: String, onClick: () -> Unit) {
         Icon(
             imageVector        = Icons.Outlined.LocationOn,
             contentDescription = null,
-            tint               = NavyPrimary,
+            tint               = MaterialTheme.colorScheme.primary,
             modifier           = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -525,24 +490,23 @@ private fun CurrentLocationRow(city: String, onClick: () -> Unit) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text       = "Current Location",
-                    fontSize   = 15.sp,
+                    style      = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color      = NavyPrimary
+                    color      = MaterialTheme.colorScheme.primary
                 )
             }
-            Text(text = city, fontSize = 12.sp, color = HintGray)
+            Text(text = city, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
             text       = "USE THIS",
-            fontSize   = 12.sp,
+            style      = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color      = OrangeAccent,
+            color      = MaterialTheme.colorScheme.secondary,
             modifier   = Modifier.clickable { onClick() }
         )
     }
 }
 
-// ─── Location Row ─────────────────────────────────────────────────────────────
 @Composable
 private fun LocationRow(
     item       : LocationItem,
@@ -553,29 +517,29 @@ private fun LocationRow(
     Row(
         modifier          = Modifier
             .fillMaxWidth()
-            .background(if (isSelected) NavyPrimary.copy(alpha = 0.05f) else Color.Transparent)
+            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else Color.Transparent)
             .clickable { onClick() }
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector        = if (isRecent) Icons.Outlined.LocationOn else Icons.Outlined.LocationOn,
+            imageVector        = Icons.Outlined.LocationOn,
             contentDescription = null,
-            tint               = if (isRecent) HintGray else HintGray,
+            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier           = Modifier.size(18.dp)
         )
         Spacer(modifier = Modifier.width(14.dp))
         Column {
             Text(
                 text       = item.name,
-                fontSize   = 14.sp,
+                style      = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
-                color      = NavyPrimary
+                color      = MaterialTheme.colorScheme.primary
             )
             Text(
                 text     = item.subName,
-                fontSize = 12.sp,
-                color    = HintGray
+                style    = MaterialTheme.typography.bodySmall,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

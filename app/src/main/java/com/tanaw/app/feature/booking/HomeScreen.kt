@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.booking
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -23,20 +23,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
-import com.tanaw.app.ui.screens.MockData.computeDistance
-import com.tanaw.app.ui.theme.*
+import com.tanaw.app.data.model.LocationItem
+import com.tanaw.app.data.model.MockData
+import com.tanaw.app.data.model.MockData.computeDistance
+import com.tanaw.app.data.model.Vehicle
+import com.tanaw.app.data.model.VehicleType
 import java.util.Calendar
-
-// ─── HomeScreen ───────────────────────────────────────────────────────────────
-/**
- * @param userName          Display name of the logged-in user
- * @param userCity          City shown under the name
- * @param pickupLocation    Currently selected pickup (null = not set)
- * @param destination       Currently selected destination (null = not set)
- * @param onPickupClick     Open the pickup location picker
- * @param onDestinationClick Open the destination picker
- * @param onContinue        Called with selected vehicle when Continue is tapped
- */
 
 @Composable
 fun HomeScreen(
@@ -58,26 +50,24 @@ fun HomeScreen(
         }
     }
 
-    // Add this with your other state variables
     val distanceKm: Int? = remember(pickupLocation, destination) {
         if (pickupLocation != null && destination != null)
             computeDistance(pickupLocation, destination)
         else null
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
 
         LazyColumn(
             modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(bottom = if (selectedVehicle != null) 96.dp else 24.dp)
         ) {
 
-            // ── Top bar ───────────────────────────────────────────────────
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
+                        .background(MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment     = Alignment.CenterVertically
@@ -87,59 +77,60 @@ fun HomeScreen(
                         contentDescription = "Tanaw",
                         modifier           = Modifier.height(28.dp)
                     )
-                    // Notification bell with orange badge dot
                     Box {
                         Icon(
                             imageVector        = Icons.Outlined.Notifications,
                             contentDescription = "Notifications",
-                            tint               = NavyPrimary,
+                            tint               = MaterialTheme.colorScheme.primary,
                             modifier           = Modifier.size(26.dp)
                         )
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .background(OrangeAccent, shape = RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.secondary, shape = RoundedCornerShape(50))
                                 .align(Alignment.TopEnd)
                         )
                     }
                 }
-                HorizontalDivider(color = BorderGray, thickness = 1.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 1.dp)
             }
 
-            // ── Greeting ──────────────────────────────────────────────────
             item {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
+                        .background(MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 20.dp, vertical = 20.dp)
                 ) {
                     Text(
                         text     = greeting,
-                        fontSize = 14.sp,
-                        color    = HintGray
+                        style    = MaterialTheme.typography.bodySmall,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text       = userName,
                         fontSize   = 26.sp,
                         fontWeight = FontWeight.Bold,
-                        color      = NavyPrimary
+                        color      = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector        = Icons.Outlined.LocationOn,
                             contentDescription = null,
-                            tint               = HintGray,
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier           = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text(text = userCity, fontSize = 13.sp, color = HintGray)
+                        Text(
+                            text  = userCity,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
 
-            // ── Shipping card ─────────────────────────────────────────────
             item {
                 Spacer(modifier = Modifier.height(12.dp))
                 ShippingCard(
@@ -151,20 +142,17 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // ── Available Vehicles header ─────────────────────────────────
             item {
                 Text(
                     text       = "Available Vehicles",
-                    fontSize   = 18.sp,
+                    style      = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color      = NavyPrimary,
+                    color      = MaterialTheme.colorScheme.primary,
                     modifier   = Modifier.padding(horizontal = 20.dp)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // ── Vehicle list ──────────────────────────────────────────────
-            // ── Vehicle list ──────────────────────────────────────────────
             items(MockData.vehicles) { vehicle ->
                 VehicleCard(
                     vehicle    = vehicle,
@@ -187,7 +175,6 @@ fun HomeScreen(
     }
 }
 
-// ─── Shipping Card ────────────────────────────────────────────────────────────
 @Composable
 private fun ShippingCard(
     pickupLocation     : LocationItem?,
@@ -200,26 +187,24 @@ private fun ShippingCard(
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         shape     = RoundedCornerShape(16.dp),
-        colors    = CardDefaults.cardColors(containerColor = Color.White),
+        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text       = "Where are you shipping?",
-                fontSize   = 16.sp,
+                style      = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color      = NavyPrimary
+                color      = MaterialTheme.colorScheme.primary
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Pickup row
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Navy dot
                 Box(
                     modifier = Modifier
                         .size(14.dp)
-                        .background(NavyPrimary, shape = RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(50))
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 LocationField(
@@ -230,25 +215,22 @@ private fun ShippingCard(
                 )
             }
 
-            // Dashed connector line between dots
             Row {
                 Box(modifier = Modifier.width(14.dp), contentAlignment = Alignment.Center) {
                     Box(
                         modifier = Modifier
                             .width(2.dp)
                             .height(20.dp)
-                            .background(BorderGray)
+                            .background(MaterialTheme.colorScheme.outline)
                     )
                 }
             }
 
-            // Destination row
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Orange dot
                 Box(
                     modifier = Modifier
                         .size(14.dp)
-                        .background(OrangeAccent, shape = RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.secondary, shape = RoundedCornerShape(50))
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 LocationField(
@@ -261,11 +243,10 @@ private fun ShippingCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Pick-up now pill
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Box(
                     modifier = Modifier
-                        .border(1.dp, BorderGray, RoundedCornerShape(50))
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
                         .clip(RoundedCornerShape(50))
                         .clickable { }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -274,18 +255,22 @@ private fun ShippingCard(
                         Icon(
                             painter            = painterResource(id = R.drawable.ic_timer),
                             contentDescription = null,
-                            tint               = NavyPrimary,
+                            tint               = MaterialTheme.colorScheme.primary,
                             modifier           = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text       = "Pick-up now",
-                            fontSize   = 13.sp,
+                            style      = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium,
-                            color      = NavyPrimary
+                            color      = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "∨", fontSize = 12.sp, color = NavyPrimary)
+                        Text(
+                            text  = "∨",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -293,7 +278,6 @@ private fun ShippingCard(
     }
 }
 
-// ─── Location Field ───────────────────────────────────────────────────────────
 @Composable
 private fun LocationField(
     text     : String,
@@ -304,14 +288,14 @@ private fun LocationField(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(InputGray)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 14.dp)
     ) {
         Text(
-            text     = text,
-            fontSize = 14.sp,
-            color    = if (isSet) NavyPrimary else HintGray,
+            text       = text,
+            style      = MaterialTheme.typography.bodyMedium,
+            color      = if (isSet) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (isSet) FontWeight.SemiBold else FontWeight.Normal
         )
     }
@@ -320,11 +304,11 @@ private fun LocationField(
 @Composable
 private fun VehicleCard(
     vehicle    : Vehicle,
-    distanceKm : Int?,       // ← add this
+    distanceKm : Int?,
     isSelected : Boolean,
     onClick    : () -> Unit
 ) {
-    val borderColor = if (isSelected) NavyPrimary else BorderGray
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     val borderWidth = if (isSelected) 2.dp else 1.dp
 
     Box(
@@ -340,7 +324,7 @@ private fun VehicleCard(
                 .clickable { onClick() },
             shape     = RoundedCornerShape(12.dp),
             colors    = CardDefaults.cardColors(
-                containerColor = if (isSelected) NavyPrimary.copy(alpha = 0.04f) else Color.White
+                containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
@@ -348,11 +332,10 @@ private fun VehicleCard(
                 modifier            = Modifier.padding(14.dp),
                 verticalAlignment   = Alignment.CenterVertically
             ) {
-                // Vehicle icon
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .background(InputGray, RoundedCornerShape(10.dp)),
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
@@ -364,31 +347,29 @@ private fun VehicleCard(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Name + type badge + weight
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text       = vehicle.name,
-                        fontSize   = 15.sp,
+                        style      = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color      = NavyPrimary
+                        color      = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TypeBadge(vehicle.type)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text     = "Up to ${"%,d".format(vehicle.maxWeightKg)} kg",
-                            fontSize = 12.sp,
-                            color    = HintGray
+                            text  = "Up to ${"%,d".format(vehicle.maxWeightKg)} kg",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Spacer(modifier = Modifier.height(6.dp))
-                    // Replace the rate/distance text
                     if (distanceKm != null) {
                         Text(
                             text      = "₱${vehicle.ratePerKm}/km × ${distanceKm}km",
-                            fontSize  = 11.sp,
-                            color     = HintGray,
+                            style     = MaterialTheme.typography.bodySmall,
+                            color     = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.End,
                             modifier  = Modifier.fillMaxWidth()
                         )
@@ -397,39 +378,37 @@ private fun VehicleCard(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Replace the price text
                 if (distanceKm != null) {
                     Text(
                         text       = "₱${"%,d".format(vehicle.computePrice(distanceKm))}",
                         fontSize   = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color      = if (isSelected) NavyPrimary else TextDark
+                        color      = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                 } else {
                     Text(
                         text       = "—",
                         fontSize   = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color      = HintGray
+                        color      = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
 
-        // "SELECTED" badge clipped to top-right corner
         if (isSelected) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .clip(RoundedCornerShape(topEnd = 12.dp, bottomStart = 8.dp))
-                    .background(NavyPrimary)
+                    .background(MaterialTheme.colorScheme.primary)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text       = "SELECTED",
-                    fontSize   = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = Color.White,
+                    text          = "SELECTED",
+                    style         = MaterialTheme.typography.labelSmall,
+                    fontWeight    = FontWeight.Bold,
+                    color         = MaterialTheme.colorScheme.onPrimary,
                     letterSpacing = 0.5.sp
                 )
             }
@@ -437,17 +416,16 @@ private fun VehicleCard(
     }
 }
 
-// ─── Type Badge ───────────────────────────────────────────────────────────────
 @Composable
 private fun TypeBadge(type: VehicleType) {
     val bgColor = when (type) {
         VehicleType.OPEN         -> Color(0xFFE8F5E9)
-        VehicleType.ENCLOSED     -> Color(0xFFE3EAF5)
+        VehicleType.ENCLOSED     -> MaterialTheme.colorScheme.secondaryContainer
         VehicleType.REFRIGERATED -> Color(0xFFE3F0FB)
     }
     val textColor = when (type) {
         VehicleType.OPEN         -> Color(0xFF2E7D32)
-        VehicleType.ENCLOSED     -> NavyPrimary
+        VehicleType.ENCLOSED     -> MaterialTheme.colorScheme.primary
         VehicleType.REFRIGERATED -> Color(0xFF0277BD)
     }
     Box(
@@ -458,7 +436,7 @@ private fun TypeBadge(type: VehicleType) {
     ) {
         Text(
             text          = type.label,
-            fontSize      = 10.sp,
+            style         = MaterialTheme.typography.labelSmall,
             fontWeight    = FontWeight.Bold,
             color         = textColor,
             letterSpacing = 0.3.sp
@@ -466,18 +444,17 @@ private fun TypeBadge(type: VehicleType) {
     }
 }
 
-// ─── Bottom Selection Bar ─────────────────────────────────────────────────────
 @Composable
 private fun BottomSelectionBar(
     vehicle    : Vehicle,
-    distanceKm : Int,      // ← add this
+    distanceKm : Int,
     onContinue : () -> Unit,
     modifier   : Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -485,36 +462,39 @@ private fun BottomSelectionBar(
         Column {
             Text(
                 text          = "SELECTED",
-                fontSize      = 10.sp,
+                style         = MaterialTheme.typography.labelSmall,
                 fontWeight    = FontWeight.Bold,
-                color         = HintGray,
+                color         = MaterialTheme.colorScheme.onSurfaceVariant,
                 letterSpacing = 0.5.sp
             )
             Text(
                 text       = vehicle.name,
-                fontSize   = 15.sp,
+                style      = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color      = NavyPrimary
+                color      = MaterialTheme.colorScheme.primary
             )
             Text(
                 text       = "₱${"%,d".format(vehicle.computePrice(distanceKm))}",
                 fontSize   = 16.sp,
                 fontWeight = FontWeight.Bold,
-                color      = NavyPrimary
+                color      = MaterialTheme.colorScheme.primary
             )
         }
 
         Button(
             onClick  = onContinue,
             shape    = RoundedCornerShape(12.dp),
-            colors   = ButtonDefaults.buttonColors(containerColor = NavyPrimary),
+            colors   = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor   = MaterialTheme.colorScheme.onPrimary
+            ),
             modifier = Modifier.height(52.dp)
         ) {
             Text(
                 text       = "Continue →",
-                fontSize   = 15.sp,
+                style      = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color      = Color.White
+                color      = MaterialTheme.colorScheme.onPrimary
             )
         }
     }

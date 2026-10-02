@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.data.model
 
 import com.tanaw.app.R
 
@@ -11,7 +11,6 @@ data class Vehicle(
     val maxWeightKg : Int,
     val ratePerKm   : Int,
     val iconRes     : Int
-    // pricePhp and distanceKm are now computed dynamically
 ) {
     fun computePrice(distanceKm: Int): Int = ratePerKm * distanceKm
 }
@@ -26,10 +25,10 @@ data class LocationItem(
     val id       : String,
     val name     : String,
     val subName  : String,
-    val isRecent : Boolean  = false
+    val isRecent : Boolean = false
 )
 
-// ─── Predefined mock data (replaces DB until backend is ready) ────────────────
+// ─── Predefined mock data ───────────────────────────────────────────────────────
 
 object MockData {
 
@@ -74,5 +73,3 @@ object MockData {
         }
     }
 }
-
-

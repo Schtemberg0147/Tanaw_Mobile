@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.tracking
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.ui.components.TimelineStepWithLine
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +43,6 @@ fun TrackDetailScreen(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            // Map placeholder with overlay ETA badge
             Box(modifier = Modifier.fillMaxWidth()) {
                 Image(
                     painter = painterResource(id = R.drawable.map_mock),
@@ -53,7 +53,6 @@ fun TrackDetailScreen(
                     contentScale = ContentScale.Crop
                 )
 
-                // ETA badge
                 Box(
                     modifier = Modifier
                         .padding(16.dp)
@@ -78,7 +77,6 @@ fun TrackDetailScreen(
                 }
             }
 
-            // Booking details card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -120,7 +118,6 @@ fun TrackDetailScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Timeline area
             Column(modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
@@ -128,7 +125,6 @@ fun TrackDetailScreen(
                 Text("Status", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Timeline steps
                 TimelineStepWithLine(label = "Driver assigned", completed = true)
                 TimelineStepWithLine(label = "Route to pick-up", completed = true)
                 TimelineStepWithLine(label = "Waiting for customer", completed = false, showTimer = true)

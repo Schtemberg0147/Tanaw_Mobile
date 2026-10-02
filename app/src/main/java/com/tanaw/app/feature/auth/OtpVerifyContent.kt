@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,40 +24,23 @@ import androidx.compose.ui.unit.sp
 import com.tanaw.app.ui.theme.*
 import kotlinx.coroutines.delay
 
-/**
- * OtpVerifyContent
- *
- * Shared stateful OTP UI used by both VerifyEmailScreen and VerifyPhoneScreen.
- * Each screen owns its own top bar and icon — this composable handles everything
- * from the OTP boxes downward.
- *
- * @param target        The email or phone number the code was sent to
- * @param targetColor   Color for the target text (NavyPrimary for email, OrangeAccent for phone)
- * @param subLabel      "We've sent a 6-digit code to"
- * @param heading       "Verify your email" / "Verify your number"
- * @param isLoading     Shows spinner on the button while API call is in-flight
- * @param errorMessage  Inline error shown below the OTP boxes
- * @param onVerify      Called with the completed 6-digit OTP string
- * @param onResend      Called when Resend is tapped after countdown expires
- * @param topContent    Slot for each screen's own top bar + icon badge
- */
 @Composable
 fun OtpVerifyContent(
-    target       : String,
-    targetColor  : Color   = NavyPrimary,
-    subLabel     : String  = "We've sent a 6-digit code to",
-    heading      : String,
-    isLoading    : Boolean = false,
-    errorMessage : String? = null,
-    onVerify     : (otp: String) -> Unit,
-    onResend     : () -> Unit,
-    topContent   : @Composable ColumnScope.() -> Unit
+    target               : String,
+    targetColor          : Color   = NavyPrimary,
+    subLabel             : String  = "We've sent a 6-digit code to",
+    heading              : String,
+    isLoading            : Boolean = false,
+    errorMessage         : String? = null,
+    resendSuccessMessage : String? = null,
+    onVerify             : (otp: String) -> Unit,
+    onResend             : () -> Unit,
+    topContent           : @Composable ColumnScope.() -> Unit
 ) {
     val otpLength = 6
     var otpValues by remember { mutableStateOf(List(otpLength) { "" }) }
     val focusRequesters = remember { List(otpLength) { FocusRequester() } }
 
-    // ── Countdown ─────────────────────────────────────────────────────────
     var secondsLeft by remember { mutableIntStateOf(45) }
     var canResend   by remember { mutableStateOf(false) }
 
@@ -83,12 +66,10 @@ fun OtpVerifyContent(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ── Each screen injects its own top bar + icon here ───────────────
         topContent()
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // ── Heading ───────────────────────────────────────────────────────
         Text(
             text       = heading,
             fontSize   = 24.sp,
@@ -98,7 +79,6 @@ fun OtpVerifyContent(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // ── Sub-label + target ────────────────────────────────────────────
         Text(
             text      = subLabel,
             fontSize  = 13.sp,
@@ -115,7 +95,6 @@ fun OtpVerifyContent(
 
         Spacer(modifier = Modifier.height(36.dp))
 
-        // ── OTP boxes ─────────────────────────────────────────────────────
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier              = Modifier.padding(horizontal = 24.dp)
@@ -172,7 +151,6 @@ fun OtpVerifyContent(
             }
         }
 
-        // ── Error message ─────────────────────────────────────────────────
         if (errorMessage != null) {
             Spacer(modifier = Modifier.height(10.dp))
             Text(
@@ -183,9 +161,18 @@ fun OtpVerifyContent(
             )
         }
 
+        if (resendSuccessMessage != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text      = resendSuccessMessage,
+                color     = Color(0xFF43A047),
+                fontSize  = 12.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+
         Spacer(modifier = Modifier.height(28.dp))
 
-        // ── Resend row ────────────────────────────────────────────────────
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment     = Alignment.CenterVertically
@@ -211,7 +198,6 @@ fun OtpVerifyContent(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // ── Countdown ─────────────────────────────────────────────────────
         if (!canResend) {
             Text(
                 text       = formatTime(secondsLeft),
@@ -223,7 +209,6 @@ fun OtpVerifyContent(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // ── Verify & Continue button ──────────────────────────────────────
         Button(
             onClick  = { onVerify(fullOtp) },
             modifier = Modifier

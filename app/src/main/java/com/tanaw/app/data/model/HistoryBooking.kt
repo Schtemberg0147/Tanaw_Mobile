@@ -1,4 +1,6 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.data.model
+
+import com.tanaw.app.ui.components.BookingStatus
 
 data class HistoryBooking(
     val id: String,

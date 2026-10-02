@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.auth
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -31,11 +31,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
-import com.tanaw.app.feature.auth.TanawInputLabel
-import com.tanaw.app.feature.auth.TanawTextField
+import com.tanaw.app.ui.components.*
 import com.tanaw.app.ui.theme.*
 
-// ─── Password Strength ────────────────────────────────────────────────────────
 enum class PasswordStrength(val label: String, val color: Color) {
     EMPTY("", Color.Transparent),
     WEAK("WEAK", Color(0xFFE53935)),
@@ -57,16 +55,6 @@ fun evaluatePasswordStrength(password: String): PasswordStrength {
     }
 }
 
-// ─── Create Account Screen ────────────────────────────────────────────────────
-/**
- * CreateAccountScreen
- *
- * @param onVerifyAndContinue   Called with form data when user taps Verify & Continue
- * @param onSignIn              Navigate back to LoginScreen
- * @param onTermsClick          Open Terms of Service
- * @param isLoading             Show loading indicator on the button
- * @param errorMessage          Non-null shows an inline error
- */
 @Composable
 fun CreateAccountScreen(
     onVerifyAndContinue: (
@@ -93,7 +81,6 @@ fun CreateAccountScreen(
 
     val passwordStrength = evaluatePasswordStrength(password)
 
-    // Inline validation
     val passwordMismatch = confirmPassword.isNotEmpty() && password != confirmPassword
     val canSubmit = firstName.isNotBlank()
             && lastName.isNotBlank()
@@ -115,7 +102,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // ── Logo ─────────────────────────────────────────────────────────────
         Image(
             painter = painterResource(id = R.drawable.ic_tanaw_logo),
             contentDescription = "TANAW logo",
@@ -124,7 +110,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Title ─────────────────────────────────────────────────────────────
         Text(
             text = "Create Account",
             fontSize = 26.sp,
@@ -134,7 +119,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // ── First Name + Last Name (side by side) ────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -163,7 +147,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Contact Number ───────────────────────────────────────────────────
         TanawInputLabel(text = "CONTACT NUMBER")
         Spacer(modifier = Modifier.height(6.dp))
         TanawTextField(
@@ -183,7 +166,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Email Address ────────────────────────────────────────────────────
         TanawInputLabel(text = "EMAIL ADDRESS")
         Spacer(modifier = Modifier.height(6.dp))
         TanawTextField(
@@ -203,7 +185,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Password ─────────────────────────────────────────────────────────
         TanawInputLabel(text = "PASSWORD")
         Spacer(modifier = Modifier.height(6.dp))
         TanawTextField(
@@ -238,7 +219,6 @@ fun CreateAccountScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         )
 
-        // ── Password strength indicator ──────────────────────────────────────
         if (passwordStrength != PasswordStrength.EMPTY) {
             Row(
                 modifier = Modifier
@@ -258,7 +238,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Confirm Password ─────────────────────────────────────────────────
         TanawInputLabel(text = "CONFIRM PASSWORD")
         Spacer(modifier = Modifier.height(6.dp))
         TanawTextField(
@@ -293,7 +272,6 @@ fun CreateAccountScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         )
 
-        // ── Password mismatch error ──────────────────────────────────────────
         if (passwordMismatch) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
@@ -304,7 +282,6 @@ fun CreateAccountScreen(
             )
         }
 
-        // ── API error ────────────────────────────────────────────────────────
         if (errorMessage != null) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
@@ -317,7 +294,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ── Terms checkbox ───────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Top
@@ -352,7 +328,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ── Verify & Continue button ─────────────────────────────────────────
         Button(
             onClick = {
                 onVerifyAndContinue(
@@ -387,7 +362,6 @@ fun CreateAccountScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ── Already have account footer ──────────────────────────────────────
         val footerText = buildAnnotatedString {
             withStyle(SpanStyle(color = HintGray, fontSize = 13.sp)) {
                 append("Already have an account? ")

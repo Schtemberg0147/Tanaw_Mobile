@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.history
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -31,7 +31,6 @@ fun PODScreen(
             .fillMaxSize()
             .padding(16.dp)
         ) {
-            // Static POD placeholder image
             Image(
                 painter = painterResource(id = R.drawable.map_mock),
                 contentDescription = "POD image",

@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.history
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -13,7 +13,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
-import com.tanaw.app.ui.screens.MockData.computeDistance
+import com.tanaw.app.data.model.HistoryBooking
+import com.tanaw.app.data.model.MockData
+import com.tanaw.app.data.model.MockData.computeDistance
+import com.tanaw.app.ui.components.BookingStatus
+import com.tanaw.app.ui.components.TimelineStepWithLine
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -21,9 +25,8 @@ fun HistoryDetailScreen(
     bookingId: String,
     onBack: () -> Unit
 ) {
-    // Find booking in MockData-built lists (same logic as HistoryScreen)
     val all = buildList {
-        addAll(buildCompletedSample())   // helper below
+        addAll(buildCompletedSample())
         addAll(buildCancelledSample())
     }
     val booking = all.firstOrNull { it.id == bookingId } ?: all.first()
@@ -94,15 +97,12 @@ fun HistoryDetailScreen(
             Text("Timeline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
-
-// compute index of current booking status in timeline
             val statusIndex = when (booking.status) {
                 BookingStatus.DELIVERED -> timeline.lastIndex
                 BookingStatus.CANCELLED -> -1
-                else -> timeline.indexOf(booking.status) // returns -1 if not found
+                else -> timeline.indexOf(booking.status)
             }
 
-// render timeline steps
             timeline.forEachIndexed { index, step ->
                 val completed = statusIndex >= 0 && index <= statusIndex
                 val showTimer = step == BookingStatus.WAITING_FOR_CUSTOMER && !completed
@@ -113,22 +113,19 @@ fun HistoryDetailScreen(
                 )
             }
 
-
-
             Spacer(modifier = Modifier.height(20.dp))
 
-            OutlinedButton(onClick = { /* open POD viewer */ }, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { }, modifier = Modifier.fillMaxWidth()) {
                 Text("View Proof of Delivery")
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { /* re-book flow */ }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { }, modifier = Modifier.fillMaxWidth()) {
                 Text("Re-book")
             }
         }
     }
 }
 
-// Helpers to reuse the same sample-building logic as HistoryScreen
 private fun buildCompletedSample(): List<HistoryBooking> {
     val pickup = MockData.pickupLocations.first()
     val destGapan = MockData.recentDestinations.firstOrNull { it.name.contains("Gapan", ignoreCase = true) }

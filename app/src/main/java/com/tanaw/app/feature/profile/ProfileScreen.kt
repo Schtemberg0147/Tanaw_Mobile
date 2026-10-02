@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.feature.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,11 +11,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -38,10 +37,9 @@ fun ProfileScreen(
     onEditField: (fieldKey: String, currentValue: String) -> Unit = { _, _ -> },
     onMenuClick: (menuId: String) -> Unit = {},
     onLogout: () -> Unit = {},
-    selectedTab: Int = 3, // 0=Book,1=Track,2=History,3=Profile
+    selectedTab: Int = 3,
     onBottomNavSelected: (index: Int) -> Unit = {}
 ) {
-    // sample state — replace with real user data from ViewModel
     var fullName by rememberSaveable { mutableStateOf("Maria Santos") }
     var email by rememberSaveable { mutableStateOf("maria.santos@gmail.com") }
     var contact by rememberSaveable { mutableStateOf("0918 234 5678") }
@@ -69,13 +67,14 @@ fun ProfileScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Header card with avatar and basic info
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -83,7 +82,6 @@ fun ProfileScreen(
                         .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Avatar with camera overlay
                     Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.BottomEnd) {
                         Box(
                             modifier = Modifier
@@ -146,42 +144,68 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Personal information section
             Text(
-                "Personal Information",
+                text = "Personal Information",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            ProfileField(label = "Full Name", value = fullName, onEdit = { onEditField("fullName", fullName) })
-            ProfileField(label = "Email", value = email, onEdit = { onEditField("email", email) })
-            ProfileField(label = "Contact", value = contact, onEdit = { onEditField("contact", contact) })
-            ProfileField(label = "Default Address", value = defaultAddress, onEdit = { onEditField("address", defaultAddress) })
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    ProfileField(label = "Full Name", value = fullName, onEdit = { onEditField("fullName", fullName) })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ProfileField(label = "Email", value = email, onEdit = { onEditField("email", email) })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ProfileField(label = "Contact", value = contact, onEdit = { onEditField("contact", contact) })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ProfileField(label = "Default Address", value = defaultAddress, onEdit = { onEditField("address", defaultAddress) })
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Menu options
-            MenuItemRow(text = "My Bookings", onClick = { onMenuClick("my_bookings") })
-            MenuItemRow(text = "Saved Addresses", onClick = { onMenuClick("saved_addresses") })
-            MenuItemRow(text = "Change Password", onClick = { onMenuClick("change_password") })
-            MenuItemRow(text = "Terms of Service", onClick = { onMenuClick("tos") })
-            MenuItemRow(text = "Help & Support", onClick = { onMenuClick("help_support") })
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    MenuItemRow(text = "My Bookings", onClick = { onMenuClick("my_bookings") })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MenuItemRow(text = "Saved Addresses", onClick = { onMenuClick("saved_addresses") })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MenuItemRow(text = "Change Password", onClick = { onMenuClick("change_password") })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MenuItemRow(text = "Terms of Service", onClick = { onMenuClick("tos") })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MenuItemRow(text = "Help & Support", onClick = { onMenuClick("help_support") })
+                }
+            }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Logout button
             Button(
                 onClick = onLogout,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    "Log Out",
+                    text = "Log Out",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onError,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -198,7 +222,7 @@ private fun ProfileField(label: String, value: String, onEdit: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onEdit)
-            .padding(vertical = 8.dp)
+            .padding(vertical = 10.dp)
     ) {
         Text(
             text = label,
@@ -209,7 +233,8 @@ private fun ProfileField(label: String, value: String, onEdit: () -> Unit) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium
         )
     }
 }
@@ -220,72 +245,21 @@ private fun MenuItemRow(text: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = text,
             modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.onBackground
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium
         )
         Icon(
             painter = painterResource(id = R.drawable.ic_chevron_right),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun BottomNavigationBar(selectedIndex: Int, onSelect: (Int) -> Unit) {
-    NavigationBar {
-        NavigationBarItem(
-            selected = selectedIndex == 0,
-            onClick = { onSelect(0) },
-            icon = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_nav_book),
-                    contentDescription = "Book",
-                    tint = if (selectedIndex == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            label = { Text("BOOK") }
-        )
-        NavigationBarItem(
-            selected = selectedIndex == 1,
-            onClick = { onSelect(1) },
-            icon = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_nav_track),
-                    contentDescription = "Track",
-                    tint = if (selectedIndex == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            label = { Text("TRACK") }
-        )
-        NavigationBarItem(
-            selected = selectedIndex == 2,
-            onClick = { onSelect(2) },
-            icon = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_nav_history),
-                    contentDescription = "History",
-                    tint = if (selectedIndex == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            label = { Text("HISTORY") }
-        )
-        NavigationBarItem(
-            selected = selectedIndex == 3,
-            onClick = { onSelect(3) },
-            icon = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_nav_profile),
-                    contentDescription = "Profile",
-                    tint = if (selectedIndex == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            label = { Text("PROFILE") }
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
         )
     }
 }
