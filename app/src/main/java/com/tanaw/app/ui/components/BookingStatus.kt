@@ -1,4 +1,4 @@
-package com.tanaw.app.ui.screens
+package com.tanaw.app.ui.components
 
 enum class BookingStatus {
     DRIVER_ASSIGNED,
@@ -10,4 +10,3 @@ enum class BookingStatus {
     DELIVERED,
     CANCELLED
 }
-
