@@ -32,14 +32,74 @@ import java.util.Calendar
 
 @Composable
 fun HomeScreen(
-    userName            : String = "Maria Santos",
-    userCity            : String = "Cabanatuan City",
-    pickupLocation      : LocationItem? = null,
-    destination         : LocationItem? = null,
-    onPickupClick       : () -> Unit,
-    onDestinationClick  : () -> Unit,
-    onContinue          : (Vehicle, Int) -> Unit
+    uiState            : HomeUiState = HomeUiState(isLoading = false),
+    onRetry            : () -> Unit = {},
+    pickupLocation     : LocationItem? = null,
+    destination        : LocationItem? = null,
+    onPickupClick      : () -> Unit = {},
+    onDestinationClick : () -> Unit = {},
+    onContinue         : (Vehicle, Int) -> Unit = { _, _ -> }
 ) {
+    if (uiState.isLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Preparing database connection...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
+
+    if (uiState.errorMessage != null && uiState.userProfile == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Database Connection Error",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = uiState.errorMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onRetry) {
+                    Text("Retry Connection")
+                }
+            }
+        }
+        return
+    }
+
+    val userName = uiState.userProfile?.fullName?.takeIf { it.isNotBlank() } ?: "User"
+    val userCity = uiState.userProfile?.city?.takeIf { it.isNotBlank() } ?: "Cabanatuan City"
+
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
 
     val greeting = remember {

@@ -54,6 +54,11 @@ class MockAuthRepositoryImpl @Inject constructor() : AuthRepository {
         return AuthResult.Success(userId = "mock-user-id", role = UserRole.CUSTOMER)
     }
 
+    override suspend fun changePassword(newPassword: String): AuthResult {
+        delay(1_000L)
+        return AuthResult.Success(userId = "mock-user-id", role = UserRole.CUSTOMER)
+    }
+
     override suspend fun logout() {
         // no-op for the mock
     }

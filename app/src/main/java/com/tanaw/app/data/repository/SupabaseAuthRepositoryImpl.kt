@@ -124,6 +124,9 @@ class SupabaseAuthRepositoryImpl @Inject constructor(
             AuthResult.Success(userId, role)
         } catch (e: Exception) {
             val friendlyMessage = when {
+                (e.message?.contains("phone_provider_disabled", ignoreCase = true) == true) ||
+                (e.message?.contains("Phone logins are disabled", ignoreCase = true) == true) ->
+                    "Phone SMS Provider is disabled in your Supabase Dashboard (Authentication -> Providers -> Phone). Please enable Phone Auth in Supabase Dashboard or use Email Verification."
                 (e.message?.contains("expired", ignoreCase = true) == true) ->
                     "The verification code has expired. Please request a new SMS code."
                 (e.message?.contains("invalid", ignoreCase = true) == true) ->
@@ -164,6 +167,9 @@ class SupabaseAuthRepositoryImpl @Inject constructor(
             AuthResult.Success("")
         } catch (e: Exception) {
             val friendlyMessage = when {
+                (e.message?.contains("phone_provider_disabled", ignoreCase = true) == true) ||
+                (e.message?.contains("Phone logins are disabled", ignoreCase = true) == true) ->
+                    "Phone SMS Provider is disabled in your Supabase Dashboard (Authentication -> Providers -> Phone). Please enable Phone Auth in Supabase Dashboard or use Email Verification."
                 (e.message?.contains("rate", ignoreCase = true) == true) ||
                 (e.message?.contains("limit", ignoreCase = true) == true) ->
                     "Too many code requests. Please wait a few minutes before trying again."
@@ -171,6 +177,19 @@ class SupabaseAuthRepositoryImpl @Inject constructor(
                     e.message ?: "Unable to resend SMS code. Please try again later."
             }
             AuthResult.Error(friendlyMessage)
+        }
+    }
+
+    override suspend fun changePassword(newPassword: String): AuthResult {
+        return try {
+            supabase.auth.updateUser {
+                this.password = newPassword.trim()
+            }
+            AuthResult.Success("")
+        } catch (e: Exception) {
+            AuthResult.Error(
+                e.message ?: "Unable to update password. Please check your connection and try again."
+            )
         }
     }
 

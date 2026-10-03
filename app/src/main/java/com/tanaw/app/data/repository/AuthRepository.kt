@@ -25,6 +25,7 @@ interface AuthRepository {
     suspend fun verifyPhoneOtp(phone: String, token: String): AuthResult
     suspend fun resendEmailOtp(email: String): AuthResult
     suspend fun resendPhoneOtp(phone: String): AuthResult
+    suspend fun changePassword(newPassword: String): AuthResult
     suspend fun logout()
     fun getCurrentUserId(): String?
     suspend fun getCurrentUserRole(): UserRole

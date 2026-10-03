@@ -34,6 +34,7 @@ import com.tanaw.app.feature.booking.BookingSummaryScreen
 import com.tanaw.app.feature.booking.BookingViewModel
 import com.tanaw.app.feature.booking.DestinationScreen
 import com.tanaw.app.feature.booking.HomeScreen
+import com.tanaw.app.feature.booking.HomeViewModel
 import com.tanaw.app.feature.driver.DriverHomeScreen
 import com.tanaw.app.feature.profile.ProfileScreen
 import com.tanaw.app.feature.profile.ProfileViewModel
@@ -266,14 +267,17 @@ fun TanawNavHost(
 
         // ── Home ───────────────────────────────────────────────────────────
         composable(Routes.HOME) {
+            val homeViewModel: HomeViewModel = hiltViewModel()
+            val homeUiState by homeViewModel.uiState.collectAsState()
+
             HomeScreen(
-                userName           = "Maria Santos",
-                userCity           = "Cabanatuan City",
+                uiState            = homeUiState,
+                onRetry            = { homeViewModel.loadUserProfile() },
                 pickupLocation     = selectedPickup,
                 destination        = selectedDestination,
                 onPickupClick      = { navController.navigate(Routes.PICKUP_LOCATION) },
                 onDestinationClick = { navController.navigate(Routes.DESTINATION) },
-                onContinue = { vehicle, distance ->
+                onContinue         = { vehicle, distance ->
                     bookingVM.selectedVehicle  = vehicle
                     bookingVM.distanceKm       = distance
                     bookingVM.pickupName       = selectedPickup?.name ?: ""
@@ -339,17 +343,35 @@ fun TanawNavHost(
 
         composable(Routes.PROFILE) {
             val profileViewModel: ProfileViewModel = hiltViewModel()
+            val profileUiState by profileViewModel.uiState.collectAsState()
+
             ProfileScreen(
-                onLogout = {
+                uiState             = profileUiState,
+                onRetry             = { profileViewModel.loadProfile() },
+                onSendPhoneOtp      = { onResult ->
+                    profileViewModel.sendPhoneVerificationOtp(onResult)
+                },
+                onSendEmailOtp      = { email, onResult ->
+                    profileViewModel.sendEmailVerificationOtp(email, onResult)
+                },
+                onVerifyOtp         = { method, destination, token, onResult ->
+                    profileViewModel.verifyOtp(method, destination, token, onResult)
+                },
+                onChangePassword    = { newPassword, onResult ->
+                    profileViewModel.changePassword(newPassword, onResult)
+                },
+                onClearMessages     = { profileViewModel.clearMessages() },
+                onLogout            = {
                     profileViewModel.logout {
                         navController.navigate(Routes.LOGIN) {
                             popUpTo(0) { inclusive = true }
                         }
                     }
                 },
-                onMenuClick = { menuId ->
+                onEditField         = { fieldKey, newValue ->
+                    profileViewModel.updateProfileField(fieldKey, newValue)
                 },
-                onEditField = { fieldKey, currentValue ->
+                onMenuClick         = { menuId ->
                 }
             )
         }
