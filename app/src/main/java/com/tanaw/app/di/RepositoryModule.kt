@@ -1,7 +1,9 @@
 package com.tanaw.app.di
 
 import com.tanaw.app.data.repository.AuthRepository
+import com.tanaw.app.data.repository.LocationRepository
 import com.tanaw.app.data.repository.SupabaseAuthRepositoryImpl
+import com.tanaw.app.data.repository.SupabaseLocationRepositoryImpl
 import com.tanaw.app.data.repository.SupabaseUserRepositoryImpl
 import com.tanaw.app.data.repository.UserRepository
 import dagger.Binds
@@ -25,4 +27,10 @@ abstract class RepositoryModule {
     abstract fun bindUserRepository(
         impl: SupabaseUserRepositoryImpl
     ): UserRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLocationRepository(
+        impl: SupabaseLocationRepositoryImpl
+    ): LocationRepository
 }

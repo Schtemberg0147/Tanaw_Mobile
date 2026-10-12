@@ -273,6 +273,7 @@ fun TanawNavHost(
             HomeScreen(
                 uiState            = homeUiState,
                 onRetry            = { homeViewModel.loadUserProfile() },
+                onCityDetected     = { city -> homeViewModel.updateDetectedCity(city) },
                 pickupLocation     = selectedPickup,
                 destination        = selectedDestination,
                 onPickupClick      = { navController.navigate(Routes.PICKUP_LOCATION) },
@@ -379,6 +380,7 @@ fun TanawNavHost(
         // ── Pickup Location Picker ─────────────────────────────────────────
         composable(Routes.PICKUP_LOCATION) {
             PickupLocationScreen(
+                vehicleTypeId = bookingVM.selectedVehicle?.id,
                 onConfirm = { location ->
                     selectedPickup = location
                     navController.popBackStack()
@@ -390,6 +392,7 @@ fun TanawNavHost(
         // ── Destination Picker ─────────────────────────────────────────────
         composable(Routes.DESTINATION) {
             DestinationScreen(
+                vehicleTypeId = bookingVM.selectedVehicle?.id,
                 origin    = selectedPickup,
                 onConfirm = { location ->
                     selectedDestination = location
