@@ -12,12 +12,13 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.tanaw.app.data.model.LocationItem
+import com.tanaw.app.data.model.MockData
 import com.tanaw.app.data.repository.UserRole
 import com.tanaw.app.feature.auth.CreateAccountScreen
 import com.tanaw.app.feature.auth.CreateAccountViewModel
@@ -35,17 +36,17 @@ import com.tanaw.app.feature.booking.BookingViewModel
 import com.tanaw.app.feature.booking.DestinationScreen
 import com.tanaw.app.feature.booking.HomeScreen
 import com.tanaw.app.feature.booking.HomeViewModel
-import com.tanaw.app.feature.driver.DriverHomeScreen
-import com.tanaw.app.feature.profile.ProfileScreen
-import com.tanaw.app.feature.profile.ProfileViewModel
 import com.tanaw.app.feature.booking.PickupLocationScreen
+import com.tanaw.app.feature.driver.DriverHomeScreen
+import com.tanaw.app.feature.driver.DriverProfileScreen
+import com.tanaw.app.feature.driver.MyTripsScreen
 import com.tanaw.app.feature.history.HistoryDetailScreen
 import com.tanaw.app.feature.history.HistoryScreen
 import com.tanaw.app.feature.history.PODScreen
 import com.tanaw.app.feature.profile.ProfileScreen
+import com.tanaw.app.feature.profile.ProfileViewModel
 import com.tanaw.app.feature.tracking.ActiveBookingsScreen
 import com.tanaw.app.feature.tracking.TrackDetailScreen
-import com.tanaw.app.ui.components.BookingStatus
 import com.tanaw.app.ui.components.TanawBottomNavBar
 import com.tanaw.app.ui.theme.TanawTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -63,13 +64,14 @@ object Routes {
     const val TRACK           = "track"
     const val HISTORY         = "history"
     const val PROFILE         = "profile"
+    const val MY_TRIPS        = "my_trips"
+    const val DRIVER_PROFILE  = "driver_profile"
     const val PICKUP_LOCATION = "pickup_location"
     const val DESTINATION     = "destination"
-    const val ADD_DETAILS       = "add_details"
-    const val BOOKING_SUMMARY   = "booking_summary"
-    const val BOOKING_SUCCESS   = "booking_success"
+    const val ADD_DETAILS     = "add_details"
+    const val BOOKING_SUMMARY = "booking_summary"
+    const val BOOKING_SUCCESS = "booking_success"
 }
-
 
 // ─── MainActivity ─────────────────────────────────────────────────────────────
 @AndroidEntryPoint
@@ -83,11 +85,11 @@ class MainActivity : ComponentActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                val bottomNavRoutes = listOf("home", "track", "history", "profile")
+                val customerBottomNavRoutes = listOf(Routes.HOME, Routes.TRACK, Routes.HISTORY, Routes.PROFILE)
 
                 Scaffold(
                     bottomBar = {
-                        if (currentRoute in bottomNavRoutes) {
+                        if (currentRoute in customerBottomNavRoutes) {
                             TanawBottomNavBar(navController = navController)
                         }
                     }
@@ -117,7 +119,6 @@ fun TanawNavHost(
 
         // ── Login ──────────────────────────────────────────────────────────
         composable(Routes.LOGIN) { backStackEntry ->
-
             val successMessage = backStackEntry
                 .savedStateHandle
                 .get<String>("success_message")
@@ -127,7 +128,12 @@ fun TanawNavHost(
 
             LaunchedEffect(uiState.isLoginSuccessful) {
                 if (uiState.isLoginSuccessful) {
-                    navController.navigate(Routes.HOME) {
+                    val targetDestination = if (uiState.userRole == UserRole.DRIVER) {
+                        Routes.DRIVER_HOME
+                    } else {
+                        Routes.HOME
+                    }
+                    navController.navigate(targetDestination) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                     loginViewModel.consumeLoginSuccess()
@@ -303,18 +309,16 @@ fun TanawNavHost(
 
         composable(Routes.HISTORY) {
             HistoryScreen(
-                onViewPOD = { bookingId -> navController.navigate("pod/$bookingId") },
-                onRebook = { bookingId ->
-                },
-                onViewDetails = { bookingId, status ->
-                    when (status) {
-                        BookingStatus.DELIVERED, BookingStatus.CANCELLED -> {
-                            navController.navigate("history_detail/$bookingId")
-                        }
-                        else -> {
-                            navController.navigate("track_detail/$bookingId")
-                        }
+                onViewPOD = { shipmentId -> navController.navigate("pod/$shipmentId") },
+                onTrack = { shipmentId -> navController.navigate("track_detail/$shipmentId") },
+                onViewDetails = { shipmentId -> navController.navigate("history_detail/$shipmentId") },
+                onRebook = { booking ->
+                    if (!booking.vehicleTypeId.isNullOrBlank()) {
+                        bookingVM.selectedVehicle = MockData.vehicles.firstOrNull { it.id == booking.vehicleTypeId }
                     }
+                    bookingVM.pickupName = booking.pickupName
+                    bookingVM.destinationName = booking.destinationName
+                    navController.navigate(Routes.ADD_DETAILS)
                 }
             )
         }
@@ -329,14 +333,54 @@ fun TanawNavHost(
             HistoryDetailScreen(bookingId = bookingId, onBack = { navController.popBackStack() })
         }
 
+        // ── Driver Routes ──────────────────────────────────────────────────
         composable(Routes.DRIVER_HOME) {
-            val profileViewModel: ProfileViewModel = hiltViewModel()
             DriverHomeScreen(
-                onLogout = {
-                    profileViewModel.logout {
-                        navController.navigate(Routes.LOGIN) {
-                            popUpTo(0) { inclusive = true }
+                onNavigateToRoute = { route ->
+                    when (route) {
+                        "profile" -> navController.navigate(Routes.DRIVER_PROFILE)
+                        "navigate" -> navController.navigate(Routes.PICKUP_LOCATION)
+                        "trips" -> navController.navigate(Routes.MY_TRIPS)
+                        "login" -> navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+                        else -> {
+                            if (route.isNotBlank() && route != "home") {
+                                navController.navigate(route)
+                            }
                         }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.MY_TRIPS) {
+            MyTripsScreen(
+                onNavigateToRoute = { route ->
+                    when (route) {
+                        "home" -> navController.navigate(Routes.DRIVER_HOME) { popUpTo(Routes.DRIVER_HOME) { inclusive = false } }
+                        "navigate" -> navController.navigate(Routes.PICKUP_LOCATION)
+                        "trips" -> {}
+                        "profile" -> navController.navigate(Routes.DRIVER_PROFILE)
+                    }
+                },
+                onActiveTripClick = { shipmentId ->
+                    navController.navigate("track_detail/$shipmentId")
+                }
+            )
+        }
+
+        composable(Routes.DRIVER_PROFILE) {
+            DriverProfileScreen(
+                onNavigateToRoute = { route ->
+                    when (route) {
+                        "home" -> navController.navigate(Routes.DRIVER_HOME) { popUpTo(Routes.DRIVER_HOME) { inclusive = false } }
+                        "navigate" -> navController.navigate(Routes.PICKUP_LOCATION)
+                        "trips" -> navController.navigate(Routes.MY_TRIPS)
+                        "profile" -> {}
+                    }
+                },
+                onLogoutComplete = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
                     }
                 }
             )
@@ -372,8 +416,7 @@ fun TanawNavHost(
                 onEditField         = { fieldKey, newValue ->
                     profileViewModel.updateProfileField(fieldKey, newValue)
                 },
-                onMenuClick         = { menuId ->
-                }
+                onMenuClick         = { menuId -> }
             )
         }
 

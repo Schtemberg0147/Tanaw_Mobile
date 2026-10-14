@@ -15,34 +15,38 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ExitToApp
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
@@ -55,7 +59,6 @@ private enum class PasswordAuthStep {
     NEW_PASSWORD
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     uiState: ProfileUiState = ProfileUiState(isLoading = false),
@@ -528,311 +531,426 @@ fun ProfileScreen(
 
     val scrollState = rememberScrollState()
 
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = "My Profile",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-    ) { innerPadding ->
-        Box(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        // Top Header Bar
+        Row(
             modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .padding(bottom = 60.dp)
-            ) {
-
-                // Top Toast Success Banner inside Column
-                AnimatedVisibility(
-                    visible = uiState.updateSuccessMessage != null,
-                    enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
-                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -it })
-                ) {
-                    Surface(
-                        color = TanawTheme.extendedColors.successBannerBackground,
-                        shape = RoundedCornerShape(12.dp),
-                        shadowElevation = 2.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_check_circle),
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = uiState.updateSuccessMessage ?: "",
-                                color = TanawTheme.extendedColors.onSuccessBannerText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = onClearMessages,
-                                modifier = Modifier.size(22.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_close),
-                                    contentDescription = "Dismiss",
-                                    tint = TanawTheme.extendedColors.onSuccessBannerText,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.BottomEnd) {
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = initialsFromName(fullName),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 24.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onEditProfilePhoto,
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .padding(2.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_camera),
-                                    contentDescription = "Edit photo",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = fullName,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = email,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = memberSince,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Personal Information",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+            Image(
+                painter = painterResource(id = R.drawable.ic_tanaw_logo),
+                contentDescription = "Tanaw",
+                modifier = Modifier.height(28.dp)
+            )
+            Box {
+                Icon(
+                    imageVector = Icons.Outlined.Notifications,
+                    contentDescription = "Notifications",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(MaterialTheme.colorScheme.secondary, shape = CircleShape)
+                        .align(Alignment.TopEnd)
+                )
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(bottom = 60.dp)
+        ) {
+            // Screen Title
+            Text(
+                text = "My Profile",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            )
+
+            // Top Toast Success Banner
+            AnimatedVisibility(
+                visible = uiState.updateSuccessMessage != null,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { -it })
+            ) {
+                Surface(
+                    color = TanawTheme.extendedColors.successBannerBackground,
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        ProfileField(
-                            label = "Full Name",
-                            value = fullName,
-                            onEdit = {
-                                editingFieldKey = "fullName"
-                                editingFieldLabel = "Full Name"
-                                editingFieldValue = fullName
-                            }
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        ProfileField(
-                            label = "Email",
-                            value = email,
-                            onEdit = {
-                                editingFieldKey = "email"
-                                editingFieldLabel = "Email"
-                                editingFieldValue = email
-                            }
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        ProfileField(
-                            label = "Contact",
-                            value = contact,
-                            onEdit = {
-                                editingFieldKey = "contact"
-                                editingFieldLabel = "Contact"
-                                editingFieldValue = contact
-                            }
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        ProfileField(
-                            label = "Default Address",
-                            value = defaultAddress,
-                            onEdit = {
-                                editingFieldKey = "address"
-                                editingFieldLabel = "Default Address"
-                                editingFieldValue = defaultAddress
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        MenuItemRow(text = "My Bookings", onClick = { onMenuClick("my_bookings") })
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        MenuItemRow(text = "Saved Addresses", onClick = { onMenuClick("saved_addresses") })
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        MenuItemRow(
-                            text = "Change Password",
-                            onClick = {
-                                authStep = PasswordAuthStep.METHOD_SELECTION
-                                otpToken = ""
-                                newPassword = ""
-                                confirmPassword = ""
-                                stepError = null
-                                showChangePasswordDialog = true
-                                onMenuClick("change_password")
-                            }
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        MenuItemRow(text = "Terms of Service", onClick = { onMenuClick("tos") })
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        MenuItemRow(text = "Help & Support", onClick = { onMenuClick("help_support") })
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = onLogout,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
+                    shadowElevation = 2.dp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(8.dp)
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 16.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_check_circle),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.updateSuccessMessage ?: "",
+                            color = TanawTheme.extendedColors.onSuccessBannerText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = onClearMessages,
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_close),
+                                contentDescription = "Dismiss",
+                                tint = TanawTheme.extendedColors.onSuccessBannerText,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // User Avatar Header Section
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    contentAlignment = Alignment.BottomEnd,
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initialsFromName(fullName),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 32.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White,
+                        shadowElevation = 3.dp,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .offset(x = 6.dp, y = 6.dp)
+                            .size(32.dp)
+                            .clickable(onClick = onEditProfilePhoto)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_camera),
+                                contentDescription = "Edit photo",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = fullName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = email,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = memberSince,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    letterSpacing = 0.8.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Personal Information Section
+            Text(
+                text = "PERSONAL INFORMATION",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 0.8.sp,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column {
+                    ProfileFieldRow(
+                        label = "Full Name",
+                        value = fullName,
+                        isTinted = false,
+                        isLocked = false,
+                        onEdit = {
+                            editingFieldKey = "fullName"
+                            editingFieldLabel = "Full Name"
+                            editingFieldValue = fullName
+                        }
+                    )
+                    ProfileFieldRow(
+                        label = "Email",
+                        value = email,
+                        isTinted = true,
+                        isLocked = true,
+                        onEdit = {
+                            editingFieldKey = "email"
+                            editingFieldLabel = "Email"
+                            editingFieldValue = email
+                        }
+                    )
+                    ProfileFieldRow(
+                        label = "Contact",
+                        value = contact,
+                        isTinted = false,
+                        isLocked = false,
+                        onEdit = {
+                            editingFieldKey = "contact"
+                            editingFieldLabel = "Contact"
+                            editingFieldValue = contact
+                        }
+                    )
+                    ProfileFieldRow(
+                        label = "Default Address",
+                        value = defaultAddress,
+                        isTinted = true,
+                        isLocked = false,
+                        onEdit = {
+                            editingFieldKey = "address"
+                            editingFieldLabel = "Default Address"
+                            editingFieldValue = defaultAddress
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Menu Section Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column {
+                    MenuItemRow(
+                        iconRes = R.drawable.ic_nav_book,
+                        text = "My Bookings",
+                        onClick = { onMenuClick("my_bookings") }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    MenuItemRow(
+                        iconRes = R.drawable.ic_location_pin,
+                        text = "Saved Addresses",
+                        onClick = { onMenuClick("saved_addresses") }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    MenuItemRow(
+                        iconRes = R.drawable.ic_shield_lock,
+                        text = "Change Password",
+                        onClick = {
+                            authStep = PasswordAuthStep.METHOD_SELECTION
+                            otpToken = ""
+                            newPassword = ""
+                            confirmPassword = ""
+                            stepError = null
+                            showChangePasswordDialog = true
+                            onMenuClick("change_password")
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    MenuItemRow(
+                        iconRes = R.drawable.ic_check_circle,
+                        text = "Terms of Service",
+                        onClick = { onMenuClick("tos") }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    MenuItemRow(
+                        iconVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                        text = "Help & Support",
+                        onClick = { onMenuClick("help_support") }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Log Out Outlined Button
+            OutlinedButton(
+                onClick = onLogout,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .height(48.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Log Out",
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onError,
-                        fontWeight = FontWeight.SemiBold
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
                     )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
             }
+
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
 
 @Composable
-private fun ProfileField(label: String, value: String, onEdit: () -> Unit) {
-    Column(
+private fun ProfileFieldRow(
+    label: String,
+    value: String,
+    isTinted: Boolean,
+    isLocked: Boolean,
+    onEdit: () -> Unit
+) {
+    val backgroundColor = if (isTinted) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(backgroundColor)
             .clickable(onClick = onEdit)
-            .padding(vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        if (isLocked) {
+            Icon(
+                imageVector = Icons.Outlined.Lock,
+                contentDescription = "Locked",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(18.dp)
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = "Edit $label",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
 @Composable
-private fun MenuItemRow(text: String, onClick: () -> Unit) {
+private fun MenuItemRow(
+    iconRes: Int? = null,
+    iconVector: ImageVector? = null,
+    text: String,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (iconRes != null) {
+            Icon(
+                painter = painterResource(id = iconRes),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp)
+            )
+        } else if (iconVector != null) {
+            Icon(
+                imageVector = iconVector,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(14.dp))
         Text(
             text = text,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Bold
         )
         Icon(
             painter = painterResource(id = R.drawable.ic_chevron_right),
@@ -854,7 +972,7 @@ private fun initialsFromName(name: String): String {
 }
 
 private fun formatMemberSince(createdAt: String?): String {
-    if (createdAt.isNullOrBlank()) return "MEMBER SINCE 2025"
+    if (createdAt.isNullOrBlank()) return "MEMBER SINCE JANUARY 2025"
     return try {
         val year = createdAt.take(4)
         val monthNum = createdAt.drop(5).take(2).toIntOrNull() ?: 1
@@ -865,6 +983,6 @@ private fun formatMemberSince(createdAt: String?): String {
         val monthName = months.getOrElse(monthNum - 1) { "JANUARY" }
         "MEMBER SINCE $monthName $year"
     } catch (_: Exception) {
-        "MEMBER SINCE 2025"
+        "MEMBER SINCE JANUARY 2025"
     }
 }

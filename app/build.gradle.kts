@@ -29,6 +29,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -40,6 +41,8 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     // Hilt & KSP Metadata
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
@@ -54,6 +57,7 @@ dependencies {
     implementation(platform(libs.bom))
     implementation(libs.auth.kt)
     implementation(libs.postgrest.kt)
+    implementation(libs.realtime.kt)
     implementation(libs.ktor.client.android)
 
     // Lifecycle / ViewModel
@@ -76,6 +80,8 @@ dependencies {
 
     // Unit tests
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -13,4 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+progress.md
 project.md

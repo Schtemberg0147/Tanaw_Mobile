@@ -105,7 +105,7 @@ class LocationPickerViewModel @Inject constructor(
                 lat, lng,
                 dist
             )
-            if (dist[0] < 30f) return
+            if (dist[0] < 1f) return
         }
 
         viewModelScope.launch(Dispatchers.IO) {

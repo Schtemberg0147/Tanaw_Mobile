@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,24 +15,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.GpsFixed
 import androidx.compose.material.icons.outlined.LocationOn
@@ -45,6 +44,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -58,12 +58,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -196,156 +200,129 @@ private fun LocationPickerScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
-
-        // Real MapLibre Map Background
-        LocationsMap(
-            styleUrl = mapStyleUrl,
-            initialTarget = initialTarget,
-            locations = state.locations,
-            myLocation = state.myLocation,
-            selected = state.selected,
-            origin = origin,
-            onMarkerTap = { id ->
-                vm.selectById(id)
-                state.locations.firstOrNull { it.id == id }?.let { loc ->
-                    mapInstance?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), 14.0))
-                }
+    if (isSearching) {
+        SearchLocationScreen(
+            state = state,
+            onQueryChange = vm::onQuery,
+            onSelectLocation = { loc ->
+                vm.select(loc)
+                isSearching = false
+                mapInstance?.animateCamera(
+                    CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), 14.0)
+                )
             },
-            onCameraIdle = { lat, lng ->
-                vm.onCameraIdle(context, lat, lng)
-            },
-            onMapReady = { mapInstance = it },
-            modifier = Modifier.fillMaxSize(),
+            onBack = { isSearching = false },
+            modifier = modifier
         )
+    } else {
+        Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
 
-        // Top Floating Address Card (matching screenshot)
-        Card(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .clickable { isSearching = !isSearching },
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+            // Real MapLibre Map Background
+            LocationsMap(
+                styleUrl = mapStyleUrl,
+                initialTarget = initialTarget,
+                locations = state.locations,
+                myLocation = state.myLocation,
+                selected = state.selected,
+                origin = origin,
+                onMarkerTap = { id ->
+                    vm.selectById(id)
+                    state.locations.firstOrNull { it.id == id }?.let { loc ->
+                        mapInstance?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), 14.0))
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                },
+                onCameraIdle = { lat, lng ->
+                    vm.onCameraIdle(context, lat, lng)
+                },
+                onMapReady = { mapInstance = it },
+                modifier = Modifier.fillMaxSize(),
+            )
 
-                    // Orange Target Ring Icon
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .background(Color(0xFFE85D04), shape = RoundedCornerShape(50))
-                            .padding(2.dp)
-                            .background(Color.White, shape = RoundedCornerShape(50))
-                            .padding(2.dp)
-                            .background(Color(0xFFE85D04), shape = RoundedCornerShape(50))
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+            // Top Floating Address Card
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .clickable { isSearching = true },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
 
-                    if (isSearching) {
-                        BasicTextField(
-                            value = state.query,
-                            onValueChange = vm::onQuery,
-                            modifier = Modifier.weight(1f),
-                            textStyle = TextStyle(
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            singleLine = true,
-                            decorationBox = { inner ->
-                                if (state.query.isEmpty()) {
-                                    Text(
-                                        text = "Search address or landmark...",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                inner()
-                            }
+                        // Target Ring Icon
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .background(MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(50))
+                                .padding(2.dp)
+                                .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(50))
+                                .padding(2.dp)
+                                .background(MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(50))
                         )
-                    } else {
+                        Spacer(modifier = Modifier.width(10.dp))
+
                         Text(
                             text = state.selected?.name ?: "Drag map to select location",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { isSearching = true }
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = "Edit",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clickable { isSearching = true }
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    val fullAddress = state.selected?.address ?: listOfNotNull(
+                        state.selected?.sublabel,
+                        state.selected?.city,
+                        state.selected?.province
+                    ).joinToString(", ").ifBlank { "Locating address..." }
 
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = "Edit",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp).clickable { isSearching = !isSearching }
+                    Text(
+                        text = fullAddress,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        modifier = Modifier.padding(start = 46.dp, top = 2.dp, end = 28.dp)
                     )
                 }
-
-                val fullAddress = state.selected?.address ?: listOfNotNull(
-                    state.selected?.sublabel,
-                    state.selected?.city,
-                    state.selected?.province
-                ).joinToString(", ").ifBlank { "Locating address..." }
-
-                Text(
-                    text = fullAddress,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    modifier = Modifier.padding(start = 46.dp, top = 2.dp, end = 28.dp)
-                )
-
-                if (isSearching && state.searchResults.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider()
-                    LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-                        items(state.searchResults, key = { it.id }) { loc ->
-                            LocationRow(
-                                item = loc.toLocationItem(),
-                                isSelected = state.selected?.id == loc.id,
-                                onClick = {
-                                    vm.select(loc)
-                                    isSearching = false
-                                    mapInstance?.animateCamera(
-                                        CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), 14.0)
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
             }
-        }
 
-        // Center Target Ring Pointer & Orange Facility Label (Exact screenshot match)
-        Box(
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.offset(x = 10.dp, y = (-18).dp)
+            // Dead-Centered Target Cursor & Facility Label (aligned at vertical center)
+            Box(
+                modifier = Modifier.align(Alignment.Center),
+                contentAlignment = Alignment.Center
             ) {
-                OrangeTargetCursor()
-
-                Spacer(modifier = Modifier.width(8.dp))
+                TargetRingCursor(
+                    color = MaterialTheme.colorScheme.primary
+                )
 
                 val facilityName = state.selected?.name
                 if (!facilityName.isNullOrBlank()) {
@@ -354,106 +331,265 @@ private fun LocationPickerScreen(
                         style = TextStyle(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFE85D04),
+                            color = MaterialTheme.colorScheme.primary,
                             shadow = Shadow(
-                                color = Color.White.copy(alpha = 0.9f),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
                                 blurRadius = 8f
                             )
                         ),
                         maxLines = 2,
-                        modifier = Modifier.widthIn(max = 220.dp)
+                        modifier = Modifier
+                            .offset(x = 18.dp)
+                            .widthIn(max = 220.dp)
                     )
                 }
             }
-        }
 
-        // Floating "Recenter to My Location" Button
-        FloatingActionButton(
-            onClick = {
-                val myLoc = state.myLocation
-                if (myLoc != null) {
-                    mapInstance?.animateCamera(
-                        CameraUpdateFactory.newLatLngZoom(LatLng(myLoc.first, myLoc.second), 14.0)
-                    )
-                } else {
-                    fetchCurrentLocation(context) { lat, lng ->
-                        if (lat != null && lng != null) {
-                            vm.onMyLocation(context, lat, lng)
-                            mapInstance?.animateCamera(
-                                CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 14.0)
-                            )
+            // Floating "Recenter to My Location" Button
+            FloatingActionButton(
+                onClick = {
+                    val myLoc = state.myLocation
+                    if (myLoc != null) {
+                        mapInstance?.animateCamera(
+                            CameraUpdateFactory.newLatLngZoom(LatLng(myLoc.first, myLoc.second), 14.0)
+                        )
+                    } else {
+                        fetchCurrentLocation(context) { lat, lng ->
+                            if (lat != null && lng != null) {
+                                vm.onMyLocation(context, lat, lng)
+                                mapInstance?.animateCamera(
+                                    CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 14.0)
+                                )
+                            }
                         }
                     }
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 220.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary,
-            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.GpsFixed,
-                contentDescription = "Recenter to My Location"
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 220.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.GpsFixed,
+                    contentDescription = "Recenter to My Location"
+                )
+            }
+
+            // Confirm Bottom Sheet
+            val activeSelected = state.selected
+            val displayLocation = activeSelected?.toLocationItem() ?: LocationItem(
+                "current", "Current Location", state.myLocationName ?: "Luzon, PH"
+            )
+
+            ConfirmBottomSheet(
+                mode = mode,
+                location = displayLocation,
+                origin = origin,
+                onConfirm = {
+                    if (activeSelected != null) {
+                        onConfirm(activeSelected)
+                    } else {
+                        val fallback = PickerLocation(
+                            id = displayLocation.id,
+                            name = displayLocation.name,
+                            address = displayLocation.subName,
+                            latitude = state.myLocation?.first ?: 15.4828,
+                            longitude = state.myLocation?.second ?: 120.9681
+                        )
+                        onConfirm(fallback)
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
-
-        // Confirm Bottom Sheet
-        val activeSelected = state.selected
-        val displayLocation = activeSelected?.toLocationItem() ?: LocationItem(
-            "current", "Current Location", state.myLocationName ?: "Luzon, PH"
-        )
-
-        ConfirmBottomSheet(
-            mode = mode,
-            location = displayLocation,
-            origin = origin,
-            onConfirm = {
-                if (activeSelected != null) {
-                    onConfirm(activeSelected)
-                } else {
-                    val fallback = PickerLocation(
-                        id = displayLocation.id,
-                        name = displayLocation.name,
-                        address = displayLocation.subName,
-                        latitude = state.myLocation?.first ?: 15.4828,
-                        longitude = state.myLocation?.second ?: 120.9681
-                    )
-                    onConfirm(fallback)
-                }
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 }
 
 @Composable
-private fun OrangeTargetCursor(
-    color: Color = Color(0xFFE85D04)
+private fun SearchLocationScreen(
+    state: PickerUiState,
+    onQueryChange: (String) -> Unit,
+    onSelectLocation: (PickerLocation) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .background(color, shape = RoundedCornerShape(50))
-                .padding(3.dp)
-                .background(Color.White, shape = RoundedCornerShape(50))
-                .padding(3.dp)
-                .background(color, shape = RoundedCornerShape(50))
-        )
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height(5.dp)
-                .background(color)
-        )
-        Box(
-            modifier = Modifier
-                .size(3.dp)
-                .background(color, shape = RoundedCornerShape(50))
-        )
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
     }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
+    ) {
+        // Top Search Bar (matching Image 2)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 4.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Orange Target Ring Icon
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(Color(0xFFE55B2B), shape = RoundedCornerShape(50))
+                        .padding(2.5.dp)
+                        .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(50))
+                        .padding(2.5.dp)
+                        .background(Color(0xFFE55B2B), shape = RoundedCornerShape(50))
+                )
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                BasicTextField(
+                    value = state.query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester),
+                    textStyle = TextStyle(
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    singleLine = true,
+                    decorationBox = { innerTextField ->
+                        if (state.query.isEmpty()) {
+                            Text(
+                                text = "Search address or landmark...",
+                                style = TextStyle(
+                                    fontSize = 16.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+
+                if (state.query.isNotEmpty()) {
+                    IconButton(
+                        onClick = { onQueryChange("") },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cancel,
+                            contentDescription = "Clear",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Suggestions / Results List (matching Image 2)
+        val displayList = remember(state.query, state.searchResults, state.locations) {
+            if (state.query.isNotBlank()) state.searchResults else state.locations
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(displayList, key = { it.id }) { loc ->
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectLocation(loc) }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Location Target Pin Icon (circle outline with dot inside - matching Image 2)
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(50)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(MaterialTheme.colorScheme.onSurfaceVariant, shape = RoundedCornerShape(50))
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = loc.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val subText = loc.address ?: listOfNotNull(loc.sublabel, loc.city, loc.province).joinToString(", ")
+                            Text(
+                                text = subText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TargetRingCursor(
+    color: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(24.dp)
+            .background(color, shape = RoundedCornerShape(50))
+            .padding(3.dp)
+            .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(50))
+            .padding(3.dp)
+            .background(color, shape = RoundedCornerShape(50))
+    )
 }
 
 @Composable
