@@ -12,11 +12,11 @@
 
 | Status Metric | Strict Production-Ready | UI Prototype / Mocked | Pending / Not Started | Total Features |
 | :--- | :---: | :---: | :---: | :---: |
-| **Feature Count** | **18** | **16** | **5** | **39** |
-| **Percentage** | **46.2%** | **41.0%** | **12.8%** | **100%** |
+| **Feature Count** | **23** | **11** | **5** | **39** |
+| **Percentage** | **59.0%** | **28.2%** | **12.8%** | **100%** |
 
 > 🚨 **Senior Architect Verdict**:  
-> The mobile app has an **excellent UI foundation and solid Authentication pipeline (75%+ UI completeness)**. However, from a **strict production-readiness standpoint**, the app is currently at **~46%**. Crucial backend database persistence for bookings, live telemetry via WebSockets/Supabase Realtime, and background GPS services for drivers are required before the app can be deployed to real users.
+> The mobile app has an **excellent UI foundation and solid Authentication & Driver pipelines (~59% production-ready)**. With the driver-side "My Trips" and "Profile" screens now fully connected to Supabase (Postgrest + Realtime), driver stats, period filtering, on-time rate calculations, and dynamic compliance tracking are production-ready. Crucial customer booking DB persistence and driver foreground GPS tracking services remain the final major milestones before production release.
 
 ---
 
@@ -47,11 +47,21 @@
 
 ---
 
-### 🟡 4. Driver Deliveries & Status Updates — **40% Production Ready**
-- [x] **Driver Home Dashboard** (`DriverHomeScreen.kt`): UI displaying active jobs, trip details, and status action buttons.
-- [x] **Status Update Triggers**: Driver can tap buttons to update trip state (In Transit, Arrived, Delivered).
-- [!] **CRITICAL GAP – Real Job Dispatch**: Trip list currently renders hardcoded sample data rather than querying assigned driver jobs from a `trips` table.
-- [!] **CRITICAL GAP – Driver Foreground GPS Service**: Driver location sharing relies on active screen display. When the driver locks their screen or switches to a navigation app (e.g. Waze / Google Maps), tracking stops. A **Foreground Location Service with a ongoing notification** is strictly required.
+### 🟢 4. Driver Deliveries, "My Trips", & Driver Profile — **85% Production Ready**
+- [x] **Driver Home Dashboard** (`DriverHomeScreen.kt`, `DriverHomeViewModel.kt`): Fully data-driven with active trip assignments, realtime updates, and status action triggers.
+- [x] **Driver "My Trips" Screen** (`MyTripsScreen.kt`, `MyTripsViewModel.kt`): **FULLY FUNCTIONAL**.
+  - Server-side stats card via Postgres RPC `get_driver_monthly_stats` (Monthly Completed Trips, Total Allowance, On-Time Rate % or `"—"`).
+  - Period Filter Bottom Sheet (Asia/Manila monthly selector & "All Time").
+  - Tab Filtering (`All`, `Completed`, `Ongoing`, `Cancelled`) mapped to DB statuses with status-driven card styling (`TripStatus`, `TripCardStyle`).
+  - Pagination (20 items/page) with pull-to-refresh and embedded PostgREST joins.
+  - Live Supabase Realtime channel subscription updating list and stats on status changes.
+- [x] **Driver "Profile" & Compliance Engine** (`DriverProfileScreen.kt`, `DriverProfileViewModel.kt`): **FULLY FUNCTIONAL**.
+  - Header with dynamic avatar initials (`RC`), full name, assigned truck make/model & plate (or "No vehicle assigned"), and "Driver since Month Year".
+  - Dynamic Compliance Status section querying `public.compliance_documents`.
+  - On-device pure status badge calculation (`ComplianceStatus.from(expiryDate, today)` with 60-day threshold constant): `EXPIRED` (Red), `EXPIRING SOON` (Orange), `VALID` (Green).
+  - Dynamic document sorting (urgent items first) and Info Banner.
+  - Personal Information section & Supabase Auth sign-out clearing backstack.
+- [!] **CRITICAL GAP – Driver Foreground GPS Service**: Driver location sharing relies on active screen display. When the driver locks their screen or switches to a navigation app (e.g. Waze / Google Maps), tracking stops. A **Foreground Location Service with an ongoing notification** is strictly required.
 
 ---
 
@@ -68,14 +78,13 @@ To transition Tanaw from **UI Prototype** to **Production-Ready Release**:
 ### Phase 1: Core Database Persistence (High Priority)
 1. **Database Schema Integration**: Create `bookings` and `shipments` table schema in Supabase.
 2. **Booking Submission**: Connect `BookingSummaryScreen` confirm button to insert real row into Supabase `bookings`.
-3. **Driver Trip Query**: Update `DriverHomeScreen` to fetch real assigned shipments where `driver_id = auth.uid()`.
 
 ### Phase 2: Live Tracking & Telemetry (High Priority)
-4. **Driver Foreground Service**: Create an Android `ForegroundService` with `NOTIFICATION_SERVICE` to capture high-accuracy GPS coordinates continuously during trips.
-5. **Realtime GPS Streaming**: Broadcast driver GPS coordinates to Supabase Realtime / Postgrest `driver_locations` table.
-6. **Customer Map Stream**: Subscribe `TrackDetailScreen` to Supabase Realtime channel for live driver location updates.
+3. **Driver Foreground Service**: Create an Android `ForegroundService` with `NOTIFICATION_SERVICE` to capture high-accuracy GPS coordinates continuously during trips.
+4. **Realtime GPS Streaming**: Broadcast driver GPS coordinates to Supabase Realtime / Postgrest `driver_locations` table.
+5. **Customer Map Stream**: Subscribe `TrackDetailScreen` to Supabase Realtime channel for live driver location updates.
 
 ### Phase 3: Notifications & Infrastructure (Medium Priority)
-7. **Firebase Cloud Messaging (FCM)**: Integrate FCM for assignment and delivery status push notifications.
-8. **Supabase Storage for POD**: Upload captured camera photos from `PODScreen` to Supabase Storage bucket.
-9. **Offline Sync Queue**: Implement Room DB store for queueing location updates during signal loss on Luzon highways.
+6. **Firebase Cloud Messaging (FCM)**: Integrate FCM for assignment and delivery status push notifications.
+7. **Supabase Storage for POD**: Upload captured camera photos from `PODScreen` to Supabase Storage bucket.
+8. **Offline Sync Queue**: Implement Room DB store for queueing location updates during signal loss on Luzon highways.
