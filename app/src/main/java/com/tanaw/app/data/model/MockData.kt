@@ -1,5 +1,6 @@
 package com.tanaw.app.data.model
 
+import android.location.Location
 import com.tanaw.app.R
 
 // ─── Shared Data Models ───────────────────────────────────────────────────────
@@ -25,7 +26,9 @@ data class LocationItem(
     val id       : String,
     val name     : String,
     val subName  : String,
-    val isRecent : Boolean = false
+    val isRecent : Boolean = false,
+    val latitude : Double? = null,
+    val longitude: Double? = null
 )
 
 // ─── Predefined mock data ───────────────────────────────────────────────────────
@@ -58,6 +61,20 @@ object MockData {
     )
 
     fun computeDistance(pickup: LocationItem, destination: LocationItem): Int {
+        val plat = pickup.latitude
+        val plng = pickup.longitude
+        val dlat = destination.latitude
+        val dlng = destination.longitude
+        if (plat != null && plng != null && dlat != null && dlng != null) {
+            val results = FloatArray(1)
+            Location.distanceBetween(
+                plat, plng,
+                dlat, dlng,
+                results
+            )
+            val roadKm = ((results[0] * 1.3f) / 1000f).toInt()
+            return roadKm.coerceAtLeast(1)
+        }
         val key = pickup.id to destination.id
         return when (key) {
             "l1" to "d1" -> 25

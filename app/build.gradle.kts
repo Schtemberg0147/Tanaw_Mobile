@@ -7,6 +7,7 @@ val localProperties = Properties().apply {
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.dagger.hilt.android)
 }
@@ -24,9 +25,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", "\"${localProperties["SUPABASE_URL"]}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProperties["SUPABASE_ANON_KEY"]}\"")
+        buildConfigField("String", "MAPTILER_KEY", "\"${localProperties["MAPTILER_KEY"] ?: ""}\"")
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -38,6 +41,8 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     // Hilt & KSP Metadata
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
@@ -52,6 +57,7 @@ dependencies {
     implementation(platform(libs.bom))
     implementation(libs.auth.kt)
     implementation(libs.postgrest.kt)
+    implementation(libs.realtime.kt)
     implementation(libs.ktor.client.android)
 
     // Lifecycle / ViewModel
@@ -62,6 +68,8 @@ dependencies {
     // Core / Activity
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.play.services.location)
+    implementation(libs.maplibre.android.sdk)
 
     // Compose BOM + UI
     implementation(platform(libs.androidx.compose.bom))
@@ -72,6 +80,8 @@ dependencies {
 
     // Unit tests
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))

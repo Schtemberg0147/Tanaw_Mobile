@@ -1,5 +1,11 @@
 package com.tanaw.app.feature.booking
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,15 +19,19 @@ import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
 import com.tanaw.app.R
 import com.tanaw.app.data.model.LocationItem
 import com.tanaw.app.data.model.MockData
@@ -29,17 +39,135 @@ import com.tanaw.app.data.model.MockData.computeDistance
 import com.tanaw.app.data.model.Vehicle
 import com.tanaw.app.data.model.VehicleType
 import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun HomeScreen(
     uiState            : HomeUiState = HomeUiState(isLoading = false),
     onRetry            : () -> Unit = {},
+    onCityDetected     : (String) -> Unit = {},
     pickupLocation     : LocationItem? = null,
     destination        : LocationItem? = null,
     onPickupClick      : () -> Unit = {},
     onDestinationClick : () -> Unit = {},
     onContinue         : (Vehicle, Int) -> Unit = { _, _ -> }
 ) {
+    val context = LocalContext.current
+    var showLocationPrompt by rememberSaveable { mutableStateOf(false) }
+
+    val hasFineLocation = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val hasCoarseLocation = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val hasLocationPermission = hasFineLocation || hasCoarseLocation
+
+    fun fetchAndGeocodeCity() {
+        if (!hasLocationPermission) return
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    try {
+                        val geocoder = Geocoder(context, Locale.getDefault())
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            geocoder.getFromLocation(location.latitude, location.longitude, 1) { addresses ->
+                                val city = addresses.firstOrNull()?.locality
+                                    ?: addresses.firstOrNull()?.subAdminArea
+                                    ?: addresses.firstOrNull()?.adminArea
+                                if (!city.isNullOrBlank()) {
+                                    onCityDetected(city)
+                                }
+                            }
+                        } else {
+                            @Suppress("DEPRECATION")
+                            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                            val city = addresses?.firstOrNull()?.locality
+                                ?: addresses?.firstOrNull()?.subAdminArea
+                                ?: addresses?.firstOrNull()?.adminArea
+                            if (!city.isNullOrBlank()) {
+                                onCityDetected(city)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            fetchAndGeocodeCity()
+        }
+    }
+
+    LaunchedEffect(hasLocationPermission) {
+        if (hasLocationPermission) {
+            fetchAndGeocodeCity()
+        } else {
+            showLocationPrompt = true
+        }
+    }
+
+    if (showLocationPrompt && !hasLocationPermission) {
+        AlertDialog(
+            onDismissRequest = { showLocationPrompt = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Outlined.LocationOn,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Allow Location Access?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Allow Tanaw to access your precise or approximate location to automatically display your current city instead of Cabanatuan City.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocationPrompt = false
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                ) {
+                    Text("Allow Location")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLocationPrompt = false }
+                ) {
+                    Text("Not Now")
+                }
+            }
+        )
+    }
+
     if (uiState.isLoading) {
         Box(
             modifier = Modifier
@@ -54,7 +182,7 @@ fun HomeScreen(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Preparing database connection...",
+                    text = "Loading...",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -98,7 +226,7 @@ fun HomeScreen(
     }
 
     val userName = uiState.userProfile?.fullName?.takeIf { it.isNotBlank() } ?: "User"
-    val userCity = uiState.userProfile?.city?.takeIf { it.isNotBlank() } ?: "Cabanatuan City"
+    val userCity = uiState.detectedCity ?: uiState.userProfile?.city?.takeIf { it.isNotBlank() } ?: "Cabanatuan City"
 
     var selectedVehicle by remember { mutableStateOf<Vehicle?>(null) }
 
