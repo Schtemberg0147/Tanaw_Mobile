@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -32,17 +32,22 @@ import com.tanaw.app.feature.auth.VerifyPhoneViewModel
 import com.tanaw.app.feature.booking.AddDetailsScreen
 import com.tanaw.app.feature.booking.BookingSuccessScreen
 import com.tanaw.app.feature.booking.BookingSummaryScreen
+import com.tanaw.app.feature.booking.BookingUiState
 import com.tanaw.app.feature.booking.BookingViewModel
 import com.tanaw.app.feature.booking.DestinationScreen
 import com.tanaw.app.feature.booking.HomeScreen
 import com.tanaw.app.feature.booking.HomeViewModel
 import com.tanaw.app.feature.booking.PickupLocationScreen
+import com.tanaw.app.feature.driver.DeliveryCompleteScreen
 import com.tanaw.app.feature.driver.DriverHomeScreen
+import com.tanaw.app.feature.driver.DriverNavigationScreen
 import com.tanaw.app.feature.driver.DriverProfileScreen
 import com.tanaw.app.feature.driver.MyTripsScreen
+import com.tanaw.app.feature.driver.SubmitPodScreen
 import com.tanaw.app.feature.history.HistoryDetailScreen
 import com.tanaw.app.feature.history.HistoryScreen
 import com.tanaw.app.feature.history.PODScreen
+import com.tanaw.app.feature.notifications.NotificationsScreen
 import com.tanaw.app.feature.profile.ProfileScreen
 import com.tanaw.app.feature.profile.ProfileViewModel
 import com.tanaw.app.feature.tracking.ActiveBookingsScreen
@@ -53,24 +58,28 @@ import dagger.hilt.android.AndroidEntryPoint
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 object Routes {
-    const val LOGIN           = "login"
-    const val FORGOT_PASSWORD = "forgot_password"
-    const val CREATE_ACCOUNT  = "create_account"
-    const val VERIFY_EMAIL    = "verify_email"
-    const val VERIFY_PHONE    = "verify_phone"
-    const val CHECK_EMAIL     = "check_email"
-    const val HOME            = "home"
-    const val DRIVER_HOME     = "driver_home"
-    const val TRACK           = "track"
-    const val HISTORY         = "history"
-    const val PROFILE         = "profile"
-    const val MY_TRIPS        = "my_trips"
-    const val DRIVER_PROFILE  = "driver_profile"
-    const val PICKUP_LOCATION = "pickup_location"
-    const val DESTINATION     = "destination"
-    const val ADD_DETAILS     = "add_details"
-    const val BOOKING_SUMMARY = "booking_summary"
-    const val BOOKING_SUCCESS = "booking_success"
+    const val LOGIN             = "login"
+    const val FORGOT_PASSWORD   = "forgot_password"
+    const val CREATE_ACCOUNT    = "create_account"
+    const val VERIFY_EMAIL      = "verify_email"
+    const val VERIFY_PHONE      = "verify_phone"
+    const val CHECK_EMAIL       = "check_email"
+    const val HOME              = "home"
+    const val DRIVER_HOME       = "driver_home"
+    const val TRACK             = "track"
+    const val HISTORY           = "history"
+    const val PROFILE           = "profile"
+    const val MY_TRIPS          = "my_trips"
+    const val DRIVER_PROFILE    = "driver_profile"
+    const val DRIVER_NAVIGATION = "driver_navigation"
+    const val SUBMIT_POD        = "submit_pod"
+    const val DELIVERY_COMPLETE = "delivery_complete"
+    const val NOTIFICATIONS     = "notifications"
+    const val PICKUP_LOCATION   = "pickup_location"
+    const val DESTINATION       = "destination"
+    const val ADD_DETAILS       = "add_details"
+    const val BOOKING_SUMMARY   = "booking_summary"
+    const val BOOKING_SUCCESS   = "booking_success"
 }
 
 // ─── MainActivity ─────────────────────────────────────────────────────────────
@@ -110,7 +119,7 @@ fun TanawNavHost(
 ) {
     var selectedPickup      by remember { mutableStateOf<LocationItem?>(null) }
     var selectedDestination by remember { mutableStateOf<LocationItem?>(null) }
-    val bookingVM: BookingViewModel = viewModel()
+    val bookingVM: BookingViewModel = hiltViewModel()
 
     NavHost(
         navController    = navController,
@@ -286,9 +295,16 @@ fun TanawNavHost(
                 onDestinationClick = { navController.navigate(Routes.DESTINATION) },
                 onContinue         = { vehicle, distance ->
                     bookingVM.selectedVehicle  = vehicle
+                    bookingVM.vehicleTypeId     = vehicle.id
                     bookingVM.distanceKm       = distance
                     bookingVM.pickupName       = selectedPickup?.name ?: ""
                     bookingVM.destinationName  = selectedDestination?.name ?: ""
+                    bookingVM.pickupLocationId  = selectedPickup?.id
+                    bookingVM.pickupLat         = selectedPickup?.latitude
+                    bookingVM.pickupLng         = selectedPickup?.longitude
+                    bookingVM.dropoffLocationId = selectedDestination?.id
+                    bookingVM.dropoffLat        = selectedDestination?.latitude
+                    bookingVM.dropoffLng        = selectedDestination?.longitude
                     navController.navigate(Routes.ADD_DETAILS)
                 }
             )
@@ -315,9 +331,12 @@ fun TanawNavHost(
                 onRebook = { booking ->
                     if (!booking.vehicleTypeId.isNullOrBlank()) {
                         bookingVM.selectedVehicle = MockData.vehicles.firstOrNull { it.id == booking.vehicleTypeId }
+                        bookingVM.vehicleTypeId = booking.vehicleTypeId
                     }
                     bookingVM.pickupName = booking.pickupName
                     bookingVM.destinationName = booking.destinationName
+                    bookingVM.pickupLocationId = booking.pickupLocationId
+                    bookingVM.dropoffLocationId = booking.dropoffLocationId
                     navController.navigate(Routes.ADD_DETAILS)
                 }
             )
@@ -333,15 +352,24 @@ fun TanawNavHost(
             HistoryDetailScreen(bookingId = bookingId, onBack = { navController.popBackStack() })
         }
 
+        composable(Routes.NOTIFICATIONS) {
+            NotificationsScreen(onBack = { navController.popBackStack() })
+        }
+
         // ── Driver Routes ──────────────────────────────────────────────────
         composable(Routes.DRIVER_HOME) {
             DriverHomeScreen(
                 onNavigateToRoute = { route ->
-                    when (route) {
-                        "profile" -> navController.navigate(Routes.DRIVER_PROFILE)
-                        "navigate" -> navController.navigate(Routes.PICKUP_LOCATION)
-                        "trips" -> navController.navigate(Routes.MY_TRIPS)
-                        "login" -> navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+                    when {
+                        route == "profile" -> navController.navigate(Routes.DRIVER_PROFILE)
+                        route == "navigate" -> navController.navigate("${Routes.DRIVER_NAVIGATION}/active")
+                        route == "trips" -> navController.navigate(Routes.MY_TRIPS)
+                        route == "login" -> navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+                        route.startsWith("trip_details/") -> {
+                            val deliveryId = route.substringAfter("trip_details/")
+                            navController.navigate("${Routes.DRIVER_NAVIGATION}/$deliveryId")
+                        }
+                        route.startsWith("driver_navigation/") -> navController.navigate(route)
                         else -> {
                             if (route.isNotBlank() && route != "home") {
                                 navController.navigate(route)
@@ -352,18 +380,60 @@ fun TanawNavHost(
             )
         }
 
+        composable(
+            route = "${Routes.DRIVER_NAVIGATION}/{deliveryId}",
+            arguments = listOf(navArgument("deliveryId") { defaultValue = "active" })
+        ) {
+            DriverNavigationScreen(
+                onNavigateToSubmitPod = { deliveryId ->
+                    navController.navigate("${Routes.SUBMIT_POD}/$deliveryId")
+                },
+                onNavigateToDeliveryComplete = { deliveryId ->
+                    navController.navigate("${Routes.DELIVERY_COMPLETE}/$deliveryId")
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = "${Routes.SUBMIT_POD}/{deliveryId}",
+            arguments = listOf(navArgument("deliveryId") { defaultValue = "active" })
+        ) {
+            SubmitPodScreen(
+                onNavigateToDeliveryComplete = { deliveryId ->
+                    navController.navigate("${Routes.DELIVERY_COMPLETE}/$deliveryId") {
+                        popUpTo(Routes.DRIVER_HOME) { inclusive = false }
+                    }
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = "${Routes.DELIVERY_COMPLETE}/{deliveryId}",
+            arguments = listOf(navArgument("deliveryId") { defaultValue = "active" })
+        ) {
+            DeliveryCompleteScreen(
+                onNavigateToHome = {
+                    navController.navigate(Routes.DRIVER_HOME) {
+                        popUpTo(Routes.DRIVER_HOME) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(Routes.MY_TRIPS) {
             MyTripsScreen(
                 onNavigateToRoute = { route ->
                     when (route) {
                         "home" -> navController.navigate(Routes.DRIVER_HOME) { popUpTo(Routes.DRIVER_HOME) { inclusive = false } }
-                        "navigate" -> navController.navigate(Routes.PICKUP_LOCATION)
+                        "navigate" -> navController.navigate("${Routes.DRIVER_NAVIGATION}/active")
                         "trips" -> {}
                         "profile" -> navController.navigate(Routes.DRIVER_PROFILE)
                     }
                 },
                 onActiveTripClick = { shipmentId ->
-                    navController.navigate("track_detail/$shipmentId")
+                    navController.navigate("${Routes.DRIVER_NAVIGATION}/$shipmentId")
                 }
             )
         }
@@ -373,7 +443,7 @@ fun TanawNavHost(
                 onNavigateToRoute = { route ->
                     when (route) {
                         "home" -> navController.navigate(Routes.DRIVER_HOME) { popUpTo(Routes.DRIVER_HOME) { inclusive = false } }
-                        "navigate" -> navController.navigate(Routes.PICKUP_LOCATION)
+                        "navigate" -> navController.navigate("${Routes.DRIVER_NAVIGATION}/active")
                         "trips" -> navController.navigate(Routes.MY_TRIPS)
                         "profile" -> {}
                     }
@@ -426,6 +496,9 @@ fun TanawNavHost(
                 vehicleTypeId = bookingVM.selectedVehicle?.id,
                 onConfirm = { location ->
                     selectedPickup = location
+                    bookingVM.pickupLocationId = location.id
+                    bookingVM.pickupLat = location.latitude
+                    bookingVM.pickupLng = location.longitude
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() }
@@ -439,6 +512,9 @@ fun TanawNavHost(
                 origin    = selectedPickup,
                 onConfirm = { location ->
                     selectedDestination = location
+                    bookingVM.dropoffLocationId = location.id
+                    bookingVM.dropoffLat = location.latitude
+                    bookingVM.dropoffLng = location.longitude
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() }
@@ -466,6 +542,14 @@ fun TanawNavHost(
 
         composable(Routes.BOOKING_SUMMARY) {
             val vehicle = bookingVM.selectedVehicle ?: return@composable
+            val bookingUiState by bookingVM.uiState.collectAsState()
+
+            LaunchedEffect(bookingUiState) {
+                if (bookingUiState is BookingUiState.Success) {
+                    navController.navigate(Routes.BOOKING_SUCCESS)
+                }
+            }
+
             BookingSummaryScreen(
                 vehicle         = vehicle,
                 distanceKm      = bookingVM.distanceKm,
@@ -475,11 +559,10 @@ fun TanawNavHost(
                 handling        = bookingVM.handling,
                 notes           = bookingVM.notes,
                 totalFee        = bookingVM.totalFee,
-                onBack           = { navController.popBackStack() },
-                onConfirmBooking = {
-                    bookingVM.bookingReference = "SHP-NE-8063"
-                    navController.navigate(Routes.BOOKING_SUCCESS)
-                }
+                uiState         = bookingUiState,
+                onBack          = { navController.popBackStack() },
+                onConfirmBooking = { bookingVM.submit() },
+                onErrorDismiss  = { bookingVM.consumeError() }
             )
         }
 

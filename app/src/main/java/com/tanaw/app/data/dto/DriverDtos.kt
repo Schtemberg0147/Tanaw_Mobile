@@ -101,3 +101,18 @@ data class DbDriverTripStatsDto(
     @SerialName("total_allowance") val totalAllowance: Double = 0.0,
     @SerialName("on_time_rate") val onTimeRate: Double? = null
 )
+
+@Serializable
+data class DbIncidentDto(
+    val id: String = "",
+    @SerialName("delivery_id") val deliveryId: String = "",
+    @SerialName("shipment_id") val shipmentId: String = "",
+    val category: String = "other",
+    val description: String? = null,
+    @SerialName("delay_minutes") val delayMinutes: Int? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @SerialName("reported_by") val reportedBy: String? = null,
+    @SerialName("resolved_at") val resolvedAt: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)

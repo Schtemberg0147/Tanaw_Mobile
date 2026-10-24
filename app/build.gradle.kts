@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.auth.kt)
     implementation(libs.postgrest.kt)
     implementation(libs.realtime.kt)
+    implementation(libs.storage.kt)
     implementation(libs.ktor.client.android)
 
     // Lifecycle / ViewModel

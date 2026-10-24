@@ -68,9 +68,82 @@ data class TripAssignment(
     val cargo: CargoDetails,
     val route: TripRoute,
     val meta: TripMeta,
+    val allowanceAmount: Double,
     val formattedAllowance: String,
     val notes: String?
 )
+
+enum class ActiveTripStage {
+    ASSIGNED,
+    PICKUP_ARRIVED,
+    CUSTOMER_SHOWED,
+    CARGO_LOADED,
+    DELIVERED
+}
+
+data class TripExpenseRequest(
+    val deliveryId: String,
+    val category: String,
+    val amount: Double,
+    val receiptPhotoBytes: ByteArray? = null
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as TripExpenseRequest
+        if (deliveryId != other.deliveryId) return false
+        if (category != other.category) return false
+        if (amount != other.amount) return false
+        if (receiptPhotoBytes != null) {
+            if (other.receiptPhotoBytes == null) return false
+            if (!receiptPhotoBytes.contentEquals(other.receiptPhotoBytes)) return false
+        } else if (other.receiptPhotoBytes != null) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = deliveryId.hashCode()
+        result = 31 * result + category.hashCode()
+        result = 31 * result + amount.hashCode()
+        result = 31 * result + (receiptPhotoBytes?.contentHashCode() ?: 0)
+        return result
+    }
+}
+
+data class PodSubmission(
+    val deliveryId: String,
+    val recipientName: String,
+    val cargoPhotoBytes: ByteArray,
+    val signaturePngBytes: ByteArray
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as PodSubmission
+        if (deliveryId != other.deliveryId) return false
+        if (recipientName != other.recipientName) return false
+        if (!cargoPhotoBytes.contentEquals(other.cargoPhotoBytes)) return false
+        if (!signaturePngBytes.contentEquals(other.signaturePngBytes)) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = deliveryId.hashCode()
+        result = 31 * result + recipientName.hashCode()
+        result = 31 * result + cargoPhotoBytes.contentHashCode()
+        result = 31 * result + signaturePngBytes.contentHashCode()
+        return result
+    }
+}
+
+sealed class DriverError : Exception() {
+    data class OutsideOperatingHours(val nextWindowStart: String? = null) : DriverError()
+    data class ArrivalTooFar(val distanceMeters: Double?, val maxRadiusMeters: Double?) : DriverError()
+    data class InvalidPodFile(val reason: String?) : DriverError()
+    class DeliveryNotFound : DriverError()
+    data class InvalidTransition(val currentStatus: String?) : DriverError()
+    data class UnknownError(override val message: String) : DriverError()
+}
 
 // ─── Compliance Domain Models & Calculation ───────────────────────────────────
 

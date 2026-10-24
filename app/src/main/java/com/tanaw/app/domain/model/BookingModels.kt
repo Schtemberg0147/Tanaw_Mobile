@@ -47,3 +47,43 @@ data class BookingItemUi(
     val pickupName: String = "",
     val destinationName: String = ""
 )
+
+sealed class BookingError : Exception() {
+    data class OutsideOperatingHours(val nextWindowStart: String?) : BookingError()
+    data class CustomerBlocked(val blockedUntil: String?) : BookingError()
+    data class CustomerSuspended(val suspendedAt: String?) : BookingError()
+    class NoPricingRate : BookingError()
+    class OutsideServiceArea : BookingError()
+    class MissingCoordinates : BookingError()
+    class NoCustomerProfile : BookingError()
+    class AccountInactive : BookingError()
+    class InvalidVehicleType : BookingError()
+    class InvalidWeight : BookingError()
+    class InvalidSchedule : BookingError()
+    data class UnknownError(override val message: String) : BookingError()
+}
+
+data class CreatedShipment(
+    val id: String,
+    val trackingNumber: String,
+    val status: String,
+    val quotedAmount: Double
+)
+
+data class BookingRequest(
+    val clientRequestId: String,
+    val pickupLocationId: String? = null,
+    val pickupAddress: String,
+    val pickupLat: Double?,
+    val pickupLng: Double?,
+    val dropoffLocationId: String? = null,
+    val dropoffAddress: String,
+    val dropoffLat: Double?,
+    val dropoffLng: Double?,
+    val vehicleTypeId: String,
+    val cargoCategoryId: String? = null,
+    val cargoDescription: String? = null,
+    val weightKg: Double,
+    val specialHandling: String? = null,
+    val scheduledDeparture: String? = null
+)

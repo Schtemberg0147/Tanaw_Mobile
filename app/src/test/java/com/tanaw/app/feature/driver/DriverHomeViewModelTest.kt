@@ -3,11 +3,13 @@ package com.tanaw.app.feature.driver
 import app.cash.turbine.test
 import com.tanaw.app.domain.model.CargoDetails
 import com.tanaw.app.domain.model.ComplianceDocumentItem
+import com.tanaw.app.domain.model.DeliveryIncidentItem
 import com.tanaw.app.domain.model.DriverProfile
 import com.tanaw.app.domain.model.DriverProfileDetails
 import com.tanaw.app.domain.model.DriverStatus
 import com.tanaw.app.domain.model.DriverTripItem
 import com.tanaw.app.domain.model.DriverTripStats
+import com.tanaw.app.domain.model.IncidentCategory
 import com.tanaw.app.domain.model.RoutePoint
 import com.tanaw.app.domain.model.TripAssignment
 import com.tanaw.app.domain.model.TripMeta
@@ -55,6 +57,7 @@ class DriverHomeViewModelTest {
             destination = RoutePoint("Dest Hub", "Address 2")
         ),
         meta = TripMeta(38.0, "38 km", "1h 15min", true),
+        allowanceAmount = 500.0,
         formattedAllowance = "₱500",
         notes = "Handle with care"
     )
@@ -140,7 +143,6 @@ class DriverHomeViewModelTest {
             }
             assertTrue("Expected Empty state but was $item", item is DriverHomeUiState.Empty)
 
-            // Simulate realtime insert event assigning trip
             assignmentStateFlow.value = Result.success(sampleTrip)
 
             val updatedAssigned = awaitItem()
@@ -159,19 +161,13 @@ private class FakeDriverRepository(
     private val assignmentFlow: MutableStateFlow<Result<TripAssignment?>>
 ) : DriverRepository {
 
-    override fun observeDriverProfile(userId: String): Flow<Result<DriverProfile>> {
-        return flowOf(Result.success(profile))
-    }
+    override fun observeDriverProfile(userId: String): Flow<Result<DriverProfile>> = flowOf(Result.success(profile))
 
-    override fun observeActiveAssignment(driverId: String): Flow<Result<TripAssignment?>> {
-        return assignmentFlow
-    }
+    override fun observeActiveAssignment(driverId: String): Flow<Result<TripAssignment?>> = assignmentFlow
 
-    override fun observeUnreadNotificationCount(userId: String): Flow<Int> {
-        return flowOf(1)
-    }
+    override fun observeUnreadNotificationCount(userId: String): Flow<Int> = flowOf(1)
 
-    override suspend fun getDriverIdForCurrentUser(): String? = "drv-1"
+    override suspend fun getDriverIdForCurrentUser(): String = "drv-1"
 
     override fun observeDriverProfileDetails(): Flow<Result<DriverProfileDetails>> = flowOf(
         Result.success(DriverProfileDetails("d1", "Ramon Cruz", "RC", "10-Wheeler · ABC-1234", "Driver since Jan 2022", "ramon@tanaw.ph", "09995130476"))
@@ -193,4 +189,15 @@ private class FakeDriverRepository(
     override fun observeRealtimeTripChanges(): Flow<Unit> = flowOf(Unit)
 
     override suspend fun signOut(): Result<Unit> = Result.success(Unit)
+
+    override suspend fun driverStartRoute(deliveryId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun driverArriveAtPickup(deliveryId: String, lat: Double, lng: Double): Result<Unit> = Result.success(Unit)
+    override suspend fun driverConfirmCustomerShowed(deliveryId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun driverConfirmCargoLoaded(deliveryId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun driverSubmitPod(deliveryId: String, recipientName: String, photoBytes: ByteArray, signatureBytes: ByteArray): Result<Unit> = Result.success(Unit)
+    override suspend fun publishDriverLocation(deliveryId: String, lat: Double, lng: Double, heading: Double, speed: Double): Result<Unit> = Result.success(Unit)
+    override fun observeDeliveryLocations(deliveryId: String): Flow<Pair<Double, Double>> = flowOf(Pair(15.4828, 120.9692))
+    override suspend fun addDeliveryExpense(deliveryId: String, category: String, amount: Double, receiptBytes: ByteArray?): Result<Unit> = Result.success(Unit)
+    override suspend fun reportDeliveryIncident(deliveryId: String, shipmentId: String, category: IncidentCategory, description: String?, delayMinutes: Int?, lat: Double?, lng: Double?): Result<Unit> = Result.success(Unit)
+    override fun observeDeliveryIncidents(shipmentId: String): Flow<Result<List<DeliveryIncidentItem>>> = flowOf(Result.success(emptyList()))
 }

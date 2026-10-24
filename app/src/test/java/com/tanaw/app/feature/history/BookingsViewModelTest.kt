@@ -4,8 +4,10 @@ import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.tanaw.app.data.mapper.mapBookingCardStyle
 import com.tanaw.app.domain.model.BookingItemUi
+import com.tanaw.app.domain.model.BookingRequest
 import com.tanaw.app.domain.model.BookingStatusEnum
 import com.tanaw.app.domain.model.BookingTabFilter
+import com.tanaw.app.domain.model.CreatedShipment
 import com.tanaw.app.domain.repository.BookingsRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
@@ -150,5 +152,9 @@ private class FakeBookingsRepository(
 
     override fun observeRealtimeShipmentChanges(customerId: String): Flow<Unit> {
         return flowOf(Unit)
+    }
+
+    override suspend fun createShipment(request: BookingRequest): Result<CreatedShipment> {
+        return Result.success(CreatedShipment("shp-1", "SHP-NE-8063", "pending", 2500.0))
     }
 }

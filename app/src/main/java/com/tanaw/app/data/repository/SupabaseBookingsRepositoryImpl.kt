@@ -1,14 +1,20 @@
 package com.tanaw.app.data.repository
 
+import com.tanaw.app.data.dto.DbCreatedShipmentDto
 import com.tanaw.app.data.dto.DbShipmentSummaryDto
 import com.tanaw.app.data.mapper.toUiModel
+import com.tanaw.app.data.util.SupabaseErrorParser
 import com.tanaw.app.domain.model.BookingItemUi
+import com.tanaw.app.domain.model.BookingRequest
 import com.tanaw.app.domain.model.BookingTabFilter
+import com.tanaw.app.domain.model.CreatedShipment
 import com.tanaw.app.domain.repository.BookingsRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.PostgresAction
@@ -132,6 +138,44 @@ class SupabaseBookingsRepositoryImpl @Inject constructor(
 
         awaitClose {
             // Clean up on cancel
+        }
+    }
+
+    override suspend fun createShipment(request: BookingRequest): Result<CreatedShipment> {
+        return try {
+            val parameters = buildMap {
+                put("p_client_request_id", request.clientRequestId)
+                request.pickupLocationId?.let { put("p_pickup_location_id", it) }
+                request.pickupAddress.takeIf { it.isNotBlank() }?.let { put("p_pickup_address", it) }
+                request.pickupLat?.let { put("p_pickup_lat", it) }
+                request.pickupLng?.let { put("p_pickup_lng", it) }
+                request.dropoffLocationId?.let { put("p_dropoff_location_id", it) }
+                request.dropoffAddress.takeIf { it.isNotBlank() }?.let { put("p_dropoff_address", it) }
+                request.dropoffLat?.let { put("p_dropoff_lat", it) }
+                request.dropoffLng?.let { put("p_dropoff_lng", it) }
+                put("p_requested_vehicle_type_id", request.vehicleTypeId)
+                request.cargoCategoryId?.let { put("p_cargo_category_id", it) }
+                request.cargoDescription?.let { put("p_cargo_description", it) }
+                put("p_weight_kg", request.weightKg)
+                request.specialHandling?.let { put("p_special_handling", it) }
+                request.scheduledDeparture?.let { put("p_scheduled_departure", it) }
+            }
+
+            val response = supabase.postgrest.rpc(
+                function = "create_shipment",
+                parameters = parameters
+            ).decodeList<DbCreatedShipmentDto>().first()
+
+            Result.success(
+                CreatedShipment(
+                    id = response.id,
+                    trackingNumber = response.trackingNumber,
+                    status = response.status,
+                    quotedAmount = response.quotedAmount
+                )
+            )
+        } catch (e: Throwable) {
+            Result.failure(SupabaseErrorParser.parseBookingError(e))
         }
     }
 }

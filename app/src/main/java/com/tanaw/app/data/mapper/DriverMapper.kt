@@ -226,6 +226,7 @@ fun DbDeliveryDto.toDomain(): TripAssignment? {
         cargo = cargo,
         route = route,
         meta = meta,
+        allowanceAmount = allowanceVal,
         formattedAllowance = formattedAllowance,
         notes = combinedNotes
     )

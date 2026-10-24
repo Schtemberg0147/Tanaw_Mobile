@@ -66,6 +66,7 @@ private val sampleTrip = TripAssignment(
         formattedDuration = "1h 15min",
         hasToll = true
     ),
+    allowanceAmount = 500.0,
     formattedAllowance = "₱500",
     notes = "Handle with care. Stack max 3 high."
 )

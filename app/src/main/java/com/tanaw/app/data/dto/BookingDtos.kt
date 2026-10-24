@@ -4,6 +4,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class DbCreatedShipmentDto(
+    val id: String = "",
+    @SerialName("tracking_number") val trackingNumber: String = "",
+    val status: String = "pending",
+    @SerialName("quoted_amount") val quotedAmount: Double = 0.0
+)
+
+@Serializable
 data class DbDocumentSummaryDto(
     val id: String = "",
     val kind: String? = null
