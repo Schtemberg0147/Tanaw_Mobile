@@ -32,6 +32,7 @@ val supabaseKey = requiredClientSetting("SUPABASE_ANON_KEY").also {
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.dagger.hilt.android)
 }
@@ -93,6 +94,8 @@ dependencies {
     // Core / Activity
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.play.services.location)
+    implementation(libs.maplibre.android.sdk)
 
     // Compose BOM + UI
     implementation(platform(libs.androidx.compose.bom))
@@ -103,6 +106,8 @@ dependencies {
 
     // Unit tests
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))

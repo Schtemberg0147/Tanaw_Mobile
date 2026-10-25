@@ -1,3 +1,21 @@
 <resources>
     <string name="app_name">Tanaw</string>
+    <string name="available">AVAILABLE</string>
+    <string name="you_are_available_for_assignments">You are available for assignments</string>
+    <string name="no_trips_assigned">No trips assigned</string>
+    <string name="no_trips_subtitle">You\'ll be notified when a new trip is ready.</string>
+    <string name="new_trip_assigned">New Trip Assigned!</string>
+    <string name="trip_assignment">Trip Assignment</string>
+    <string name="cargo">CARGO</string>
+    <string name="special">SPECIAL</string>
+    <string name="pickup">PICK-UP</string>
+    <string name="destination">DESTINATION</string>
+    <string name="allowance">ALLOWANCE</string>
+    <string name="toll_road">Toll Road</string>
+    <string name="retry">Retry</string>
+    <string name="home">HOME</string>
+    <string name="navigate">NAVIGATE</string>
+    <string name="trips">TRIPS</string>
+    <string name="profile">PROFILE</string>
+    <string name="notifications">Notifications</string>
 </resources>
