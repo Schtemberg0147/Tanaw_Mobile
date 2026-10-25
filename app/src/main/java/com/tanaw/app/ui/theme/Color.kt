@@ -3,13 +3,13 @@ package com.tanaw.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ─── Light Theme Brand Colors ──────────────────────────────────────────────────
-val NavyPrimary       = Color(0xFF1B2D4F)
+val NavyPrimary       = Color(0xFF0B2A4A)
 val OrangeAccent      = Color(0xFFE87722)
-val BackgroundGray    = Color(0xFFF0F2F5)
+val BackgroundGray    = Color(0xFFF8FAFC)
 val InputGray         = Color(0xFFF5F6F8)
-val BorderGray        = Color(0xFFE0E3E8)
-val HintGray          = Color(0xFFADB5BD)
-val TextDark          = Color(0xFF1A1A2E)
+val BorderGray        = Color(0xFFE2E8F0)
+val HintGray          = Color(0xFF64748B)
+val TextDark          = Color(0xFF0F172A)
 val SuccessGreen      = Color(0xFF2E7D32)
 val SuccessBannerBg   = Color(0xFFE8F5E9)
 

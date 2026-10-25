@@ -87,6 +87,8 @@ fun CreateAccountScreen(
             && contactNumber.isNotBlank()
             && email.isNotBlank()
             && password.isNotBlank()
+            && confirmPassword.isNotEmpty()
+            && password.length >= 8
             && !passwordMismatch
             && agreedToTerms
             && !isLoading

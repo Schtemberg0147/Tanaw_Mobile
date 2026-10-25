@@ -36,7 +36,7 @@ val LightColorScheme = lightColorScheme(
     onSecondary          = Color.White,
     secondaryContainer   = OrangeAccent.copy(alpha = 0.1f),
     onSecondaryContainer = OrangeAccent,
-    background           = Color.White,
+    background           = BackgroundGray,
     onBackground         = TextDark,
     surface              = Color.White,
     onSurface            = TextDark,

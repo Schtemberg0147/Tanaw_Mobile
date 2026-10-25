@@ -1,7 +1,32 @@
 import java.util.Properties
+import java.net.URI
 
 val localProperties = Properties().apply {
-    load(rootProject.file("local.properties").inputStream())
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun requiredClientSetting(name: String): String {
+    val value = (System.getenv(name) ?: localProperties.getProperty(name))?.trim()
+    require(!value.isNullOrBlank() && !value.equals("null", ignoreCase = true)) {
+        "Missing $name. Set it in local.properties or the environment before syncing Gradle."
+    }
+    require(value.none { it == '\n' || it == '\r' || it == '"' || it == '\\' }) {
+        "Invalid characters in $name."
+    }
+    return value
+}
+
+val supabaseUrl = requiredClientSetting("SUPABASE_URL").also {
+    val uri = URI(it)
+    require(uri.scheme == "https" && !uri.host.isNullOrBlank()) {
+        "SUPABASE_URL must be a valid HTTPS project URL."
+    }
+}
+val supabaseKey = requiredClientSetting("SUPABASE_ANON_KEY").also {
+    require(it.startsWith("sb_publishable_")) {
+        "SUPABASE_ANON_KEY must be a public sb_publishable_ key for the Android client."
+    }
 }
 
 plugins {
@@ -22,11 +47,13 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "SUPABASE_URL", "\"${localProperties["SUPABASE_URL"]}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProperties["SUPABASE_ANON_KEY"]}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "MAPTILER_KEY", "\"${localProperties.getProperty("MAPTILER_KEY", "").trim()}\"")
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -38,6 +65,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // Hilt & KSP Metadata
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
@@ -52,6 +80,9 @@ dependencies {
     implementation(platform(libs.bom))
     implementation(libs.auth.kt)
     implementation(libs.postgrest.kt)
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
+    implementation("org.maplibre.gl:android-sdk:13.7.1")
     implementation(libs.ktor.client.android)
 
     // Lifecycle / ViewModel
