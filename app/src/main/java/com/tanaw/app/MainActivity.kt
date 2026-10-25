@@ -176,7 +176,7 @@ fun TanawNavHost(
             }
 
             CreateAccountScreen(
-                onVerifyAndContinue = { firstName, lastName, contact, email, password ->
+                onVerifyAndContinue = { firstName, lastName, contact, email, password, _ ->
                     createAccountViewModel.signUp(firstName, lastName, contact, email, password)
                 },
                 onSignIn = {

@@ -7,9 +7,20 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.builtin.Phone
+import io.github.jan.supabase.auth.providers.builtin.OTP
+import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.auth.providers.Google
+import com.tanaw.app.feature.auth.GoogleSignIn
+import androidx.credentials.CredentialManager
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.ClearCredentialException
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -45,6 +56,8 @@ fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJs
 
 @HiltViewModel
 class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseClient,@ApplicationContext private val context:Context) : ViewModel() {
+    private var signupPhone: String = ""
+    private var recoveryPhone: String? = null
     private val mutable = MutableStateFlow(MobileState())
     val state = mutable.asStateFlow()
     private var timer: Job? = null
@@ -63,7 +76,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 val channel=client.channel("mobile-$uid")
                 try {
                     coroutineScope {
-                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history").forEach { table ->
+                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents").forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
                             launch {changes.collect {delay(300);backgroundRefresh()}}
                         }
@@ -121,6 +134,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     }
     private fun friendly(error: Exception): String {
         val detail=error.message.orEmpty()
+        MobileAuthErrors.message(detail)?.let { return it }
         return when {
             detail.contains("ACTIVE_") -> "This account is inactive or does not have access. Contact the office."
             detail.contains("Invalid login",true)||detail.contains("invalid_credentials",true) -> "Email or password is incorrect."
@@ -142,7 +156,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     private suspend fun load() {
         val version=generation
         val id=client.auth.currentUserOrNull()?.id ?: return
-        val data=try { client.postgrest.rpc("mobile_workspace").decodeAs<JsonObject>() }
+        var data=try { client.postgrest.rpc("mobile_workspace").decodeAs<JsonObject>() }
         catch (error: Exception) {
             if (error is CancellationException) throw error
             if (version==generation && error.message.orEmpty().contains("ACTIVE_")) {
@@ -150,28 +164,110 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             }
             throw error
         }
+        if(data.obj("profile").value("role")=="driver") {
+            // Driver-only reads retain the caller's RLS; customer loading is unchanged.
+            val extra=DriverDatabaseData.load {table,driverId->
+                client.from(table).select {
+                    when(table) {
+                        "drivers"->filter {eq("user_id",id)}
+                        // Truck RLS includes both permanent and delivery assignments.
+                        "trucks"->Unit
+                        else->filter {eq("driver_id",requireNotNull(driverId))}
+                    }
+                    if(table=="deliveries") {order("assigned_at",Order.DESCENDING);limit(200)}
+                    if(table=="delivery_expenses") {order("created_at",Order.DESCENDING);limit(200)}
+                }.decodeAs<JsonArray>()
+            }
+            data=JsonObject(data+extra)
+        }
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
             mutable.update { it.copy(page="workspace",data=data,error=null,offline=false,lastSync=java.time.Instant.now().toString()) }
             if(data.obj("profile").value("role")!="driver" || data.rows("deliveries").none {it.value("id")==TripTrackingStatus.state.value.delivery && it.value("status") in listOf("assigned","loading","in_transit")}) TripTrackingService.stop(context)
         }
     }
     fun refresh() = operation { load() }
+    fun googleSignIn(activityContext: Context) = operation {
+        if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
+            mutable.update { it.copy(error="Google sign-in setup is not complete yet. Please use email sign-in for now.") }
+            return@operation
+        }
+        val nonce = GoogleSignIn.nonce()
+        val token = try { GoogleSignIn.token(activityContext, BuildConfig.GOOGLE_WEB_CLIENT_ID, nonce) }
+        catch (_: GetCredentialCancellationException) { return@operation }
+        catch (_: GetCredentialException) {
+            mutable.update { it.copy(error="Google sign-in could not start. Check your connection and Google account, then try again.") }
+            return@operation
+        }
+        client.auth.signInWith(IDToken) {
+            idToken = token
+            provider = Google
+            this.nonce = nonce
+        }
+        load()
+    }
     fun login(email: String,password: String) = operation {
-        require(MobileValidation.email(email) && password.isNotEmpty())
-        client.auth.signInWith(Email) { this.email=email.trim(); this.password=password }
+        require((MobileValidation.email(email) || MobileValidation.phone(email)!=null) && password.isNotEmpty())
+        val phone=MobileValidation.phone(email)
+        if(phone!=null) client.auth.signInWith(Phone) {this.phone=phone;this.password=password}
+        else {
+            try { client.auth.signInWith(Email) { this.email=email.trim(); this.password=password } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (!error.message.orEmpty().contains("invalid_credentials",true) && !error.message.orEmpty().contains("Invalid login",true)) throw error
+                loginWithContactEmail(email.trim(),password)
+            }
+        }
         loadedUser=client.auth.currentUserOrNull()?.id
         loadedUser?.let(::startLive)
         load()
     }
-    fun signup(first: String,last: String,phone: String,email: String,password: String) = operation {
-        val contact=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
-        require(first.isNotBlank() && last.isNotBlank() && MobileValidation.email(email) && password.length>=8)
-        mutable.update { it.copy(email=email.trim()) }
-        client.auth.signUpWith(Email) {
-            this.email=email.trim(); this.password=password
-            data=buildJsonObject { put("full_name","${first.trim()} ${last.trim()}");put("phone",contact) }
+    private suspend fun loginWithContactEmail(email:String,password:String) {
+        val tokens=withContext(Dispatchers.IO) {
+            val connection=java.net.URL("${BuildConfig.SUPABASE_URL}/functions/v1/mobile-email-login").openConnection() as java.net.HttpURLConnection
+            try {
+                connection.requestMethod="POST";connection.connectTimeout=15000;connection.readTimeout=20000;connection.doOutput=true
+                connection.setRequestProperty("apikey",BuildConfig.SUPABASE_ANON_KEY)
+                connection.setRequestProperty("Content-Type","application/json")
+                val payload=buildJsonObject {put("email",email);put("password",password)}
+                connection.outputStream.use {it.write(payload.toString().toByteArray(Charsets.UTF_8))}
+                when(connection.responseCode) {
+                    200 -> Json.parseToJsonElement(connection.inputStream.bufferedReader().use {it.readText()}).jsonObject
+                    401 -> error("invalid_credentials")
+                    429 -> error("LOGIN_RATE_LIMIT")
+                    else -> error("LOGIN_UNAVAILABLE")
+                }
+            } finally {connection.disconnect()}
         }
-        if (client.auth.currentUserOrNull()!=null) load() else { mutable.update { it.copy(page="verify") };countdown() }
+        require(tokens.value("access_token").isNotBlank() && tokens.value("refresh_token").isNotBlank())
+        client.auth.importAuthToken(tokens.value("access_token"),tokens.value("refresh_token"),retrieveUser=true)
+    }
+    fun signup(first: String,last: String,phone: String,email: String,password: String,address: String) = operation {
+        val contact=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
+        require(first.isNotBlank() && last.isNotBlank() && password.length>=8 && MobileValidation.email(email) && email.trim().length<=254 && address.trim().length in 1..500)
+        signupPhone=contact
+        client.auth.signUpWith(Phone) {
+            this.phone=contact; this.password=password
+            data=buildJsonObject { put("full_name","${first.trim()} ${last.trim()}");put("phone",contact);put("contact_email",email.trim());put("address",address.trim()) }
+        }
+        if (client.auth.currentUserOrNull()!=null) load() else { mutable.update { it.copy(page="verify_phone") };countdown() }
+    }
+    fun verifyPhoneSignup(code: String) = operation {
+        require(code.matches(Regex("[0-9]{6,8}")) && signupPhone.isNotEmpty())
+        client.auth.verifyPhoneOtp(OtpType.Phone.SMS,signupPhone,code)
+        load()
+    }
+    fun resendPhoneSignup() {
+        if(mutable.value.resendSeconds>0)return
+        operation { client.auth.resendPhone(OtpType.Phone.SMS,signupPhone);countdown() }
+    }
+    fun smsPreference(enabled:Boolean)=operation {
+        val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        listOf("shipment_status","delay").forEach { type ->
+            client.from("notification_preferences").upsert(buildJsonObject {
+                put("user_id",uid);put("type",type);put("channel","sms");put("enabled",enabled)
+            })
+        }
+        mutable.update {it.copy(message=if(enabled)"Shipment SMS updates enabled for your verified signup number." else "Shipment SMS updates disabled.")}
     }
     fun verifySignup(code: String) = operation {
         verifyEmail(code,"signup",OtpType.Email.SIGNUP)
@@ -196,13 +292,18 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         operation { client.auth.resendEmail(OtpType.Email.SIGNUP,mutable.value.email);countdown();mutable.update { it.copy(message="Verification email requested. Check your inbox and spam folder.") } }
     }
     fun resetEmail(email: String) = operation {
-        require(MobileValidation.email(email))
-        client.auth.resetPasswordForEmail(email.trim())
-        mutable.update { it.copy(page="recover_code",email=email.trim(),message="If the account exists, a recovery email has been requested. Enter its code or paste the original recovery link below. Do not share that link with anyone.") }
+        val phone=MobileValidation.phone(email)
+        require(MobileValidation.email(email) || phone!=null)
+        recoveryPhone=phone
+        if(phone!=null) client.auth.signInWith(OTP) {this.phone=phone;createUser=false}
+        else client.auth.resetPasswordForEmail(email.trim())
+        mutable.update { it.copy(page="recover_code",email=email.trim(),message=if(phone!=null)"If the account exists, a recovery SMS has been requested." else "If the account exists, a recovery email has been requested.") }
     }
     fun recover(code: String,password: String,confirm: String) = operation {
         require(MobileValidation.password(password,confirm))
-        verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
+        val phone=recoveryPhone
+        if(phone!=null) {require(code.matches(Regex("[0-9]{6,8}")));client.auth.verifyPhoneOtp(OtpType.Phone.SMS,phone,code)}
+        else verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
         client.auth.updateUser { this.password=password }
         client.auth.signOut()
         mutable.update { MobileState(page="login",message="Password updated. Sign in with your new password.") }
@@ -214,6 +315,8 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             java.io.File(context.cacheDir,"proof/$owner").deleteRecursively()
         }
         client.auth.signOut();generation++;loadedUser=null
+        try { CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest()) }
+        catch (_: ClearCredentialException) { /* Supabase sign-out already succeeded. */ }
         mutable.update { MobileState(page="login") }
     }
     fun book(requestId: String,data: JsonObject,onSuccess: (String) -> Unit) = operation {
@@ -243,6 +346,30 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     fun reportIncident(id:String,request:String,category:String,description:String,minutes:Int,onSaved:()->Unit={})=operation {
         client.postgrest.rpc("driver_report_incident",buildJsonObject {put("p_delivery",id);put("p_request",request);put("p_category",category);put("p_description",description.trim());put("p_delay",minutes)})
         load();onSaved();mutable.update {it.copy(message="Incident reported to the office.")}
+    }
+    fun addExpense(delivery:String,request:String,category:String,amount:Double,receipt:ByteArray?,onSaved:()->Unit)=operation {
+        require(category.trim().length in 2..200 && amount.isFinite() && amount>0 && amount<=1000000)
+        val driver=mutable.value.data?.obj("driver")?.value("id").orEmpty()
+        require(driver.isNotBlank())
+        val existing=client.from("delivery_expenses").select {filter {eq("id",request)}}.decodeAs<JsonArray>()
+        if(existing.isEmpty()) {
+            var path:String?=null
+            if(receipt!=null) {
+                require(receipt.size in 1..(5*1024*1024))
+                val image=ProofImage.decode(receipt,5*1024*1024)
+                val jpeg=ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG,85,it) }.toByteArray()
+                image.recycle()
+                path="$delivery/receipt-${java.util.UUID.randomUUID()}.jpg"
+                client.storage.from("delivery-documents").upload(path,jpeg) {upsert=false;contentType=ContentType.Image.JPEG}
+            }
+            client.from("delivery_expenses").insert(buildJsonObject {
+                put("id",request);put("delivery_id",delivery);put("driver_id",driver);put("category",category.trim());put("amount",amount);put("status","pending")
+                path?.let {put("receipt_path",it)}
+            })
+        }
+        onSaved()
+        mutable.update {it.copy(message="Expense submitted for office review.")}
+        try {load()} catch(error:Exception) {if(error is CancellationException)throw error;mutable.update {it.copy(message="Expense saved. Refresh to reload your records.")}}
     }
     fun submitProof(id:String,recipient:String,photo:ByteArray,signature:ByteArray,attempt:String,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation

@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,9 +52,12 @@ fun LoginScreen(
     successMessage: String? = null,
     isLoading: Boolean = false,
     errorMessage: String? = null,
+    onGoogleSignIn: (() -> Unit)? = null,
+    allowPhone: Boolean = false,
 ) {
     // Local UI-only state
     var email           by remember { mutableStateOf("") }
+    var useEmail        by remember(allowPhone) { mutableStateOf(!allowPhone) }
     var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var showBanner      by remember { mutableStateOf(successMessage != null) }
@@ -108,13 +113,17 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(36.dp))
 
                 // ── Email field ──────────────────────────────────────────────
-                TanawInputLabel(text = "EMAIL ADDRESS")
+                onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
+                TanawInputLabel(text = if (useEmail) "EMAIL ADDRESS" else "PHONE NUMBER")
                 Spacer(modifier = Modifier.height(6.dp))
                 TanawTextField(
                     value         = email,
                     onValueChange = { email = it },
-                    placeholder   = "email@gmail.com",
+                    placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
                     leadingIcon   = {
+                        if (!useEmail) Icon(Icons.Outlined.Phone, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        else
                         Icon(
                             painter            = painterResource(id = R.drawable.ic_mail_check),
                             contentDescription = null,
@@ -122,8 +131,13 @@ fun LoginScreen(
                             modifier           = Modifier.size(18.dp)
                         )
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    keyboardOptions = KeyboardOptions(keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone),
                 )
+                if (allowPhone) {
+                    TextButton(enabled = !isLoading, onClick = { useEmail = !useEmail; email = "" }) {
+                        Text(if (useEmail) "Use phone number instead" else "Use email address instead")
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 

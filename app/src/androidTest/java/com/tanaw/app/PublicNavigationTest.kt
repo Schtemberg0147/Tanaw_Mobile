@@ -34,7 +34,7 @@ class PublicNavigationTest {
         loginReady()
         compose.onNodeWithText("Forgot Password?").performClick()
         compose.onNodeWithText("Reset password").assertExists()
-        compose.onNodeWithText("Request recovery email").assertIsNotEnabled()
+        compose.onNodeWithText("Request recovery code").assertIsNotEnabled()
         compose.onNodeWithText("Back to sign in").performClick()
         compose.onAllNodesWithText("Create Account",substring=true).onFirst().assertExists()
     }

@@ -29,6 +29,14 @@ val supabaseKey = requiredClientSetting("SUPABASE_ANON_KEY").also {
     }
 }
 
+// Public Web OAuth client ID; the client secret belongs only in Supabase.
+val googleWebClientId = (System.getenv("GOOGLE_WEB_CLIENT_ID")
+    ?: localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")).trim().also {
+    require(it.isEmpty() || it.matches(Regex("[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com"))) {
+        "GOOGLE_WEB_CLIENT_ID must be a Google Web OAuth client ID."
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -50,6 +58,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         buildConfigField("String", "MAPTILER_KEY", "\"${localProperties.getProperty("MAPTILER_KEY", "").trim()}\"")
     }
 
@@ -66,6 +75,9 @@ android {
 }
 
 dependencies {
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // Hilt & KSP Metadata
     implementation(libs.hilt.android)

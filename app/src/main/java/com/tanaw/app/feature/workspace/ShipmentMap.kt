@@ -114,7 +114,10 @@ private fun pinIcon(context:android.content.Context,label:String):org.maplibre.a
     map.clear()
     points.forEach {(label,point)->val marker=MarkerOptions().position(point).title(label);pinIcons[label]?.let {marker.icon(it)};map.addMarker(marker)}
     val moved=signature.lastOrNull {it !in old.orEmpty()}
-    if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
+    if(onSelect==null && points.map {it.second}.distinct().size>=2) {
+     val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(points.map {it.second}).build()
+     map.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
+    } else if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
     previous=signature
    }
    map.getStyle {style ->

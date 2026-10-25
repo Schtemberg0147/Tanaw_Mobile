@@ -28,20 +28,23 @@ import com.tanaw.app.feature.auth.LoginScreen
 import com.tanaw.app.feature.auth.CreateAccountScreen
 import kotlinx.serialization.json.*
 import java.util.UUID
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     val state by vm.state.collectAsState()
     val data=state.data
+    val activityContext = LocalContext.current
     if (state.page=="login") {
         LoginScreen(onLoginClick=vm::login,onForgotPassword={vm.page("recover")},onCreateAccount={vm.page("signup")},
-            successMessage=state.message,isLoading=state.busy,errorMessage=state.error)
+            successMessage=state.message,isLoading=state.busy,errorMessage=state.error,allowPhone=true,
+            onGoogleSignIn=if(com.tanaw.app.BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) ({vm.googleSignIn(activityContext)}) else null)
         return
     }
     if (state.page=="signup") {
         BackHandler(!state.busy) { vm.page("login") }
         var terms by remember { mutableStateOf(false) }
-        CreateAccountScreen(onVerifyAndContinue=vm::signup,onSignIn={vm.page("login")},onTermsClick={terms=true},isLoading=state.busy,errorMessage=state.error)
+        CreateAccountScreen(onVerifyAndContinue=vm::signup,onSignIn={vm.page("login")},onTermsClick={terms=true},isLoading=state.busy,errorMessage=state.error,phoneSignup=true)
         if(terms) InfoDialog("Before creating an account","Use accurate contact details. Requests require office review and a confirmed quotation before dispatch. Contact the office for privacy and service terms; the full policy has not been published in this app.") { terms=false }
         return
     }
@@ -59,16 +62,24 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     Action("Verify email",!state.busy && vm.canVerify(code,"signup")) { vm.verifySignup(code) }
                     Action(if(state.resendSeconds>0) "Resend in ${state.resendSeconds}s" else "Resend email",!state.busy && state.resendSeconds==0,vm::resend)
                 }
+                "verify_phone" -> {
+                    Text("Verify your phone",style=MaterialTheme.typography.headlineSmall)
+                    Text("Enter the code sent by SMS to the number you registered. Codes expire; request a new one if needed.")
+                    var code by remember {mutableStateOf("")}
+                    Field("SMS verification code",code,{code=it.trim()})
+                    Action("Verify phone",!state.busy && code.matches(Regex("[0-9]{6,8}"))) {vm.verifyPhoneSignup(code)}
+                    Action(if(state.resendSeconds>0) "Resend in ${state.resendSeconds}s" else "Resend SMS",!state.busy && state.resendSeconds==0,vm::resendPhoneSignup)
+                }
                 "recover","recover_code" -> {
                     Text("Reset password",style=MaterialTheme.typography.headlineSmall)
                     var email by remember { mutableStateOf(state.email) }
-                    Field("Account email",email,{email=it})
-                    Action("Request recovery email",!state.busy && MobileValidation.email(email)) { vm.resetEmail(email) }
+                    Field("Account phone number or email",email,{email=it})
+                    Action("Request recovery code",!state.busy && (MobileValidation.email(email) || MobileValidation.phone(email)!=null)) { vm.resetEmail(email) }
                     if(state.page=="recover_code") {
                         var code by remember { mutableStateOf("") }
                         var password by remember { mutableStateOf("") }
                         var confirm by remember { mutableStateOf("") }
-                        Field("Recovery code or original recovery link",code,{code=it.trim()})
+                        Field("Recovery code (or original email link)",code,{code=it.trim()})
                         Field("New password (8+ characters)",password,{password=it},true)
                         Field("Confirm new password",confirm,{confirm=it},true)
                         Action("Update password",!state.busy && vm.canVerify(code,"recovery") && MobileValidation.password(password,confirm)) { vm.recover(code,password,confirm) }
@@ -76,11 +87,22 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                 }
                 else -> { Text("Account access needs attention.");Action("Retry",!state.busy,vm::refresh);Action("Sign out",!state.busy,vm::logout) }
             }
-            if(state.page in listOf("verify","recover","recover_code")) Action("Back to sign in",!state.busy) { vm.page("login") }
+            if(state.page in listOf("verify","verify_phone","recover","recover_code")) Action("Back to sign in",!state.busy) { vm.page("login") }
         }
         return
     }
-    key(data.obj("profile").value("id")) { Workspace(vm,state,data) }
+    key(data.obj("profile").value("id")) {
+        if (data.obj("profile").value("role")=="customer" &&
+            MobileValidation.phone(data.obj("profile").value("phone"))==null) {
+            FormPage("Complete your profile") {
+                Notices(state)
+                Text("Add your contact number before continuing to shipments.")
+                ProfileForm(vm,state,data)
+                Action("Sign out",!state.busy,vm::logout)
+            }
+        } else if (data.obj("profile").value("role")=="driver") DriverWorkspace(vm,state,data)
+        else Workspace(vm,state,data)
+    }
 }
 
 @Composable private fun Workspace(vm: MobileWorkspaceViewModel,state: MobileState,data: JsonObject) {
@@ -362,11 +384,14 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     var address by rememberSaveable(c.value("address")){mutableStateOf(c.value("address"))}
     var city by rememberSaveable(c.value("city")){mutableStateOf(c.value("city"))}
     Text("Your profile",style=MaterialTheme.typography.headlineSmall)
-    Text("Sign-in email: ${p.value("email")}")
+    Text(if(p.value("email").isNotBlank()) "Sign-in email: ${p.value("email")}" else "Phone-number account")
     Field("Full name",name,{name=it})
     Field("Phone",phone,{phone=it})
     if(p.value("role")=="customer") { Field("Address",address,{address=it});Field("City",city,{city=it}) }
     Action("Save profile",!state.busy && name.trim().length in 2..200 && MobileValidation.phone(phone)!=null && address.length<=500 && city.length<=100){vm.profile(name,phone,address,city)}
+    Text("SMS updates are optional and go only to your verified signup number. Keep that number as your contact number.")
+    Action("Enable shipment SMS",!state.busy){vm.smsPreference(true)}
+    Action("Disable shipment SMS",!state.busy){vm.smsPreference(false)}
 }
 
 @Composable private fun Notices(state:MobileState) {
