@@ -70,7 +70,9 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         DriverWorkspaceScreen(state,data,vm::refresh,vm::logout,{vm.page("recover")},vm::markRead,vm::loadDetails,
             {s,d,home->DriverTripActions(d,state,data,vm,reference=s.value("tracking_number"),onBackHome=home)},
             {shipment,document->vm.viewProof(shipment,document)},
-            {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)})
+            {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)},
+            {period,more->vm.loadHistory(period,more)},
+            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)})
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium)
@@ -87,17 +89,21 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     onRead:(String)->Unit,onDetails:(String)->Unit,
     tripActions:@Composable (JsonObject,JsonObject,()->Unit)->Unit,
     onProof:(String,String)->Unit,
-    onExpense:(String,String,String,Double,ByteArray?,()->Unit)->Unit
+    onExpense:(String,String,String,Double,ByteArray?,()->Unit)->Unit,
+    onHistory:((String,Boolean)->Unit)?=null,
+    onFuel:((String,String,FuelEntry,()->Unit)->Unit)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
     var info by remember {mutableStateOf<String?>(null)}
     var expense by rememberSaveable {mutableStateOf(false)}
+    var fuel by rememberSaveable {mutableStateOf(false)}
     val request=rememberSaveable(expense){UUID.randomUUID().toString()}
-    val shipments=data.rows("shipments")
-    val active=shipments.filter {DriverUiRules.isActive(it.value("status"))}
+    val shipments=(state.history?.rows("shipments").orEmpty()+data.rows("shipments")).distinctBy {it.value("id")}
+    val active=data.rows("shipments").filter {DriverUiRules.isActive(it.value("status"))}
+    val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray((state.history?.rows("driver_deliveries").orEmpty()+data.rows("driver_deliveries")).distinctBy {it.value("id")})))
     val shipment=shipments.firstOrNull {it.value("id")==selected} ?: if(tab=="Navigate")active.firstOrNull() else null
-    val delivery=shipment?.let {s->DriverUiRules.delivery(data,s.value("id"))}
+    val delivery=shipment?.let {s->DriverUiRules.delivery(tripData,s.value("id"))}
     LaunchedEffect(shipment?.value("id"),tab) {if(shipment!=null)onDetails(shipment.value("id"))}
     BackHandler(tab!="Home" || selected!=null) {if(selected!=null)selected=null else tab="Home"}
     Scaffold(containerColor=DriverBackground,topBar={
@@ -121,7 +127,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 selected!=null && tab!="Navigate" && shipment!=null -> {
                     DriverPageHeading("Trip details") {selected=null}
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                        if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,data){selected=null;tab="Home"}
+                        if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,tripData){selected=null;tab="Home"}
                         else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
                         DriverRecords(shipment,state,onDetails,onProof)
                     }
@@ -142,12 +148,14 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 }
                 tab=="Navigate" && shipment!=null -> {
                     DriverNavigation(shipment,delivery?:buildJsonObject{},state,data,{s,d->tripActions(s,d){selected=null;tab="Home"}}) {expense=true}
+                    if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))
+                        OutlinedButton(onClick={fuel=true},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Record Fuel")}
                     Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof)}
                 }
                 tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Navigate");DriverEmpty(data)
                 }
-                tab=="Trips" -> DriverTrips(data){selected=it}
+                tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
                 tab=="Profile" -> DriverProfile(data,onRecovery,onLogout) {info=it}
                 tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Notifications") {tab="Home"}
@@ -163,6 +171,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     }
     if(expense && delivery!=null && shipment!=null)AddTripExpenseSheet(delivery.value("id"),shipment.value("tracking_number"),state.busy,state.error,
         onDismiss={if(!state.busy)expense=false},onSubmit={category,amount,receipt->onExpense(delivery.value("id"),request,category,amount,receipt){expense=false}})
+    if(fuel && delivery!=null && onFuel!=null)DriverFuelForm(delivery.value("id"),state,{fuel=false}) {fuelRequest,entry,close->onFuel(delivery.value("id"),fuelRequest,entry,close)}
     info?.let {AlertDialog(onDismissRequest={info=null},title={Text("Tanaw")},text={Text(it)},confirmButton={TextButton(onClick={info=null}){Text("Close")}})}
 }
 
@@ -327,11 +336,14 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     }
 }
 
-@Composable private fun DriverTrips(data:JsonObject,open:(String)->Unit) {
+@Composable private fun DriverTrips(data:JsonObject,state:MobileState,onHistory:((String,Boolean)->Unit)?,open:(String)->Unit) {
     var filter by rememberSaveable {mutableStateOf("All")}
     var period by rememberSaveable {mutableStateOf("This month")}
     var showFilter by remember {mutableStateOf(false)}
-    val records=data.rows("shipments").filter {DriverUiRules.inPeriod(it,period)}
+    LaunchedEffect(period) {onHistory?.invoke(period,false)}
+    val history=state.history?.takeIf {it.value("period")==period}
+    val records=if(onHistory==null)data.rows("shipments").filter {DriverUiRules.inPeriod(it,period)} else history?.rows("shipments").orEmpty()
+    val recordData=history?:data
     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("My Trips",style=MaterialTheme.typography.headlineMedium)
@@ -342,13 +354,20 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         }
         DriverCard(accent=DriverNavy) {
             DriverCaption(if(period=="This month")"MONTHLY TRIPS" else period.uppercase())
-            Text("${records.count {it.value("status")=="completed"}} Completed",fontSize=24.sp,fontWeight=FontWeight.Bold)
+            Text("${history?.value("completed")?:if(onHistory==null)records.count {it.value("status")=="completed"}.toString() else "—"} Completed",fontSize=24.sp,fontWeight=FontWeight.Bold)
             HorizontalDivider(color=DriverLine);DriverCaption("TOTAL ALLOWANCE")
-            Text(DriverUiRules.allowanceTotal(data,records),fontSize=24.sp,color=DriverNavy,fontWeight=FontWeight.Bold)
+            Text(history?.let(DriverHistory::allowance)?:if(onHistory==null)DriverUiRules.allowanceTotal(data,records)else "Not loaded",fontSize=24.sp,color=DriverNavy,fontWeight=FontWeight.Bold)
             HorizontalDivider(color=DriverLine);DriverCaption("ON-TIME RATE")
-            Text(DriverUiRules.onTime(data,records),fontSize=24.sp,color=Color(0xFF15803D),fontWeight=FontWeight.Bold)
+            Text(history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(data,records)else "Not loaded",fontSize=24.sp,color=Color(0xFF15803D),fontWeight=FontWeight.Bold)
         }
-        Text("${period} · latest 200 permitted shipment records",fontSize=11.sp,color=DriverMuted)
+        Text(if(onHistory==null)"$period · latest 200 permitted shipment records" else "$period · ${records.size} of ${history?.value("total")?:"—"} trips · totals include the full period",fontSize=11.sp,color=DriverMuted)
+        if(onHistory!=null) {
+            Text("Period uses scheduled departure, or creation date when absent, in Philippine time.",fontSize=11.sp,color=DriverMuted)
+            history?.value("as_of")?.let {Text("Updated ${MobilePresentation.time(it)}",fontSize=11.sp,color=DriverMuted)}
+            if(state.historyLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
+            state.historyError?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+            TextButton(onClick={onHistory(period,false)},enabled=!state.historyLoading){Text("Refresh trip history")}
+        }
         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(24.dp)) {
             listOf("All","Completed","Ongoing","Cancelled").forEach {f->Column(Modifier.clickable{filter=f}.padding(vertical=8.dp)) {
                 Text(f,color=if(filter==f)DriverNavy else DriverMuted,fontWeight=if(filter==f)FontWeight.Bold else FontWeight.Normal)
@@ -356,7 +375,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             }}
         }
         val visible=records.filter {DriverUiRules.matches(it.value("status"),filter)}
-        if(visible.isEmpty())Text("No trips in this view.",color=DriverMuted)
+        if(visible.isEmpty() && !state.historyLoading && state.historyError==null)Text(if(history!=null && records.size<(history.value("total").toIntOrNull()?:0))"No matching trips loaded. Load more to search further." else "No trips in this view.",color=DriverMuted)
         visible.forEach {s->Surface(onClick={open(s.value("id"))},color=Color.White,shape=RoundedCornerShape(4.dp)) {
             Column {
                 Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -366,11 +385,13 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     Text("○  ${s.value("pickup_address")}",fontSize=14.sp);Text("○  ${s.value("dropoff_address")}",fontSize=14.sp,color=DriverMuted)
                     HorizontalDivider(color=DriverLine)
                     Text(MobilePresentation.time(s.value("scheduled_departure")),fontSize=12.sp,color=DriverMuted)
-                    Text(DriverUiRules.delivery(data,s.value("id")).value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",fontWeight=FontWeight.Bold,color=DriverNavy)
+                    Text(DriverUiRules.delivery(recordData,s.value("id")).value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",fontWeight=FontWeight.Bold,color=DriverNavy)
                 }
                 Box(Modifier.fillMaxWidth().height(4.dp).background(if(s.value("status")=="completed")Color(0xFFCCF2D9)else DriverLine))
             }
         }}
+        if(onHistory!=null && history!=null && records.size<(history.value("total").toIntOrNull()?:0))
+            OutlinedButton(onClick={onHistory(period,true)},enabled=!state.historyLoading,modifier=Modifier.fillMaxWidth()){Text("Load more trips")}
     }
 }
 
@@ -436,9 +457,17 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 }
 
 @Composable private fun DriverRecords(s:JsonObject,state:MobileState,load:(String)->Unit,proof:(String,String)->Unit) {
-    TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading){Text("Refresh timeline and proof")}
+    TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading){Text("Refresh trip records")}
     if(state.detailLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
     state.details?.takeIf {it.value("shipment_id")==s.value("id")}?.let {details->
+        details.value("fuel_error").takeIf(String::isNotBlank)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+        if(details.containsKey("fuel_logs")) {
+            Text("Fuel records",fontWeight=FontWeight.Bold)
+            if(details.rows("fuel_logs").isEmpty())Text("No fuel records for this trip.",fontSize=12.sp)
+            details.rows("fuel_logs").forEach {record->
+                Text("${record.value("liters")} L × ${MobilePresentation.money(record.value("price_per_liter"))}/L · ${MobilePresentation.money(record.value("total_cost"))} · ${record.value("odometer_km")} km\n${record.value("station")} · ${MobilePresentation.time(record.value("logged_at"))}",fontSize=12.sp)
+            }
+        }
         details.rows("history").forEach {Text("${MobilePresentation.status(it.value("status"))} · ${MobilePresentation.time(it.value("created_at"))}",fontSize=12.sp)}
         details.rows("documents").forEach {doc->TextButton(onClick={proof(s.value("id"),doc.value("id"))}){Text("View ${MobilePresentation.status(doc.value("kind"))}")}}
     }

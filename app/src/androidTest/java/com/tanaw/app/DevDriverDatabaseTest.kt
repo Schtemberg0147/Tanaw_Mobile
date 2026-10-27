@@ -38,6 +38,17 @@ class DevDriverDatabaseTest {
         sections.rows("driver_deliveries").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}
         sections.rows("compliance").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}
         sections.rows("expenses").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}
+        val history=runBlocking {client.postgrest.rpc("mobile_driver_history",buildJsonObject {
+            put("p_period","All records");put("p_offset",0);put("p_limit",50)
+        }).decodeAs<JsonObject>()}
+        assertTrue(history.value("revision").isNotBlank())
+        assertTrue(history.value("total").toLong()>=history.rows("shipments").size)
+        history.rows("driver_deliveries").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}
+        assertEquals(history.rows("shipments").map {it.value("id")}.toSet(),history.rows("driver_deliveries").map {it.value("shipment_id")}.toSet())
+        history.rows("shipments").firstOrNull()?.let {shipment->
+            val fuel=runBlocking {client.postgrest.rpc("mobile_driver_fuel_history",buildJsonObject {put("p_shipment",shipment.value("id"))}).decodeAs<JsonArray>()}
+            fuel.forEach {assertEquals(driver.value("id"),it.jsonObject.value("driver_id"))}
+        }
         compose.waitUntil(60000) {compose.onAllNodesWithText("PROFILE").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithText("PROFILE").performClick()
         compose.onNodeWithText(data.obj("profile").value("full_name")).assertExists()

@@ -49,7 +49,8 @@ import kotlinx.coroutines.awaitCancellation
 data class MobileState(val page: String = "loading", val busy: Boolean = false, val error: String? = null,
     val message: String? = null, val data: JsonObject? = null, val email: String = "", val resendSeconds: Int = 0,
     val details: JsonObject? = null, val detailLoading: Boolean = false,
-    val proof: android.graphics.Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="")
+    val proof: android.graphics.Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
+    val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
@@ -67,6 +68,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     private var detailVersion=0
     private var liveJob:Job?=null
     private var pollJob:Job?=null
+    private var historyVersion=0
     private fun stopLive() {liveJob?.cancel();pollJob?.cancel();TripTrackingService.stop(context)}
     private fun startLive(uid:String) {
         liveJob?.cancel();pollJob?.cancel()
@@ -93,8 +95,9 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         if(mutable.value.busy || mutable.value.page!="workspace")return
         try {load();mutable.value.details?.value("shipment_id")?.takeIf(String::isNotBlank)?.let { id ->
             val version=generation
-            val detail=client.postgrest.rpc("mobile_shipment_details",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()
-            if(version==generation && mutable.value.details?.value("shipment_id")==id)mutable.update {it.copy(details=detail)}
+            val detailRequest=detailVersion
+            val detail=readDetails(id)
+            if(version==generation && detailRequest==detailVersion && mutable.value.details?.value("shipment_id")==id)mutable.update {it.copy(details=detail)}
         }}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update {it.copy(offline=true)}}
     }
     init {
@@ -103,13 +106,13 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 when (status) {
                     is SessionStatus.Authenticated -> {
                         val id = client.auth.currentUserOrNull()?.id
-                        if (id != loadedUser) { stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null) }; loadedUser = id;if(id!=null)startLive(id) }
+                        if (id != loadedUser) { stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null) }; loadedUser = id;if(id!=null)startLive(id) }
                         if (!mutable.value.page.startsWith("recover")) refresh()
                     }
                     is SessionStatus.NotAuthenticated -> {
                         stopLive();loadedUser?.let {TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
-                        mutable.update { it.copy(data=null,details=null,proof=null,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
+                        mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
                     }
                     is SessionStatus.RefreshFailure -> {
                         stopLive()
@@ -186,6 +189,36 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         }
     }
     fun refresh() = operation { load() }
+    fun loadHistory(period:String,more:Boolean=false) {
+        val uid=client.auth.currentUserOrNull()?.id?:return
+        val version=++historyVersion;val accountVersion=generation
+        val previous=mutable.value.history?.takeIf {it.value("period")==period}
+        val offset=if(more)previous?.rows("shipments")?.size?:0 else 0
+        mutable.update {it.copy(historyLoading=true,historyError=null,history=previous)}
+        viewModelScope.launch {
+            try {
+                suspend fun read(offset:Int)=client.postgrest.rpc("mobile_driver_history",buildJsonObject {put("p_period",period);put("p_offset",offset);put("p_limit",50)}).decodeAs<JsonObject>()
+                var page=read(offset)
+                val changed=more && !DriverHistory.sameRevision(previous,page)
+                if(changed)page=read(0)
+                if(version==historyVersion && accountVersion==generation && client.auth.currentUserOrNull()?.id==uid)
+                    mutable.update {it.copy(history=DriverHistory.merge(if(more && !changed)previous else null,page),historyLoading=false,
+                        historyError=if(changed)"Trip records changed. History restarted with current totals; load more to continue." else null)}
+            }catch(cancelled:CancellationException){throw cancelled}
+            catch(_:Exception){if(version==historyVersion && accountVersion==generation)mutable.update {it.copy(historyLoading=false,historyError="Could not load complete trip history. Reconnect and retry.")}}
+        }
+    }
+    internal fun logFuel(delivery:String,request:String,entry:FuelEntry,onSaved:()->Unit)=operation {
+        val uid=client.auth.currentUserOrNull()?.id?:error("ACTIVE_DRIVER_REQUIRED");val version=generation
+        client.postgrest.rpc("mobile_driver_log_fuel",buildJsonObject {
+            put("p_request",request);put("p_delivery",delivery);put("p_liters",JsonPrimitive(entry.liters));put("p_price",JsonPrimitive(entry.price))
+            put("p_odometer",JsonPrimitive(entry.odometer));put("p_station",entry.station)
+        })
+        if(version!=generation || client.auth.currentUserOrNull()?.id!=uid)return@operation
+        onSaved();mutable.update {it.copy(message="Fuel record saved.")}
+        mutable.value.details?.value("shipment_id")?.takeIf(String::isNotBlank)?.let(::loadDetails)
+        try {load()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update {it.copy(message="Fuel record saved. Refresh to reload your records.",offline=true)}}
+    }
     fun googleSignIn(activityContext: Context) = operation {
         if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
             mutable.update { it.copy(error="Google sign-in setup is not complete yet. Please use email sign-in for now.") }
@@ -402,6 +435,15 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         client.from("notifications").update(buildJsonObject { put("read_at",java.time.Instant.now().toString()) }) { filter { eq("id",id);eq("user_id",uid) } }
         load()
     }
+    private suspend fun readDetails(id:String):JsonObject {
+        val details=client.postgrest.rpc("mobile_shipment_details",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()
+        if(mutable.value.data?.obj("profile")?.value("role")!="driver")return details
+        val extra=try {
+            buildJsonObject {put("fuel_logs",client.postgrest.rpc("mobile_driver_fuel_history",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonArray>())}
+        }catch(cancelled:CancellationException){throw cancelled}
+        catch(_:Exception){buildJsonObject {put("fuel_error","Could not load fuel records. Refresh to retry.")}}
+        return JsonObject(details+extra)
+    }
     fun loadDetails(id: String) {
         detailJob?.cancel()
         val requestVersion=++detailVersion
@@ -410,7 +452,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         mutable.update { it.copy(details=null,proof=null,detailLoading=true,error=null) }
         detailJob=viewModelScope.launch {
             try {
-                val details=client.postgrest.rpc("mobile_shipment_details",buildJsonObject { put("p_shipment",id) }).decodeAs<JsonObject>()
+                val details=readDetails(id)
                 if(version==generation && requestVersion==detailVersion && uid==client.auth.currentUserOrNull()?.id) mutable.update { it.copy(details=details) }
             } catch(cancelled: CancellationException) { throw cancelled }
             catch(error: Exception) { if(version==generation && requestVersion==detailVersion) mutable.update { it.copy(error=friendly(error)) } }
