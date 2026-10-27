@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontVariation
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,15 +30,13 @@ import com.tanaw.app.feature.driver.components.AddTripExpenseSheet
 import kotlinx.serialization.json.*
 import org.maplibre.android.geometry.LatLng
 import java.time.*
-import java.time.format.DateTimeFormatter
 import java.util.UUID
 
-/** Figma Driver's App flow. This theme and shell apply only to authenticated drivers. */
+/** Figma driver interface. This theme and navigation apply only to authenticated drivers. */
 internal val DriverNavy=Color(0xFF002D54)
 internal val DriverBackground=Color(0xFFF9F9FF)
 internal val DriverMuted=Color(0xFF43474E)
 internal val DriverLine=Color(0xFFE7EEFF)
-@OptIn(ExperimentalTextApi::class)
 private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     Font(R.font.manrope,weight=FontWeight(weight),variationSettings=FontVariation.Settings(FontVariation.weight(weight)))
 })
@@ -72,7 +69,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             {shipment,document->vm.viewProof(shipment,document)},
             {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)},
             {period,more->vm.loadHistory(period,more)},
-            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)})
+            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)},vm::clearOfflineWorkspace)
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium)
@@ -83,7 +80,6 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun DriverWorkspaceScreen(
     state:MobileState,data:JsonObject,onRefresh:()->Unit,onLogout:()->Unit,onRecovery:()->Unit,
     onRead:(String)->Unit,onDetails:(String)->Unit,
@@ -91,7 +87,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     onProof:(String,String)->Unit,
     onExpense:(String,String,String,Double,ByteArray?,()->Unit)->Unit,
     onHistory:((String,Boolean)->Unit)?=null,
-    onFuel:((String,String,FuelEntry,()->Unit)->Unit)?=null
+    onFuel:((String,String,FuelEntry,()->Unit)->Unit)?=null,
+    onClearOffline:(()->Unit)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
@@ -121,7 +118,11 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             state.error?.let {DriverNotice(it,true)}
             state.message?.let {DriverNotice(it)}
-            if(state.offline)DriverNotice("Offline · showing saved records. Reconnect and refresh.")
+            if(state.offline) {
+                DriverNotice("Offline · saved ${state.lastSync.ifBlank {"at an unknown time"}}. Records may have changed. Reconnect and refresh before making changes.")
+                TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry connection")}
+            }
+            if(onClearOffline!=null)TextButton(onClick=onClearOffline,enabled=!state.busy){Text("Clear saved offline workspace")}
             data.value("driver_read_error").takeIf(String::isNotBlank)?.let {DriverNotice(it,true)}
             when {
                 selected!=null && tab!="Navigate" && shipment!=null -> {
@@ -147,7 +148,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Refresh")}
                 }
                 tab=="Navigate" && shipment!=null -> {
-                    DriverNavigation(shipment,delivery?:buildJsonObject{},state,data,{s,d->tripActions(s,d){selected=null;tab="Home"}}) {expense=true}
+                    DriverNavigation(shipment,delivery?:buildJsonObject{},state,{s,d->tripActions(s,d){selected=null;tab="Home"}}) {expense=true}
                     if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))
                         OutlinedButton(onClick={fuel=true},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Record Fuel")}
                     Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof)}
@@ -169,7 +170,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             }
         }
     }
-    if(expense && delivery!=null && shipment!=null)AddTripExpenseSheet(delivery.value("id"),shipment.value("tracking_number"),state.busy,state.error,
+    if(expense && delivery!=null)AddTripExpenseSheet(delivery.value("id"),shipment.value("tracking_number"),state.busy,state.error,
         onDismiss={if(!state.busy)expense=false},onSubmit={category,amount,receipt->onExpense(delivery.value("id"),request,category,amount,receipt){expense=false}})
     if(fuel && delivery!=null && onFuel!=null)DriverFuelForm(delivery.value("id"),state,{fuel=false}) {fuelRequest,entry,close->onFuel(delivery.value("id"),fuelRequest,entry,close)}
     info?.let {AlertDialog(onDismissRequest={info=null},title={Text("Tanaw")},text={Text(it)},confirmButton={TextButton(onClick={info=null}){Text("Close")}})}
@@ -268,7 +269,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     }
 }
 
-@Composable private fun DriverNavigation(s:JsonObject,d:JsonObject,state:MobileState,data:JsonObject,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit) {
+@Composable private fun DriverNavigation(s:JsonObject,d:JsonObject,state:MobileState,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit) {
     val stage=DriverUiRules.stage(d)
     val heading=listOf("Ready to start route","Heading to Pick-up","Waiting for Customer","Waiting to Load Cargo","Heading to Destination","Delivery submitted")[stage]
     Column(Modifier.fillMaxWidth().statusBarsPadding()) {

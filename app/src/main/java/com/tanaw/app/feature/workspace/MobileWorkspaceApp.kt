@@ -28,6 +28,7 @@ import com.tanaw.app.feature.auth.LoginScreen
 import com.tanaw.app.feature.auth.CreateAccountScreen
 import kotlinx.serialization.json.*
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
@@ -74,8 +75,10 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     Text("Reset password",style=MaterialTheme.typography.headlineSmall)
                     var email by remember { mutableStateOf(state.email) }
                     Field("Account phone number or email",email,{email=it})
-                    Action("Request recovery code",!state.busy && (MobileValidation.email(email) || MobileValidation.phone(email)!=null)) { vm.resetEmail(email) }
+                    Action("Request recovery code",!state.busy && state.resendSeconds==0 && (MobileValidation.email(email) || MobileValidation.phone(email)!=null)) { vm.resetEmail(email) }
+                    if(state.resendSeconds>0)Text("Request another code in ${state.resendSeconds}s")
                     if(state.page=="recover_code") {
+                        Text("Recovery requested for ${state.email}")
                         var code by remember { mutableStateOf("") }
                         var password by remember { mutableStateOf("") }
                         var confirm by remember { mutableStateOf("") }
@@ -219,7 +222,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     val stepHeading=remember {BringIntoViewRequester()}
     LaunchedEffect(step,started) {if(started) stepHeading.bringIntoView()}
     var bookingClock by remember {mutableStateOf(java.time.Instant.now())}
-    LaunchedEffect(Unit) {while(true) {bookingClock=java.time.Instant.now();kotlinx.coroutines.delay(1000)}}
+    LaunchedEffect(Unit) {while(true) {bookingClock=java.time.Instant.now();kotlinx.coroutines.delay(1.seconds)}}
     var pickupLat by rememberSaveable {mutableStateOf<Double?>(null)}
     var pickupLng by rememberSaveable {mutableStateOf<Double?>(null)}
     var dropoffLat by rememberSaveable {mutableStateOf<Double?>(null)}
@@ -389,6 +392,9 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     Field("Phone",phone,{phone=it})
     if(p.value("role")=="customer") { Field("Address",address,{address=it});Field("City",city,{city=it}) }
     Action("Save profile",!state.busy && name.trim().length in 2..200 && MobileValidation.phone(phone)!=null && address.length<=500 && city.length<=100){vm.profile(name,phone,address,city)}
+    if(state.offline)Text("Saved SMS status may be out of date. Reconnect and refresh.")
+    Text("Shipment SMS: ${RecoveryPolicy.sms(data, "shipment_status")}")
+    Text("Delay SMS: ${RecoveryPolicy.sms(data, "delay")}")
     Text("SMS updates are optional and go only to your verified signup number. Keep that number as your contact number.")
     Action("Enable shipment SMS",!state.busy){vm.smsPreference(true)}
     Action("Disable shipment SMS",!state.busy){vm.smsPreference(false)}

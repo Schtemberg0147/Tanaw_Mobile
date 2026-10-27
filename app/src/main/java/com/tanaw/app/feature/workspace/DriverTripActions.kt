@@ -4,55 +4,39 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.location.*
 import android.os.*
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
+import androidx.core.location.LocationManagerCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonObject
-import java.io.File
-import java.io.ByteArrayOutputStream
 import java.time.Instant
-import java.util.UUID
 import kotlin.coroutines.resume
+import kotlin.time.Duration.Companion.seconds
 import kotlin.coroutines.resumeWithException
 
 @SuppressLint("MissingPermission")
-suspend fun freshDriverLocation(context:Context):Location = withTimeout(20000) {
+suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.seconds) {
  val manager=context.getSystemService(LocationManager::class.java)
  val provider=if(manager.isProviderEnabled(LocationManager.GPS_PROVIDER))LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
- val location=suspendCancellableCoroutine<Location> { continuation ->
-  if(Build.VERSION.SDK_INT>=30) {
-   val signal=CancellationSignal();continuation.invokeOnCancellation {signal.cancel()}
-   manager.getCurrentLocation(provider,signal,context.mainExecutor) { location ->
-    if(continuation.isActive) {if(location!=null)continuation.resume(location)else continuation.resumeWithException(IllegalStateException("No fresh location fix. Try outdoors."))}
+ val location=suspendCancellableCoroutine { continuation ->
+  val signal=CancellationSignal()
+  continuation.invokeOnCancellation {signal.cancel()}
+  LocationManagerCompat.getCurrentLocation(manager,provider,signal,ContextCompat.getMainExecutor(context)) { location ->
+   if(continuation.isActive) {
+    if(location!=null)continuation.resume(location)
+    else continuation.resumeWithException(IllegalStateException("No fresh location fix. Try outdoors."))
    }
-  } else {
-   val listener=object:LocationListener {
-    override fun onLocationChanged(location:Location) {manager.removeUpdates(this);if(continuation.isActive)continuation.resume(location)}
-   }
-   continuation.invokeOnCancellation {manager.removeUpdates(listener)}
-   manager.requestSingleUpdate(provider,listener,Looper.getMainLooper())
   }
  }
  require(location.hasAccuracy() && location.accuracy<=100 && System.currentTimeMillis()-location.time in 0..60000) {"A fresh location accurate within 100 metres is required. Try outdoors."}
@@ -84,7 +68,7 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20000) {
   if(ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED)withNotificationPermission()
   else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
  }
- val busy=state.busy||locating
+ val busy=state.busy||locating||state.offline
  SupportingText("Trip actions")
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
  if(status=="assigned" && delivery.value("route_started_at").isBlank()) DriverButton("START ROUTE AND SHARE LOCATION",!busy){request("start")}
@@ -97,7 +81,7 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20000) {
  if(status=="assigned" && delivery.value("pickup_arrived_at").isNotBlank()) {
   SupportingText("Grace ends ${MobilePresentation.time(delivery.value("grace_ends_at"))}. Office review threshold ${MobilePresentation.time(delivery.value("auto_cancel_at"))}. Cancellation requires an office decision.")
   DriverButton("CUSTOMER ARRIVED AT PICK-UP",!busy){vm.driver(id,"showed")}
-  var now by remember {mutableStateOf(Instant.now())};LaunchedEffect(id){while(true){delay(1000);now=Instant.now()}}
+  var now by remember {mutableStateOf(Instant.now())};LaunchedEffect(id){while(true){delay(1.seconds);now=Instant.now()}}
   val due=runCatching{!Instant.parse(delivery.value("auto_cancel_at")).isAfter(now)}.getOrDefault(false)
   OutlinedButton(onClick={vm.driver(id,"no_show")},enabled=!busy && due,modifier=Modifier.heightIn(min=48.dp)){Text("Report no-show for office review")}
  }

@@ -28,14 +28,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
 import com.tanaw.app.BuildConfig
 import android.content.Context
 import android.graphics.Bitmap
@@ -49,14 +50,15 @@ import kotlinx.coroutines.awaitCancellation
 data class MobileState(val page: String = "loading", val busy: Boolean = false, val error: String? = null,
     val message: String? = null, val data: JsonObject? = null, val email: String = "", val resendSeconds: Int = 0,
     val details: JsonObject? = null, val detailLoading: Boolean = false,
-    val proof: android.graphics.Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
+    val proof: Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
     val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
-fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
 
 @HiltViewModel
 class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseClient,@ApplicationContext private val context:Context) : ViewModel() {
+    private val recoveryStore=WorkspaceRecoveryStore(context,BuildConfig.SUPABASE_URL)
     private var signupPhone: String = ""
     private var recoveryPhone: String? = null
     private val mutable = MutableStateFlow(MobileState())
@@ -72,7 +74,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     private fun stopLive() {liveJob?.cancel();pollJob?.cancel();TripTrackingService.stop(context)}
     private fun startLive(uid:String) {
         liveJob?.cancel();pollJob?.cancel()
-        pollJob=viewModelScope.launch {while(true){delay(30000);backgroundRefresh()}}
+        pollJob=viewModelScope.launch {while(true){delay(30.seconds);backgroundRefresh()}}
         liveJob=viewModelScope.launch {
             while(true) {
                 val channel=client.channel("mobile-$uid")
@@ -80,13 +82,13 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                     coroutineScope {
                         listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents").forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
-                            launch {changes.collect {delay(300);backgroundRefresh()}}
+                            launch {changes.collect {delay(300.milliseconds);backgroundRefresh()}}
                         }
                         channel.subscribe()
                         awaitCancellation()
                     }
                 } catch(cancelled:CancellationException){throw cancelled}
-                catch(_:Exception){delay(10000)}
+                catch(_:Exception){delay(10.seconds)}
                 finally {withContext(kotlinx.coroutines.NonCancellable){try {client.realtime.removeChannel(channel)}catch(_:Exception){}}}
             }
         }
@@ -101,32 +103,57 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         }}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update {it.copy(offline=true)}}
     }
     init {
+        recoveryStore.read("challenge",RecoveryPolicy.CHALLENGE_AGE)?.takeIf {RecoveryPolicy.valid(it,System.currentTimeMillis())}?.let {
+            val target=it.value("target")
+            if(it.value("page")=="verify_phone")signupPhone=target else recoveryPhone=MobileValidation.phone(target)
+            mutable.value=MobileState(page=it.value("page"),email=target,message="Resume verification or request a fresh code. Re-enter your code and password.")
+            val remaining=((it.value("created").toLong()+60000-System.currentTimeMillis())/1000).toInt().coerceIn(0,60)
+            if(remaining>0)countdown(remaining)
+        }
         viewModelScope.launch {
             client.auth.sessionStatus.collect { status ->
                 when (status) {
                     is SessionStatus.Authenticated -> {
                         val id = client.auth.currentUserOrNull()?.id
-                        if (id != loadedUser) { stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null) }; loadedUser = id;if(id!=null)startLive(id) }
+                        if (id != loadedUser) { loadedUser?.let {recoveryStore.clear(it)};stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null) }; loadedUser = id;if(id!=null){restoreWorkspace(id);startLive(id)} }
                         if (!mutable.value.page.startsWith("recover")) refresh()
                     }
                     is SessionStatus.NotAuthenticated -> {
-                        stopLive();loadedUser?.let {TrackingQueue(context).use {queue->queue.clearOwner(it)}}
+                        stopLive();loadedUser?.let {recoveryStore.clear(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
                         mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
                     }
                     is SessionStatus.RefreshFailure -> {
                         stopLive()
-                        generation++; loadedUser = null
-                        mutable.update { MobileState(page="login",error="Your session could not be refreshed. Please sign in again.") }
+                        generation++
+                        if(mutable.value.page.startsWith("recover") || mutable.value.page=="verify_phone")return@collect
+                        // Expired sessions expose no currentUser in Auth 3.8. Read identity only;
+                        // never import an expired token to authorize cached actions.
+                        val owner=client.auth.currentUserOrNull()?.id ?: runCatching {client.auth.sessionManager.loadSession().user?.id}.getOrNull()
+                        if(owner!=null && (mutable.value.data?.obj("profile")?.value("id")==owner || restoreWorkspace(owner)))
+                            {loadedUser=owner;mutable.update {it.copy(page="workspace",offline=true,error="Session refresh unavailable. Saved records are read-only; reconnect to verify access.")}}
+                        else {loadedUser=null;mutable.update { MobileState(page="login",error="Your session could not be refreshed. Please sign in again.") }}
                     }
                     else -> Unit
                 }
             }
         }
     }
-    fun page(page: String) { if (!mutable.value.busy) mutable.update { it.copy(page=page,error=null,message=null) } }
-    private fun operation(block: suspend () -> Unit) {
+    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){recoveryStore.clear("challenge");recoveryPhone=null;signupPhone="";timer?.cancel()};mutable.update { it.copy(page=page,error=null,message=null) }} }
+    private fun saveChallenge(page:String,target:String)=recoveryStore.write("challenge",RecoveryPolicy.challenge(page,target,System.currentTimeMillis()))
+    private fun restoreWorkspace(owner:String):Boolean {
+        if(mutable.value.page.startsWith("recover") || mutable.value.page=="verify_phone")return false
+        val saved=recoveryStore.read(owner,RecoveryPolicy.CACHE_AGE)?:return false
+        val data=RecoveryPolicy.workspace(saved.obj("data"),owner)?:return false
+        mutable.update {it.copy(page="workspace",data=data,offline=true,lastSync=saved.value("saved_at"))};return true
+    }
+    fun clearOfflineWorkspace() {
+        (client.auth.currentUserOrNull()?.id?:loadedUser)?.let {recoveryStore.clear(it)}
+        mutable.update {it.copy(data=if(it.offline)null else it.data,details=null,history=null,page=if(it.offline)"access" else it.page,message="Saved offline workspace cleared.")}
+    }
+    private fun operation(allowOffline:Boolean=false,block: suspend () -> Unit) {
         if (mutable.value.busy) return
+        if(!allowOffline && mutable.value.page=="workspace" && mutable.value.offline){mutable.update {it.copy(error="Reconnect and refresh before changing saved records.")};return}
         mutable.update { it.copy(busy=true,error=null,message=null) }
         viewModelScope.launch {
             try { block() }
@@ -163,6 +190,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         catch (error: Exception) {
             if (error is CancellationException) throw error
             if (version==generation && error.message.orEmpty().contains("ACTIVE_")) {
+                recoveryStore.clear(id)
                 mutable.update { it.copy(data=null,details=null,proof=null,page="access") }
             }
             throw error
@@ -183,12 +211,25 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             }
             data=JsonObject(data+extra)
         }
+        if(data.obj("profile").value("role")!="driver")data=JsonObject(data+readSmsPreferences(id))
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
-            mutable.update { it.copy(page="workspace",data=data,error=null,offline=false,lastSync=java.time.Instant.now().toString()) }
+            val savedAt=java.time.Instant.now().toString()
+            val snapshot=RecoveryPolicy.workspace(data,id)
+            val cached=snapshot==null || recoveryStore.write(id,buildJsonObject {put("created",System.currentTimeMillis());put("saved_at",savedAt);put("data",snapshot)})
+            mutable.update { it.copy(page="workspace",data=data,error=null,offline=false,lastSync=savedAt,message=if(cached)it.message else "Offline copy could not be saved on this device.") }
             if(data.obj("profile").value("role")!="driver" || data.rows("deliveries").none {it.value("id")==TripTrackingStatus.state.value.delivery && it.value("status") in listOf("assigned","loading","in_transit")}) TripTrackingService.stop(context)
         }
     }
-    fun refresh() = operation { load() }
+    fun refresh() = operation(allowOffline=true) {
+        try {
+            if(client.auth.currentUserOrNull()==null && loadedUser!=null) {
+                client.auth.loadFromStorage()
+                withTimeout(20.seconds) {client.auth.sessionStatus.first {it is SessionStatus.Authenticated || it is SessionStatus.NotAuthenticated}}
+                require(client.auth.currentUserOrNull()!=null){"ACTIVE_ACCOUNT_REQUIRED"}
+            }
+            load();loadedUser?.let(::startLive)
+        }catch(e:Exception){if(e is CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException)throw e;if(mutable.value.data!=null)mutable.update {it.copy(offline=true)};throw e}
+    }
     fun loadHistory(period:String,more:Boolean=false) {
         val uid=client.auth.currentUserOrNull()?.id?:return
         val version=++historyVersion;val accountVersion=generation
@@ -282,25 +323,34 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             this.phone=contact; this.password=password
             data=buildJsonObject { put("full_name","${first.trim()} ${last.trim()}");put("phone",contact);put("contact_email",email.trim());put("address",address.trim()) }
         }
-        if (client.auth.currentUserOrNull()!=null) load() else { mutable.update { it.copy(page="verify_phone") };countdown() }
+        if (client.auth.currentUserOrNull()!=null) load() else { val saved=saveChallenge("verify_phone",contact);mutable.update { it.copy(page="verify_phone",message=if(saved)null else "Verification requested. Keep this screen open; recovery context could not be saved.") };countdown() }
     }
     fun verifyPhoneSignup(code: String) = operation {
         require(code.matches(Regex("[0-9]{6,8}")) && signupPhone.isNotEmpty())
         client.auth.verifyPhoneOtp(OtpType.Phone.SMS,signupPhone,code)
+        recoveryStore.clear("challenge")
         load()
     }
     fun resendPhoneSignup() {
         if(mutable.value.resendSeconds>0)return
-        operation { client.auth.resendPhone(OtpType.Phone.SMS,signupPhone);countdown() }
+        operation { client.auth.resendPhone(OtpType.Phone.SMS,signupPhone);saveChallenge("verify_phone",signupPhone);countdown() }
     }
+    private suspend fun readSmsPreferences(uid:String):JsonObject = try {
+        val rows=client.from("notification_preferences").select {filter {eq("user_id",uid);eq("channel","sms")}}.decodeAs<JsonArray>()
+        buildJsonObject {put("sms_preferences",rows)}
+    }catch(e:Exception){if(e is CancellationException)throw e;buildJsonObject {put("sms_error","Saved SMS preferences unavailable")}}
     fun smsPreference(enabled:Boolean)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
-        listOf("shipment_status","delay").forEach { type ->
-            client.from("notification_preferences").upsert(buildJsonObject {
-                put("user_id",uid);put("type",type);put("channel","sms");put("enabled",enabled)
-            })
+        val version=generation
+        try {
+            listOf("shipment_status","delay").forEach { type ->
+                client.from("notification_preferences").upsert(buildJsonObject {put("user_id",uid);put("type",type);put("channel","sms");put("enabled",enabled)})
+            }
+        } finally {
+            val saved=readSmsPreferences(uid)
+            if(version==generation && client.auth.currentUserOrNull()?.id==uid)mutable.update {it.copy(data=it.data?.let {d->JsonObject(d.filterKeys {key->key !in listOf("sms_preferences","sms_error")}+saved)})}
         }
-        mutable.update {it.copy(message=if(enabled)"Shipment SMS updates enabled for your verified signup number." else "Shipment SMS updates disabled.")}
+        if(version==generation && client.auth.currentUserOrNull()?.id==uid)mutable.update {it.copy(message="SMS preferences reloaded. See the saved status below.")}
     }
     fun verifySignup(code: String) = operation {
         verifyEmail(code,"signup",OtpType.Email.SIGNUP)
@@ -313,11 +363,11 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         else { require(raw.matches(Regex("[0-9]{6,8}")));client.auth.verifyEmailOtp(otpType,mutable.value.email,raw) }
         require(client.auth.currentUserOrNull()?.email.equals(mutable.value.email,true))
     }
-    private fun countdown() {
+    private fun countdown(seconds:Int=60) {
         timer?.cancel()
         timer=viewModelScope.launch {
-            mutable.update { it.copy(resendSeconds=60) }
-            while (mutable.value.resendSeconds>0) { delay(1000);mutable.update { it.copy(resendSeconds=(it.resendSeconds-1).coerceAtLeast(0)) } }
+            mutable.update { it.copy(resendSeconds=seconds) }
+            while (mutable.value.resendSeconds>0) { delay(1.seconds);mutable.update { it.copy(resendSeconds=(it.resendSeconds-1).coerceAtLeast(0)) } }
         }
     }
     fun resend() {
@@ -325,12 +375,16 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         operation { client.auth.resendEmail(OtpType.Email.SIGNUP,mutable.value.email);countdown();mutable.update { it.copy(message="Verification email requested. Check your inbox and spam folder.") } }
     }
     fun resetEmail(email: String) = operation {
+        if(mutable.value.resendSeconds>0)return@operation
         val phone=MobileValidation.phone(email)
         require(MobileValidation.email(email) || phone!=null)
-        recoveryPhone=phone
         if(phone!=null) client.auth.signInWith(OTP) {this.phone=phone;createUser=false}
         else client.auth.resetPasswordForEmail(email.trim())
-        mutable.update { it.copy(page="recover_code",email=email.trim(),message=if(phone!=null)"If the account exists, a recovery SMS has been requested." else "If the account exists, a recovery email has been requested.") }
+        recoveryPhone=phone
+        val saved=saveChallenge("recover_code",phone?:email.trim())
+        countdown()
+        val requested=if(phone!=null)"If the account exists, a recovery SMS has been requested." else "If the account exists, a recovery email has been requested."
+        mutable.update { it.copy(page="recover_code",email=email.trim(),message=requested+if(saved)"" else " Keep this screen open; recovery context could not be saved.") }
     }
     fun recover(code: String,password: String,confirm: String) = operation {
         require(MobileValidation.password(password,confirm))
@@ -338,11 +392,14 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         if(phone!=null) {require(code.matches(Regex("[0-9]{6,8}")));client.auth.verifyPhoneOtp(OtpType.Phone.SMS,phone,code)}
         else verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
         client.auth.updateUser { this.password=password }
+        recoveryStore.clear("challenge");recoveryPhone=null
         client.auth.signOut()
         mutable.update { MobileState(page="login",message="Password updated. Sign in with your new password.") }
     }
-    fun logout() = operation {
+    fun logout() = operation(allowOffline=true) {
+        recoveryStore.clear("challenge")
         stopLive();loadedUser?.let {owner->
+            recoveryStore.clear(owner)
             TrackingQueue(context).use {queue->queue.clearOwner(owner)}
             // Only this account's private, temporary camera files; uploaded proof stays on the server.
             java.io.File(context.cacheDir,"proof/$owner").deleteRecursively()
