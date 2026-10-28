@@ -80,7 +80,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 val channel=client.channel("mobile-$uid")
                 try {
                     coroutineScope {
-                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents").forEach { table ->
+                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","delivery_expenses","delivery_incidents","incident_attachments").forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
                             launch {changes.collect {delay(300.milliseconds);backgroundRefresh()}}
                         }
@@ -433,30 +433,55 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action","start")})
         load();onStarted();mutable.update {it.copy(message="Route started. Trip location sharing is active.")}
     }
-    fun reportIncident(id:String,request:String,category:String,description:String,minutes:Int,onSaved:()->Unit={})=operation {
-        client.postgrest.rpc("driver_report_incident",buildJsonObject {put("p_delivery",id);put("p_request",request);put("p_category",category);put("p_description",description.trim());put("p_delay",minutes)})
-        load();onSaved();mutable.update {it.copy(message="Incident reported to the office.")}
+    private suspend fun uploadEvidence(path:String,bytes:ByteArray) {
+        val bucket=client.storage.from("delivery-documents")
+        try {bucket.upload(path,bytes){upsert=false;contentType=ContentType.Image.JPEG}}
+        catch(failure:Exception) {
+            if(failure is CancellationException)throw failure
+            if(!failure.message.orEmpty().contains("Duplicate",true) && !failure.message.orEmpty().contains("already exists",true))throw failure
+            check(bucket.downloadAuthenticated(path).contentEquals(bytes)){"The saved upload differs. Reopen the form before submitting a changed photo."}
+        }
+    }
+    fun reportIncident(id:String,request:String,category:String,description:String,minutes:Int,photos:List<ByteArray> = emptyList(),onSaved:()->Unit={})=operation {
+        val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
+        require(photos.size<=3)
+        val paths=photos.mapIndexed {index,bytes->
+            require(bytes.size in 1..DriverEvidence.MAX_BYTES)
+            val path="$id/incident-$request-${index+1}.jpg"
+            uploadEvidence(path,bytes);path
+        }
+        check(version==generation && client.auth.currentUserOrNull()?.id==uid)
+        client.postgrest.rpc("driver_report_incident_evidence",buildJsonObject {put("p_delivery",id);put("p_request",request);put("p_category",category);put("p_description",description.trim());put("p_delay",minutes);put("p_paths",JsonArray(paths.map(::JsonPrimitive)))})
+        check(version==generation && client.auth.currentUserOrNull()?.id==uid)
+        onSaved();mutable.update {it.copy(message="Incident reported to the office.")}
+        try {load()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update {it.copy(message="Incident saved. Refresh to reload your records.")}}
     }
     fun addExpense(delivery:String,request:String,category:String,amount:Double,receipt:ByteArray?,onSaved:()->Unit)=operation {
+        val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
         require(category.trim().length in 2..200 && amount.isFinite() && amount>0 && amount<=1000000)
         val driver=mutable.value.data?.obj("driver")?.value("id").orEmpty()
         require(driver.isNotBlank())
         val existing=client.from("delivery_expenses").select {filter {eq("id",request)}}.decodeAs<JsonArray>()
+        existing.firstOrNull()?.let {record->
+            val saved=record as JsonObject
+            require(saved.value("delivery_id")==delivery && saved.value("description").ifBlank{saved.value("category")}.equals(category.trim(),true) && saved.value("amount").toBigDecimal().compareTo(amount.toBigDecimal())==0 && saved.value("receipt_path").isNotBlank()==(receipt!=null)){"Expense request changed. Reopen the form for a new expense."}
+            if(receipt!=null)check(client.storage.from("delivery-documents").downloadAuthenticated(saved.value("receipt_path")).contentEquals(DriverEvidence.jpeg(receipt))){"The saved receipt differs. Reopen the form for a new expense."}
+        }
         if(existing.isEmpty()) {
             var path:String?=null
             if(receipt!=null) {
                 require(receipt.size in 1..(5*1024*1024))
-                val image=ProofImage.decode(receipt,5*1024*1024)
-                val jpeg=ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.JPEG,85,it) }.toByteArray()
-                image.recycle()
-                path="$delivery/receipt-${java.util.UUID.randomUUID()}.jpg"
-                client.storage.from("delivery-documents").upload(path,jpeg) {upsert=false;contentType=ContentType.Image.JPEG}
+                val jpeg=DriverEvidence.jpeg(receipt)
+                path="$delivery/receipt-$request.jpg"
+                uploadEvidence(path,jpeg)
             }
+            check(version==generation && client.auth.currentUserOrNull()?.id==uid)
             client.from("delivery_expenses").insert(buildJsonObject {
-                put("id",request);put("delivery_id",delivery);put("driver_id",driver);put("category",category.trim());put("amount",amount);put("status","pending")
+                put("id",request);put("delivery_id",delivery);put("driver_id",driver);put("category",category.trim().lowercase().takeIf{it in listOf("fuel","toll","parking","repair","other")}?:"other");put("description",category.trim());put("amount",amount);put("status","pending")
                 path?.let {put("receipt_path",it)}
             })
         }
+        check(version==generation && client.auth.currentUserOrNull()?.id==uid)
         onSaved()
         mutable.update {it.copy(message="Expense submitted for office review.")}
         try {load()} catch(error:Exception) {if(error is CancellationException)throw error;mutable.update {it.copy(message="Expense saved. Refresh to reload your records.")}}
@@ -499,7 +524,10 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             buildJsonObject {put("fuel_logs",client.postgrest.rpc("mobile_driver_fuel_history",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonArray>())}
         }catch(cancelled:CancellationException){throw cancelled}
         catch(_:Exception){buildJsonObject {put("fuel_error","Could not load fuel records. Refresh to retry.")}}
-        return JsonObject(details+extra)
+        val evidence=try {client.postgrest.rpc("mobile_driver_evidence",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()}
+        catch(cancelled:CancellationException){throw cancelled}
+        catch(_:Exception){buildJsonObject {put("evidence_error","Could not load incident photos or expense reviews. Refresh to retry.")}}
+        return JsonObject(details+extra+evidence)
     }
     fun loadDetails(id: String) {
         detailJob?.cancel()
@@ -531,6 +559,13 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         }
     }
     fun closeProof() { mutable.update { it.copy(proof=null,proofTitle="") } }
+    fun viewEvidence(shipment:String,kind:String,record:String)=operation {
+        val version=generation;val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val path=client.postgrest.rpc("mobile_delivery_evidence_file",buildJsonObject {put("p_shipment",shipment);put("p_kind",kind);put("p_record",record)}).decodeAs<String>()
+        val bitmap=withContext(Dispatchers.Default){ProofImage.decode(client.storage.from("delivery-documents").downloadAuthenticated(path))}
+        if(version==generation && uid==client.auth.currentUserOrNull()?.id)mutable.update {it.copy(proof=bitmap,proofTitle=if(kind=="expense")"Expense receipt" else "Incident photo")}
+        else bitmap.recycle()
+    }
     fun departure(raw:String):String?=MobileBookingRules.departure(raw)
     suspend fun previewRoute(pickup:org.maplibre.android.geometry.LatLng,destination:org.maplibre.android.geometry.LatLng):RoutePreview {
         val token=client.auth.currentSessionOrNull()?.accessToken ?: error("Sign in to preview a route.")
