@@ -17,6 +17,8 @@ class DriverDatabaseDataTest {
         assertTrue(result.containsKey("driver_deliveries"))
         assertTrue(result.containsKey("expenses"))
         assertFalse(result.containsKey("compliance"))
+        assertEquals("error",result.obj("driver_sections").value("compliance"))
+        assertEquals("empty",result.obj("driver_sections").value("expenses"))
         assertTrue(result["driver_read_error"].toString().contains("compliance"))
         assertTrue(calls.drop(1).all {it.second=="own-driver"})
     }
@@ -25,6 +27,7 @@ class DriverDatabaseDataTest {
         val result=DriverDatabaseData.load {table,_->calls.add(table);buildJsonArray{}}
         assertEquals(listOf("drivers"),calls)
         assertTrue(result["driver_read_error"].toString().contains("roster link"))
+        assertEquals("unavailable",result.obj("driver_sections").value("compliance"))
     }
     @Test fun retryReturnsFreshDataAndClearsPreviousFailure()=runTest {
         val failed=DriverDatabaseData.load {_,_->error("offline")}

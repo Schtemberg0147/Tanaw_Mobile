@@ -94,14 +94,14 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
     var info by remember {mutableStateOf<String?>(null)}
-    var expense by rememberSaveable {mutableStateOf(false)}
-    var fuel by rememberSaveable {mutableStateOf(false)}
-    val request=rememberSaveable(expense){UUID.randomUUID().toString()}
-    val shipments=(state.history?.rows("shipments").orEmpty()+data.rows("shipments")).distinctBy {it.value("id")}
+    val shipments=DriverRecordPresentation.shipments(data,state.history)
     val active=data.rows("shipments").filter {DriverUiRules.isActive(it.value("status"))}
-    val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray((state.history?.rows("driver_deliveries").orEmpty()+data.rows("driver_deliveries")).distinctBy {it.value("id")})))
-    val shipment=shipments.firstOrNull {it.value("id")==selected} ?: if(tab=="Navigate")active.firstOrNull() else null
+    val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,state.history))))
+    val shipment=shipments.firstOrNull {it.value("id")==selected}
     val delivery=shipment?.let {s->DriverUiRules.delivery(tripData,s.value("id"))}
+    var expense by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
+    var fuel by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
+    val request=rememberSaveable(delivery?.value("id"),expense){UUID.randomUUID().toString()}
     LaunchedEffect(shipment?.value("id"),tab) {if(shipment!=null)onDetails(shipment.value("id"))}
     BackHandler(tab!="Home" || selected!=null) {if(selected!=null)selected=null else tab="Home"}
     Scaffold(containerColor=DriverBackground,topBar={
@@ -126,10 +126,16 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             if(onClearOffline!=null)TextButton(onClick=onClearOffline,enabled=!state.busy){Text("Clear saved offline workspace")}
             data.value("driver_read_error").takeIf(String::isNotBlank)?.let {DriverNotice(it,true)}
             when {
+                selected!=null && shipment==null -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                    DriverPageHeading("Selected trip unavailable")
+                    Text("This trip is no longer in your available records. Its assignment or access may have changed. No other trip has been opened.")
+                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh selected trip")}
+                    DriverButton("Choose another trip",!state.busy){selected=null;tab="Home"}
+                }
                 selected!=null && tab!="Navigate" && shipment!=null -> {
                     DriverPageHeading("Trip details") {selected=null}
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                        if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,tripData){selected=null;tab="Home"}
+                        if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,state.details){selected=null;tab="Home"}
                         else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
                         DriverRecords(shipment,state,onDetails,onProof,onEvidence)
                     }
@@ -155,10 +161,15 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof,onEvidence)}
                 }
                 tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverPageHeading("Navigate");DriverEmpty(data)
+                    DriverPageHeading("Choose a trip to navigate")
+                    if(active.isEmpty())DriverEmpty(data)
+                    else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){selected=s.value("id")}}
                 }
                 tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
-                tab=="Profile" -> DriverProfile(data,onRecovery,onLogout) {info=it}
+                tab=="Profile" -> {
+                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh driver profile")}
+                    DriverProfile(data,onRecovery,onLogout) {info=it}
+                }
                 tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Notifications") {tab="Home"}
                     if(data.rows("notifications").isEmpty())Text("No notifications yet.")
@@ -201,7 +212,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
                 Text(data.obj("profile").value("full_name").ifBlank {"Driver"},fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold)
-                Text(vehicle?.value("model")?.ifBlank {vehicle.value("plate_number")}?.ifBlank {"No assigned vehicle"}?:"No assigned vehicle",fontSize=14.sp,color=DriverMuted)
+                Text(DriverRecordPresentation.vehicleLabel(data,vehicle),fontSize=14.sp,color=DriverMuted)
             }
             DriverBadge(if(status.isBlank())"Not recorded" else MobilePresentation.status(status),if(available)Color(0xFF166534)else DriverNavy,if(available)Color(0xFFDCFCE7)else DriverLine)
         }
@@ -210,6 +221,10 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 }
 
 @Composable private fun DriverEmpty(data:JsonObject) {
+    if(DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable") && data.value("driver_read_error").isNotBlank()) {
+        DriverNotice("Trip availability is unavailable. Refresh to verify your assignments.",true)
+        return
+    }
     Surface(color=Color(0xFFF0F3FF),shape=RoundedCornerShape(4.dp)) {
         Column(Modifier.fillMaxWidth().heightIn(min=480.dp).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
             DriverAsset(R.drawable.figma_driver_e4aa7,128)
@@ -403,12 +418,16 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         Column(Modifier.fillMaxWidth().background(Color.White).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Surface(color=DriverNavy,shape=RoundedCornerShape(8.dp)) {Text(p.value("full_name").split(' ').filter(String::isNotBlank).take(2).map{it.first()}.joinToString(""),Modifier.padding(16.dp),color=Color.White,fontSize=24.sp)}
             Text(p.value("full_name"),fontSize=24.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
-            Text(truck?.let {"${it.value("model")} · ${it.value("plate_number")}"}?:"No assigned vehicle",fontSize=14.sp,color=DriverMuted)
+            Text(DriverRecordPresentation.vehicleLabel(data,truck),fontSize=14.sp,color=DriverMuted)
             d.value("date_hired").takeIf(String::isNotBlank)?.let {Text("Driver since $it",fontSize=12.sp,color=Color(0xFF73777F))}
         }
         DriverSectionTitle("Compliance Status",R.drawable.figma_driver_77550)
-        val documents=data.rows("compliance")
-        if(documents.isEmpty())Text("No compliance documents are available.",Modifier.fillMaxWidth().background(Color.White).padding(16.dp),color=DriverMuted)
+        val documents=if(DriverRecordPresentation.section(data,"compliance")=="ready")data.rows("compliance") else emptyList()
+        when(DriverRecordPresentation.section(data,"compliance")) {
+            "error","unavailable" -> DriverNotice("Compliance records unavailable. Refresh or contact the office to verify your documents.",true)
+            "loading" -> Text("Loading compliance records…")
+            "empty" -> Text("No compliance documents were returned for your account.",Modifier.fillMaxWidth().background(Color.White).padding(16.dp),color=DriverMuted)
+        }
         documents.forEach {doc->Row(Modifier.fillMaxWidth().background(Color.White).padding(16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(MobilePresentation.status(doc.value("doc_type")),fontSize=14.sp)
@@ -442,7 +461,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     HorizontalDivider(color=DriverLine)
 }
 
-@Composable private fun DriverComplete(s:JsonObject,d:JsonObject?,data:JsonObject,home:()->Unit) {
+@Composable private fun DriverComplete(s:JsonObject,d:JsonObject?,details:JsonObject?,home:()->Unit) {
     Surface(color=DriverNavy,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Surface(color=Color(0xFF16A34A),shape=CircleShape,border=BorderStroke(4.dp,Color.White)) {Box(Modifier.size(80.dp),contentAlignment=Alignment.Center) {DriverAsset(R.drawable.figma_driver_966f6,33,24)}}
         Text(if(s.value("status")=="cancelled")"Trip Cancelled" else if(s.value("status")=="completed")"Delivery Complete!" else "Proof Submitted",color=Color.White,fontSize=28.sp,fontWeight=FontWeight.Bold)
@@ -451,8 +470,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     DriverCard {DriverCaption("TRIP SUMMARY");DriverRoute(s);HorizontalDivider(color=DriverLine);DriverMetrics(s)}
     DriverCard {
         AllowanceRow(d?.value("driver_allowance")?.takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Not recorded")
-        val expenses=data.rows("expenses").filter {it.value("delivery_id")==d?.value("id")}
-        Text("Other expenses submitted: ${MobilePresentation.money(expenses.sumOf {it.value("amount").toDoubleOrNull()?:0.0}.toString())}")
+        Text("Other expenses submitted: ${DriverRecordPresentation.expenseTotal(details,s.value("id"))}")
         Text(if(s.value("status")=="completed")"Contact the office for allowance processing." else "Office review determines final completion.",fontSize=12.sp,color=DriverMuted)
     }
     DriverButton("BACK TO HOME",true,home)
@@ -471,7 +489,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 Text("${record.value("liters")} L × ${MobilePresentation.money(record.value("price_per_liter"))}/L · ${MobilePresentation.money(record.value("total_cost"))} · ${record.value("odometer_km")} km\n${record.value("station")} · ${MobilePresentation.time(record.value("logged_at"))}",fontSize=12.sp)
             }
         }
-        details.rows("history").forEach {Text("${MobilePresentation.status(it.value("status"))} · ${MobilePresentation.time(it.value("created_at"))}",fontSize=12.sp)}
+        DriverRecordedTimeline(details)
         details.rows("documents").forEach {doc->TextButton(onClick={proof(s.value("id"),doc.value("id"))}){Text("View ${MobilePresentation.status(doc.value("kind"))}")}}
     }
 }

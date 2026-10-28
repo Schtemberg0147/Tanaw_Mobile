@@ -8,10 +8,11 @@ internal object DriverDatabaseData {
     suspend fun load(read: suspend (String, String?) -> JsonArray): JsonObject {
         val fields=mutableMapOf<String,JsonElement>()
         val failed=mutableListOf<String>()
+        val sections=mutableMapOf<String,JsonElement>()
         suspend fun section(table:String,key:String,label:String,driver:String?=null):JsonArray? = try {
-            read(table,driver).also {fields[key]=it}
+            read(table,driver).also {fields[key]=it;sections[key]=JsonPrimitive(if(it.isEmpty())"empty" else "ready")}
         } catch(cancelled:CancellationException) {throw cancelled}
-        catch(_:Exception) {failed.add(label);null}
+        catch(_:Exception) {failed.add(label);sections[key]=JsonPrimitive("error");null}
         val roster=section("drivers","driver_roster","driver profile")
         val driver=roster?.firstOrNull() as? JsonObject
         fields.remove("driver_roster")
@@ -22,7 +23,11 @@ internal object DriverDatabaseData {
             section("compliance_documents","compliance","compliance",id)
             section("deliveries","driver_deliveries","trip details",id)
             section("delivery_expenses","expenses","expenses",id)
-        } else if(roster!=null) failed.add("driver roster link (contact the office)")
+        } else {
+            listOf("driver_trucks","compliance","driver_deliveries","expenses").forEach {sections[it]=JsonPrimitive("unavailable")}
+            if(roster!=null) failed.add("driver roster link (contact the office)")
+        }
+        fields["driver_sections"]=JsonObject(sections)
         if(failed.isNotEmpty()) fields["driver_read_error"]=JsonPrimitive("Could not load ${failed.joinToString(", ")}. Refresh to retry.")
         return JsonObject(fields)
     }

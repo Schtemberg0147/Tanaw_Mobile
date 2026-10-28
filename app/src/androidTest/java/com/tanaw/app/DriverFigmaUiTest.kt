@@ -3,7 +3,7 @@ package com.tanaw.app
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tanaw.app.feature.workspace.*
 import com.tanaw.app.feature.driver.components.AddTripExpenseSheet
@@ -18,6 +18,7 @@ class DriverFigmaUiTest {
     private fun obj(vararg fields:Pair<String,String>)=buildJsonObject{fields.forEach{put(it.first,it.second)}}
     private fun fixture(active:Boolean=true)=buildJsonObject {
         put("profile",obj("id" to "ui-fixture","role" to "driver","full_name" to "Demo Driver","email" to "driver@example.invalid"))
+        put("compliance",JsonArray(emptyList()))
         put("driver",obj("id" to "driver","status" to "available","license_number" to "SYN-UI-ONLY"))
         put("driver_trucks",buildJsonArray {add(obj("model" to "Wing Van","plate_number" to "UI-TEST","assigned_driver_id" to "driver"))})
         put("shipments",buildJsonArray {if(active)add(obj("id" to "shipment","tracking_number" to "UI-DRIVER-001","status" to "assigned",
@@ -45,7 +46,7 @@ class DriverFigmaUiTest {
         compose.onNodeWithText("My Trips").assertIsDisplayed();shot("trips")
         compose.onNodeWithText("PROFILE").performClick()
         compose.onNodeWithText("Demo Driver").assertIsDisplayed()
-        compose.onNodeWithText("No compliance documents are available.").assertIsDisplayed();shot("profile")
+        compose.onNodeWithText("No compliance documents were returned for your account.").assertIsDisplayed();shot("profile")
         compose.onNodeWithText("HOME").performClick()
         compose.onNodeWithText("New Trip Assigned!").assertIsDisplayed()
     }
