@@ -69,7 +69,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             {shipment,document->vm.viewProof(shipment,document)},
             {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)},
             {period,more->vm.loadHistory(period,more)},
-            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)},vm::clearOfflineWorkspace)
+            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)},vm::clearOfflineWorkspace,vm::viewEvidence)
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium)
@@ -88,7 +88,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     onExpense:(String,String,String,Double,ByteArray?,()->Unit)->Unit,
     onHistory:((String,Boolean)->Unit)?=null,
     onFuel:((String,String,FuelEntry,()->Unit)->Unit)?=null,
-    onClearOffline:(()->Unit)?=null
+    onClearOffline:(()->Unit)?=null,
+    onEvidence:((String,String,String)->Unit)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
@@ -130,7 +131,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                         if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,tripData){selected=null;tab="Home"}
                         else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
-                        DriverRecords(shipment,state,onDetails,onProof)
+                        DriverRecords(shipment,state,onDetails,onProof,onEvidence)
                     }
                 }
                 tab=="Home" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -151,7 +152,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     DriverNavigation(shipment,delivery?:buildJsonObject{},state,{s,d->tripActions(s,d){selected=null;tab="Home"}}) {expense=true}
                     if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))
                         OutlinedButton(onClick={fuel=true},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Record Fuel")}
-                    Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof)}
+                    Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof,onEvidence)}
                 }
                 tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Navigate");DriverEmpty(data)
@@ -457,10 +458,11 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     DriverButton("BACK TO HOME",true,home)
 }
 
-@Composable private fun DriverRecords(s:JsonObject,state:MobileState,load:(String)->Unit,proof:(String,String)->Unit) {
+@Composable private fun DriverRecords(s:JsonObject,state:MobileState,load:(String)->Unit,proof:(String,String)->Unit,evidence:((String,String,String)->Unit)?) {
     TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading){Text("Refresh trip records")}
     if(state.detailLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
     state.details?.takeIf {it.value("shipment_id")==s.value("id")}?.let {details->
+        DriverEvidenceRecords(s.value("id"),details,state.busy || state.offline,evidence)
         details.value("fuel_error").takeIf(String::isNotBlank)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         if(details.containsKey("fuel_logs")) {
             Text("Fuel records",fontWeight=FontWeight.Bold)

@@ -49,35 +49,33 @@ import java.util.UUID
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable internal fun DriverIncidentDialog(id:String,state:MobileState,vm:MobileWorkspaceViewModel,close:()->Unit) {
-    DriverIncidentForm(id,state,close) {request,category,description,minutes->vm.reportIncident(id,request,category,description,minutes,close)}
+    DriverIncidentForm(id,state,close) {request,category,description,minutes,photos->vm.reportIncident(id,request,category,description,minutes,photos,close)}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable internal fun DriverIncidentForm(id:String,state:MobileState,close:()->Unit,submit:(String,String,String,Int)->Unit) {
+@Composable internal fun DriverIncidentForm(id:String,state:MobileState,close:()->Unit,submit:(String,String,String,Int,List<ByteArray>)->Unit) {
     var category by rememberSaveable(id){mutableStateOf("traffic")}
     var description by rememberSaveable(id){mutableStateOf("")}
     var minutes by rememberSaveable(id){mutableStateOf("0")}
-    val request=rememberSaveable(id){UUID.randomUUID().toString()}
+    var request by rememberSaveable(id){mutableStateOf(UUID.randomUUID().toString())}
+    var photos by remember(id){mutableStateOf(emptyList<ByteArray>())}
     DriverTransaction("Report an Issue",state.busy,close,"Submit Report",
         description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
-        {submit(request,category,description,minutes.toInt())}) {
+        {submit(request,category,description,minutes.toInt(),photos)}) {
         Text("SELECT ISSUE TYPE",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf("traffic" to "Traffic/Delay","breakdown" to "Vehicle Issue","accident" to "Safety Concern","weather" to "Weather","other" to "Other").forEach {(value,label)->
-                FilterChip(selected=category==value,onClick={category=value},enabled=!state.busy,label={Text(label)},shape=RoundedCornerShape(2.dp),
+                FilterChip(selected=category==value,onClick={category=value;request=UUID.randomUUID().toString()},enabled=!state.busy,label={Text(label)},shape=RoundedCornerShape(2.dp),
                     colors=FilterChipDefaults.filterChipColors(selectedContainerColor=DriverNavy,selectedLabelColor=Color.White))
             }
         }
         Text("DESCRIPTION",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
-        OutlinedTextField(description,{description=it},placeholder={Text("Describe the issue in detail…")},enabled=!state.busy,
+        OutlinedTextField(description,{description=it;request=UUID.randomUUID().toString()},placeholder={Text("Describe the issue in detail…")},enabled=!state.busy,
             modifier=Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(2.dp))
-        OutlinedTextField(minutes,{minutes=it},label={Text("Expected delay in minutes")},enabled=!state.busy,singleLine=true,
+        OutlinedTextField(minutes,{minutes=it;request=UUID.randomUUID().toString()},label={Text("Expected delay in minutes")},enabled=!state.busy,singleLine=true,
             modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(2.dp),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
         Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=Color(0xFF536581))
-        Surface(color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF))) {Column(Modifier.padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-            DriverAsset(R.drawable.figma_driver_f0840,20,18)
-            Text("Photo attachments are not supported for incident reports yet. Include the details in your description.",fontSize=12.sp,color=DriverMuted)
-        }}
+        IncidentPhotoPicker(photos,state.busy){photos=it;request=UUID.randomUUID().toString()}
         state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         TextButton(onClick=close,enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=Color(0xFFBA1A1A))}
     }

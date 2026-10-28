@@ -70,7 +70,7 @@ class DriverFigmaUiTest {
     }
     @Test fun incidentRetainsValidatedSubmission() {
         var reported=false
-        compose.setContent {DriverTheme {DriverIncidentForm("fixture",MobileState(),{}) {_,category,description,minutes->reported=category=="traffic" && description=="Synthetic traffic delay" && minutes==0}}}
+        compose.setContent {DriverTheme {DriverIncidentForm("fixture",MobileState(),{}) {_,category,description,minutes,photos->reported=photos.isEmpty() && category=="traffic" && description=="Synthetic traffic delay" && minutes==0}}}
         compose.onNodeWithText("Submit Report").assertIsNotEnabled()
         compose.onNodeWithText("Describe the issue in detail…").performTextInput("Synthetic traffic delay")
         compose.onNodeWithText("Submit Report").assertIsEnabled();shot("incident")
