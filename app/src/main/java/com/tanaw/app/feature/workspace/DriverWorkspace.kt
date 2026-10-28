@@ -306,6 +306,11 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         else DriverNotice("This assignment has no saved map pins or road route. Use address directions below; confirm the exact entrance with the office.")
         if(points.isNotEmpty() && (s["route_geometry"]==null || s["route_geometry"]==JsonNull))
             DriverNotice("No road route was saved for this assignment. The map shows recorded locations; use directions below for routing.")
+        Column(Modifier.padding(16.dp)) {
+            val routing=state.details?.takeIf{it.value("shipment_id")==s.value("id")}?.obj("routing")?:buildJsonObject{}
+            DriverRouteStatusCard(DriverRouteStatus.forAssignment(routing,s,d),state.offline)
+            Text("Scheduled arrival (office plan): ${MobilePresentation.time(s.value("estimated_arrival"))}")
+        }
         DriverDirectionsButtons(s)
     }
     Surface(color=Color.White,shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp)) {

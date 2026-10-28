@@ -527,7 +527,13 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         val evidence=try {client.postgrest.rpc("mobile_driver_evidence",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()}
         catch(cancelled:CancellationException){throw cancelled}
         catch(_:Exception){buildJsonObject {put("evidence_error","Could not load incident photos or expense reviews. Refresh to retry.")}}
-        return JsonObject(details+extra+evidence)
+        val routing=try {
+            val delivery=DriverUiRules.delivery(mutable.value.data?:buildJsonObject{},id).value("id")
+            if(delivery.isBlank())buildJsonObject {put("reason","Assigned delivery unavailable")}
+            else readRouteStatus(delivery)
+        }catch(cancelled:CancellationException){throw cancelled}
+        catch(_:Exception){buildJsonObject {put("reason","Truck routing provider unavailable. Refresh to retry.")}}
+        return JsonObject(details+extra+evidence+mapOf("routing" to routing))
     }
     fun loadDetails(id: String) {
         detailJob?.cancel()
@@ -567,6 +573,17 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         else bitmap.recycle()
     }
     fun departure(raw:String):String?=MobileBookingRules.departure(raw)
+    private suspend fun readRouteStatus(delivery:String):JsonObject=withContext(Dispatchers.IO) {
+        val token=client.auth.currentSessionOrNull()?.accessToken ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val connection=java.net.URL("${BuildConfig.SUPABASE_URL}/functions/v1/delivery-routing").openConnection() as java.net.HttpURLConnection
+        try {
+            connection.requestMethod="POST";connection.connectTimeout=10000;connection.readTimeout=20000;connection.doOutput=true
+            connection.setRequestProperty("Authorization","Bearer $token");connection.setRequestProperty("apikey",BuildConfig.SUPABASE_ANON_KEY);connection.setRequestProperty("Content-Type","application/json")
+            connection.outputStream.use{it.write(buildJsonObject{put("mode","eta");put("delivery_id",delivery)}.toString().toByteArray())}
+            require(connection.responseCode==200)
+            Json.parseToJsonElement(connection.inputStream.bufferedReader().use{it.readText()}).jsonObject
+        }finally{connection.disconnect()}
+    }
     suspend fun previewRoute(pickup:org.maplibre.android.geometry.LatLng,destination:org.maplibre.android.geometry.LatLng):RoutePreview {
         val token=client.auth.currentSessionOrNull()?.accessToken ?: error("Sign in to preview a route.")
         return withContext(Dispatchers.IO) {
