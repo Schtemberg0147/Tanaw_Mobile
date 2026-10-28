@@ -41,7 +41,6 @@ import com.tanaw.app.BuildConfig
 import android.content.Context
 import android.graphics.Bitmap
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.ByteArrayOutputStream
 import io.ktor.http.ContentType
 import io.github.jan.supabase.realtime.*
 import kotlinx.coroutines.coroutineScope
@@ -51,7 +50,8 @@ data class MobileState(val page: String = "loading", val busy: Boolean = false, 
     val message: String? = null, val data: JsonObject? = null, val email: String = "", val resendSeconds: Int = 0,
     val details: JsonObject? = null, val detailLoading: Boolean = false,
     val proof: Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
-    val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null)
+    val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null,
+    val conversationUnread:JsonArray?=null)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
@@ -80,7 +80,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 val channel=client.channel("mobile-$uid")
                 try {
                     coroutineScope {
-                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","delivery_expenses","delivery_incidents","incident_attachments").forEach { table ->
+                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages").forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
                             launch {changes.collect {delay(300.milliseconds);backgroundRefresh()}}
                         }
@@ -115,13 +115,13 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 when (status) {
                     is SessionStatus.Authenticated -> {
                         val id = client.auth.currentUserOrNull()?.id
-                        if (id != loadedUser) { loadedUser?.let {recoveryStore.clear(it)};stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null) }; loadedUser = id;if(id!=null){restoreWorkspace(id);startLive(id)} }
+                        if (id != loadedUser) { loadedUser?.let {recoveryStore.clear(it)};stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null) }; loadedUser = id;if(id!=null){restoreWorkspace(id);startLive(id)} }
                         if (!mutable.value.page.startsWith("recover")) refresh()
                     }
                     is SessionStatus.NotAuthenticated -> {
                         stopLive();loadedUser?.let {recoveryStore.clear(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
-                        mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
+                        mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
                     }
                     is SessionStatus.RefreshFailure -> {
                         stopLive()
@@ -210,6 +210,9 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 }.decodeAs<JsonArray>()
             }
             data=JsonObject(data+extra)
+            val unread=try {client.postgrest.rpc("delivery_conversation_unread").decodeAs<JsonArray>()}
+            catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){null}
+            if(version==generation && client.auth.currentUserOrNull()?.id==id)mutable.update {it.copy(conversationUnread=unread)}
         }
         if(data.obj("profile").value("role")!="driver")data=JsonObject(data+readSmsPreferences(id))
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
@@ -420,6 +423,16 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         val normalized=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
         client.postgrest.rpc("mobile_save_profile",buildJsonObject { put("p_name",name.trim());put("p_phone",normalized);put("p_address",address.trim());put("p_city",city.trim()) })
         load();mutable.update { it.copy(message="Profile saved.") }
+    }
+    suspend fun conversation(delivery:String,before:String?):JsonObject = client.postgrest.rpc("delivery_conversation",buildJsonObject {
+        put("p_delivery",delivery);put("p_before",before?.let(::JsonPrimitive)?:JsonNull)
+    }).decodeAs<JsonObject>()
+    suspend fun sendConversation(delivery:String,request:String,body:String,driver:String) {
+        require(ConversationRules.valid(body))
+        client.postgrest.rpc("send_delivery_message",buildJsonObject {put("p_delivery",delivery);put("p_request",request);put("p_body",body.trim());put("p_driver",driver)})
+    }
+    suspend fun readConversation(delivery:String,ids:List<String>) {
+        client.postgrest.rpc("read_delivery_messages",buildJsonObject {put("p_delivery",delivery);put("p_ids",JsonArray(ids.map(::JsonPrimitive)))})
     }
     fun driver(id: String,action: String) = operation {
         client.postgrest.rpc("mobile_driver_action",buildJsonObject { put("p_delivery",id);put("p_action",action) })

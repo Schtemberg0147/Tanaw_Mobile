@@ -69,7 +69,13 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             {shipment,document->vm.viewProof(shipment,document)},
             {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)},
             {period,more->vm.loadHistory(period,more)},
-            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)},vm::clearOfflineWorkspace,vm::viewEvidence)
+            {delivery,request,entry,close->vm.logFuel(delivery,request,entry,close)},vm::clearOfflineWorkspace,vm::viewEvidence,
+            {d->key(data.obj("profile").value("id"),d.value("id"),d.value("driver_id")) {
+                DriverConversation(d.value("id"),state.offline,if(state.offline)null else state.conversationUnread?.let{ConversationRules.unread(it.filterIsInstance<JsonObject>(),d.value("id"))},
+                    {before->vm.conversation(d.value("id"),before)},
+                    {request,body->vm.sendConversation(d.value("id"),request,body,d.value("driver_id"))},
+                    {ids->vm.readConversation(d.value("id"),ids)},vm::refresh,d.value("driver_id"))
+            }})
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium)
@@ -89,7 +95,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     onHistory:((String,Boolean)->Unit)?=null,
     onFuel:((String,String,FuelEntry,()->Unit)->Unit)?=null,
     onClearOffline:(()->Unit)?=null,
-    onEvidence:((String,String,String)->Unit)?=null
+    onEvidence:((String,String,String)->Unit)?=null,
+    conversation:(@Composable (JsonObject)->Unit)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
@@ -110,6 +117,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
                 DriverAsset(R.drawable.figma_driver_fac2b,50)
                 Row(verticalAlignment=Alignment.CenterVertically) {
+                    if(conversation!=null)TextButton(onClick={tab="Messages";selected=null}) {Text("Messages (${if(state.offline || state.conversationUnread==null) "?" else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}.toString()})")}
                     IconButton(onClick={tab="Alerts";selected=null}) {DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications")}
                 }
             }
@@ -138,6 +146,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                         if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,state.details){selected=null;tab="Home"}
                         else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
                         DriverRecords(shipment,state,onDetails,onProof,onEvidence)
+                        delivery?.takeIf{it.value("id").isNotBlank()}?.let {conversation?.invoke(it)}
                     }
                 }
                 tab=="Home" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -159,11 +168,24 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))
                         OutlinedButton(onClick={fuel=true},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Record Fuel")}
                     Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof,onEvidence)}
+                    delivery?.takeIf{it.value("id").isNotBlank()}?.let {Column(Modifier.padding(16.dp)){conversation?.invoke(it)}}
                 }
                 tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Choose a trip to navigate")
                     if(active.isEmpty())DriverEmpty(data)
                     else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){selected=s.value("id")}}
+                }
+                tab=="Messages" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                    DriverPageHeading("Delivery messages") {tab="Home"}
+                    if(state.conversationUnread==null)Text("Unread messages unavailable. Refresh to retry.")
+                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh message inbox")}
+                    val threads=(state.conversationUnread?.filterIsInstance<JsonObject>().orEmpty().map {JsonObject(it+mapOf("id" to JsonPrimitive(it.value("delivery_id"))))}+
+                        DriverRecordPresentation.deliveries(data,state.history)).distinctBy{it.value("id")}
+                    if(threads.isEmpty())Text("No delivery conversations available.")
+                    threads.forEach {d->key(d.value("id"),d.value("driver_id")) {
+                        Text("Delivery ${d.value("tracking_number").ifBlank{d.value("id")}}")
+                        conversation?.invoke(d)
+                    }}
                 }
                 tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
                 tab=="Profile" -> {
