@@ -1,7 +1,6 @@
 package com.tanaw.app
 
 import androidx.compose.material3.Text
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -46,7 +45,7 @@ class DriverFigmaUiTest {
         compose.onNodeWithText("My Trips").assertIsDisplayed();shot("trips")
         compose.onNodeWithText("PROFILE").performClick()
         compose.onNodeWithText("Demo Driver").assertIsDisplayed()
-        compose.onNodeWithText("No compliance documents were returned for your account.").assertIsDisplayed();shot("profile")
+        compose.onNodeWithText("No compliance documents were returned for your account.").performScrollTo().assertIsDisplayed();shot("profile")
         compose.onNodeWithText("HOME").performClick()
         compose.onNodeWithText("New Trip Assigned!").assertIsDisplayed()
     }

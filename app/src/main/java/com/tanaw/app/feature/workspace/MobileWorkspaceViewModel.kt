@@ -80,7 +80,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 val channel=client.channel("mobile-$uid")
                 try {
                     coroutineScope {
-                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages").forEach { table ->
+                        listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","system_settings","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages").forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
                             launch {changes.collect {delay(300.milliseconds);backgroundRefresh()}}
                         }
@@ -197,7 +197,11 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         }
         if(data.obj("profile").value("role")=="driver") {
             // Driver-only reads retain the caller's RLS; customer loading is unchanged.
-            val extra=DriverDatabaseData.load {table,driverId->
+            val extra=DriverDatabaseData.load(readSettings={
+                client.from("system_settings").select {
+                    filter {isIn("key",listOf("compliance_thresholds","compliance_threshold_days","driver_app_content"))}
+                }.decodeAs<JsonArray>()
+            }) {table,driverId->
                 client.from(table).select {
                     when(table) {
                         "drivers"->filter {eq("user_id",id)}

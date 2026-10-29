@@ -102,7 +102,6 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
     var messageThread by rememberSaveable {mutableStateOf<String?>(null)}
-    var info by remember {mutableStateOf<String?>(null)}
     val shipments=DriverRecordPresentation.shipments(data,state.history)
     val active=data.rows("shipments").filter {DriverUiRules.isActive(it.value("status"))}
     val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,state.history))))
@@ -220,7 +219,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
                 tab=="Profile" -> {
                     TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh driver profile")}
-                    DriverProfile(data,onRecovery,onLogout) {info=it}
+                    DriverProfile(data,state.busy,state.offline,onRefresh,onRecovery,onLogout) {tab="Messages";messageThread=null;selected=null}
                 }
                 tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Notifications") {tab="Home"}
@@ -237,7 +236,6 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     if(expense && delivery!=null)AddTripExpenseSheet(delivery.value("id"),shipment.value("tracking_number"),state.busy,state.error,
         onDismiss={if(!state.busy)expense=false},onSubmit={category,amount,receipt->onExpense(delivery.value("id"),request,category,amount,receipt){expense=false}})
     if(fuel && delivery!=null && onFuel!=null)DriverFuelForm(delivery.value("id"),state,{fuel=false}) {fuelRequest,entry,close->onFuel(delivery.value("id"),fuelRequest,entry,close)}
-    info?.let {AlertDialog(onDismissRequest={info=null},title={Text("Tanaw")},text={Text(it)},confirmButton={TextButton(onClick={info=null}){Text("Close")}})}
 }
 
 @Composable private fun DriverBottomBar(tab:String,busy:Boolean,onTab:(String)->Unit) {
@@ -421,55 +419,6 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     }
 }
 
-@Composable private fun DriverProfile(data:JsonObject,recover:()->Unit,logout:()->Unit,info:(String)->Unit) {
-    val p=data.obj("profile");val d=data.obj("driver");val truck=DriverUiRules.truck(data)
-    Column {
-        Column(Modifier.fillMaxWidth().background(Color.White).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Surface(color=DriverNavy,shape=RoundedCornerShape(8.dp)) {Text(p.value("full_name").split(' ').filter(String::isNotBlank).take(2).map{it.first()}.joinToString(""),Modifier.padding(16.dp),color=Color.White,fontSize=24.sp)}
-            Text(p.value("full_name"),fontSize=24.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
-            Text(DriverRecordPresentation.vehicleLabel(data,truck),fontSize=14.sp,color=DriverMuted)
-            d.value("date_hired").takeIf(String::isNotBlank)?.let {Text("Driver since $it",fontSize=12.sp,color=Color(0xFF73777F))}
-        }
-        DriverSectionTitle("Compliance Status",R.drawable.figma_driver_77550)
-        val documents=if(DriverRecordPresentation.section(data,"compliance")=="ready")data.rows("compliance") else emptyList()
-        when(DriverRecordPresentation.section(data,"compliance")) {
-            "error","unavailable" -> DriverNotice("Compliance records unavailable. Refresh or contact the office to verify your documents.",true)
-            "loading" -> Text("Loading compliance records…")
-            "empty" -> Text("No compliance documents were returned for your account.",Modifier.fillMaxWidth().background(Color.White).padding(16.dp),color=DriverMuted)
-        }
-        documents.forEach {doc->Row(Modifier.fillMaxWidth().background(Color.White).padding(16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(MobilePresentation.status(doc.value("doc_type")),fontSize=14.sp)
-                Text("Expiry: ${doc.value("expiry_date").ifBlank {"Not recorded"}}",fontSize=12.sp,color=DriverMuted)
-            }
-            val label=DriverUiRules.compliance(doc)
-            DriverBadge(label,if(label=="VALID")Color(0xFF166534)else Color(0xFF7D3100),if(label=="VALID")Color(0xFFE5F5E9)else Color(0xFFFFDBCA))
-        }}
-        DriverNotice("Contact your administrator to update compliance documents.")
-        DriverSectionTitle("Personal Information",R.drawable.figma_driver_a35c0)
-        Column(Modifier.fillMaxWidth().background(Color.White).padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            listOf("EMAIL" to p.value("email"),"CONTACT" to d.value("contact_number").ifBlank{p.value("phone")},
-                "ASSIGNED VEHICLE" to truck?.let {"${it.value("model")} · ${it.value("plate_number")}"}.orEmpty(),"LICENSE NO." to d.value("license_number")).forEach {(label,value)->
-                Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {DriverCaption(label);Text(value.ifBlank {"Not recorded"},fontSize=14.sp)}
-            }
-        }
-        DriverNotice("Contact your administrator to update personal information.")
-        Spacer(Modifier.height(16.dp))
-        DriverMenu("Change Password",R.drawable.figma_driver_69f3e,recover)
-        DriverMenu("Help & Support",R.drawable.figma_driver_991e9) {info("Contact the office with your tracking reference for dispatch, account access, compliance or delivery support.")}
-        DriverMenu("Terms of Service",R.drawable.figma_driver_8c779) {info("Contact the office for the current privacy and service terms. Trip location is shared while tracking is enabled; delivery proof is private and reviewed by the office.")}
-        OutlinedButton(onClick=logout,modifier=Modifier.fillMaxWidth().padding(top=24.dp,bottom=16.dp).heightIn(min=48.dp),shape=RoundedCornerShape(0.dp),border=BorderStroke(1.dp,Color.Red)) {Text("LOG OUT",color=Color.Red,fontSize=12.sp)}
-    }
-}
-
-@Composable private fun DriverMenu(label:String,icon:Int,click:()->Unit) {
-    Row(Modifier.fillMaxWidth().background(Color.White).clickable(onClick=click).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        DriverAsset(icon,if(icon==R.drawable.figma_driver_991e9)20 else 16,if(icon==R.drawable.figma_driver_69f3e)21 else 20)
-        Text(label,Modifier.weight(1f),fontSize=14.sp);DriverAsset(R.drawable.figma_driver_3fa0b,7,12)
-    }
-    HorizontalDivider(color=DriverLine)
-}
-
 @Composable private fun DriverComplete(s:JsonObject,d:JsonObject?,details:JsonObject?,home:()->Unit) {
     Surface(color=DriverNavy,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Surface(color=Color(0xFF16A34A),shape=CircleShape,border=BorderStroke(4.dp,Color.White)) {Box(Modifier.size(80.dp),contentAlignment=Alignment.Center) {DriverAsset(R.drawable.figma_driver_966f6,33,24)}}
@@ -531,9 +480,6 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         Text(title,fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold)
     }
 }
-@Composable private fun DriverSectionTitle(title:String,icon:Int) {
-    Row(Modifier.fillMaxWidth().padding(16.dp,24.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {DriverAsset(icon,16);Text(title,color=DriverNavy,fontWeight=FontWeight.Bold)}
-}
 @Composable private fun DriverCaption(text:String,icon:Int?=null,width:Int=10,height:Int=10) {
     Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {if(icon!=null)DriverAsset(icon,width,height);Text(text,fontSize=10.sp,color=Color(0xFF536581),letterSpacing=.5.sp)}
 }
@@ -589,8 +535,6 @@ internal object DriverUiRules {
         return if(outcomes.isEmpty())"Not recorded" else "${outcomes.count {it}*100/outcomes.size}% (${outcomes.size} recorded)"
     }
     fun compliance(doc:JsonObject,today:LocalDate=LocalDate.now(ZoneId.of("Asia/Manila"))):String {
-        if(doc.value("review_status")!="approved")return doc.value("review_status").ifBlank {"Not reviewed"}.replace('_',' ').uppercase()
-        val expiry=runCatching{LocalDate.parse(doc.value("expiry_date"))}.getOrNull()?:return "EXPIRY UNKNOWN"
-        return when {expiry.isBefore(today)->"EXPIRED";!expiry.isAfter(today.plusDays(60))->"EXPIRING SOON";else->"VALID"}
+        return DriverProfileRules.compliance(doc,JsonArray(emptyList()),today)
     }
 }

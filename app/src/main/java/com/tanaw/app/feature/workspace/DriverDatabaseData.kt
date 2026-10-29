@@ -5,10 +5,16 @@ import kotlinx.serialization.json.*
 
 /** Each optional driver section can fail without hiding the other permitted records. */
 internal object DriverDatabaseData {
-    suspend fun load(read: suspend (String, String?) -> JsonArray): JsonObject {
+    suspend fun load(readSettings:suspend ()->JsonArray = {JsonArray(emptyList())},read: suspend (String, String?) -> JsonArray): JsonObject {
         val fields=mutableMapOf<String,JsonElement>()
         val failed=mutableListOf<String>()
         val sections=mutableMapOf<String,JsonElement>()
+        try {
+            val settings=readSettings()
+            fields["driver_settings"]=settings
+            sections["driver_settings"]=JsonPrimitive("ready")
+        } catch(cancelled:CancellationException) {throw cancelled}
+        catch(_:Exception) {sections["driver_settings"]=JsonPrimitive("error");failed.add("profile settings")}
         suspend fun section(table:String,key:String,label:String,driver:String?=null):JsonArray? = try {
             read(table,driver).also {fields[key]=it;sections[key]=JsonPrimitive(if(it.isEmpty())"empty" else "ready")}
         } catch(cancelled:CancellationException) {throw cancelled}

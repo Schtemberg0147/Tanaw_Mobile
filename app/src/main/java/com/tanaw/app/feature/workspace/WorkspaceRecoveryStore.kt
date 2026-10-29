@@ -26,7 +26,7 @@ internal object RecoveryPolicy {
     }
     fun workspace(data:JsonObject,owner:String):JsonObject? {
         if(data.obj("profile").value("id")!=owner || data.obj("profile").value("role")!="driver")return null
-        val keys=setOf("profile","driver","driver_trucks","trucks","shipments","deliveries","driver_deliveries","expenses","notifications","compliance","driver_read_error","driver_sections")
+        val keys=setOf("profile","driver","driver_trucks","trucks","shipments","deliveries","driver_deliveries","expenses","notifications","compliance","driver_read_error","driver_sections","driver_settings")
         return JsonObject(data.filterKeys {it in keys})
     }
     fun sms(data:JsonObject,type:String):String {

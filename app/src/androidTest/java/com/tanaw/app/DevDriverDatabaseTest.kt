@@ -27,7 +27,9 @@ class DevDriverDatabaseTest {
         val uid=client.auth.currentUserOrNull()!!.id
         val driver=runBlocking {client.from("drivers").select {filter {eq("user_id",uid)}}.decodeAs<JsonArray>()}.single().jsonObject
         assertEquals(uid,driver.value("user_id"))
-        val sections=runBlocking {DriverDatabaseData.load {table,id->
+        val sections=runBlocking {DriverDatabaseData.load(readSettings={client.from("system_settings").select {
+            filter {isIn("key",listOf("compliance_thresholds","compliance_threshold_days","driver_app_content"))}
+        }.decodeAs<JsonArray>()}) {table,id->
             client.from(table).select {when(table) {
                 "drivers"->filter {eq("user_id",uid)}
                 "trucks"->Unit
@@ -35,6 +37,8 @@ class DevDriverDatabaseTest {
             }}.decodeAs<JsonArray>()
         }}
         assertFalse("Driver database section failed",sections.containsKey("driver_read_error"))
+        assertNotNull(DriverProfileRules.settings(sections))
+        assertFalse(DriverProfileRules.policyLabel(sections).contains("invalid"))
         sections.rows("driver_deliveries").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}
         sections.rows("compliance").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}
         sections.rows("expenses").forEach {assertEquals(driver.value("id"),it.value("driver_id"))}

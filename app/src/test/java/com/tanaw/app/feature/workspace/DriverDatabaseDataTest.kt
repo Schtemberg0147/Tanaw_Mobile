@@ -7,6 +7,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DriverDatabaseDataTest {
+    @Test fun settingsFailureIsIndependentAndRetryClearsIt()=runTest {
+        val failed=DriverDatabaseData.load(readSettings={error("denied")}) {table,_->if(table=="drivers")roster else buildJsonArray{}}
+        assertEquals("error",failed.obj("driver_sections").value("driver_settings"))
+        assertEquals("ready",failed.obj("driver_sections").value("driver_roster"))
+        assertTrue(failed.containsKey("compliance"))
+        assertNull(DriverProfileRules.settings(failed))
+        val fresh=DriverDatabaseData.load(readSettings={JsonArray(emptyList())}) {table,_->if(table=="drivers")roster else buildJsonArray{}}
+        assertEquals("ready",fresh.obj("driver_sections").value("driver_settings"))
+        assertFalse(fresh.containsKey("driver_read_error"))
+    }
     private val roster=buildJsonArray {add(buildJsonObject {put("id","own-driver")})}
     @Test fun failedComplianceDoesNotHideTripsOrExpenses()=runTest {
         val calls=mutableListOf<Pair<String,String?>>()
