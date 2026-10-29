@@ -1,5 +1,11 @@
 import java.util.Properties
 import java.net.URI
+import groovy.json.JsonSlurper
+
+// Public shared backend settings travel with the repository; SDK paths and secrets do not.
+val sharedClientProperties = Properties().apply {
+    rootProject.file("client-config.properties").inputStream().use { load(it) }
+}
 
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -7,7 +13,8 @@ val localProperties = Properties().apply {
 }
 
 fun requiredClientSetting(name: String): String {
-    val value = (System.getenv(name) ?: localProperties.getProperty(name))?.trim()
+    val value = (System.getenv(name) ?: localProperties.getProperty(name)
+        ?: sharedClientProperties.getProperty(name))?.trim()
     require(!value.isNullOrBlank() && !value.equals("null", ignoreCase = true)) {
         "Missing $name. Set it in local.properties or the environment before syncing Gradle."
     }
@@ -22,10 +29,39 @@ val supabaseUrl = requiredClientSetting("SUPABASE_URL").also {
     require(uri.scheme == "https" && !uri.host.isNullOrBlank()) {
         "SUPABASE_URL must be a valid HTTPS project URL."
     }
+    require(it == sharedClientProperties.getProperty("SUPABASE_URL")) {
+        "Wrong Tanaw backend: ${uri.host}. This branch uses the shared Tanaw Dev project. " +
+            "Remove stale SUPABASE_URL and SUPABASE_ANON_KEY overrides from local.properties/environment, " +
+            "sync Gradle and rebuild. See README.md."
+    }
 }
 val supabaseKey = requiredClientSetting("SUPABASE_ANON_KEY").also {
     require(it.startsWith("sb_publishable_")) {
         "SUPABASE_ANON_KEY must be a public sb_publishable_ key for the Android client."
+    }
+    require(it == sharedClientProperties.getProperty("SUPABASE_ANON_KEY")) {
+        "Tanaw Dev client key does not match this branch. Remove stale SUPABASE_ANON_KEY overrides " +
+            "from local.properties/environment, sync Gradle and rebuild. See README.md."
+    }
+}
+
+tasks.register("verifyPhoneSignup") {
+    group = "verification"
+    description = "Read the configured backend's public phone-signup settings without creating an account or sending SMS."
+    doLast {
+        val connection = URI("$supabaseUrl/auth/v1/settings").toURL().openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.setRequestProperty("apikey", supabaseKey)
+        try {
+            check(connection.responseCode == 200) { "Cannot read public Auth settings for ${URI(supabaseUrl).host}; HTTP ${connection.responseCode}." }
+            val settings = connection.inputStream.bufferedReader().use { JsonSlurper().parseText(it.readText()) } as Map<*, *>
+            val external = settings["external"] as? Map<*, *>
+            check(external?.get("phone") == true && settings["disable_signup"] != true) {
+                "Phone signup is disabled on ${URI(supabaseUrl).host}. The project administrator must check Auth providers."
+            }
+            println("Tanaw backend: ${URI(supabaseUrl).host}; phone signup enabled. No signup or SMS request sent.")
+        } finally { connection.disconnect() }
     }
 }
 

@@ -1,5 +1,15 @@
 # TextBee integration status and activation
 
+## Cloned repo / wrong-backend check
+
+Follow [the clone build guide](README.md). Public Dev client settings now travel in
+`client-config.properties`; remove stale backend overrides from ignored
+`local.properties` and your environment, sync Gradle, rebuild and install the new
+APK. Run `gradlew.bat :app:verifyPhoneSignup` (or `./gradlew` on other systems)
+to check the configured project's public Auth settings without sending SMS.
+The original Tanaw project's phone-provider settings are separate from Tanaw Dev.
+Do not enable providers on the wrong project to work around an old build.
+
 ## Current status — 2026-10-25 phone-first continuation
 
 Phone/password signup is already wired in the active mobile workspace. Login now
