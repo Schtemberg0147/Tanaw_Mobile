@@ -73,7 +73,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 DriverConversation(d.value("id"),state.offline,if(state.offline)null else state.conversationUnread?.let{ConversationRules.unread(it.filterIsInstance<JsonObject>(),d.value("id"))},
                     {before->vm.conversation(d.value("id"),before)},
                     {request,body->vm.sendConversation(d.value("id"),request,body,d.value("driver_id"))},
-                    {ids->vm.readConversation(d.value("id"),ids)},vm::refresh,d.value("driver_id"))
+                    {ids->vm.readConversation(d.value("id"),ids)},vm::refresh,d.value("driver_id"),d.value("inbox_open")=="true",
+                    d.value("tracking_number").ifBlank {DriverRecordPresentation.shipments(data,state.history).firstOrNull {it.value("id")==d.value("shipment_id")}?.value("tracking_number").orEmpty()})
             }},vm::previewDriverRoute)
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -100,6 +101,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 ) {
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
+    var messageThread by rememberSaveable {mutableStateOf<String?>(null)}
     var info by remember {mutableStateOf<String?>(null)}
     val shipments=DriverRecordPresentation.shipments(data,state.history)
     val active=data.rows("shipments").filter {DriverUiRules.isActive(it.value("status"))}
@@ -110,20 +112,20 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     var fuel by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
     val request=rememberSaveable(delivery?.value("id"),expense){UUID.randomUUID().toString()}
     LaunchedEffect(shipment?.value("id"),tab) {if(shipment!=null)onDetails(shipment.value("id"))}
-    BackHandler(tab!="Home" || selected!=null) {if(selected!=null)selected=null else tab="Home"}
+    BackHandler(tab!="Home" || selected!=null) {if(tab=="Messages" && messageThread!=null)messageThread=null else if(selected!=null)selected=null else tab="Home"}
     Scaffold(containerColor=DriverBackground,topBar={
         if(tab!="Navigate" || shipment==null) Surface(color=Color.White,shadowElevation=1.dp) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal=25.dp),
                 verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
                 DriverAsset(R.drawable.figma_driver_fac2b,50)
                 Row(verticalAlignment=Alignment.CenterVertically) {
-                    if(conversation!=null)TextButton(onClick={tab="Messages";selected=null}) {Text("Messages (${if(state.offline || state.conversationUnread==null) "?" else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}.toString()})")}
+                    if(conversation!=null)TextButton(onClick={tab="Messages";selected=null;messageThread=null}) {Text("Messages (${if(state.offline || state.conversationUnread==null) "?" else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}.toString()})")}
                     IconButton(onClick={tab="Alerts";selected=null}) {DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications")}
                 }
             }
         }
     },bottomBar={DriverBottomBar(tab,state.busy) {tab=it;selected=null}}) {padding->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize().padding(padding).imePadding().then(if(tab=="Messages" && messageThread!=null) Modifier else Modifier.verticalScroll(rememberScrollState()))) {
             if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             state.error?.let {DriverNotice(it,true)}
             state.message?.let {DriverNotice(it)}
@@ -174,17 +176,46 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     if(active.isEmpty())DriverEmpty(data)
                     else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){selected=s.value("id")}}
                 }
-                tab=="Messages" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverPageHeading("Delivery messages") {tab="Home"}
-                    if(state.conversationUnread==null)Text("Unread messages unavailable. Refresh to retry.")
-                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh message inbox")}
+                tab=="Messages" -> Column(Modifier.then(if(messageThread!=null) Modifier.weight(1f) else Modifier).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     val threads=(state.conversationUnread?.filterIsInstance<JsonObject>().orEmpty().map {JsonObject(it+mapOf("id" to JsonPrimitive(it.value("delivery_id"))))}+
                         DriverRecordPresentation.deliveries(data,state.history)).distinctBy{it.value("id")}
-                    if(threads.isEmpty())Text("No delivery conversations available.")
-                    threads.forEach {d->key(d.value("id"),d.value("driver_id")) {
-                        Text("Delivery ${d.value("tracking_number").ifBlank{d.value("id")}}")
-                        conversation?.invoke(d)
-                    }}
+                    val opened=threads.firstOrNull {it.value("id")==messageThread}
+                    DriverPageHeading(if(messageThread==null) "Messages" else "Office conversation") {if(messageThread!=null)messageThread=null else tab="Home"}
+                    if(messageThread!=null) {
+                        if(opened==null) {
+                            DriverNotice("This conversation is no longer available. Refresh to check your delivery access.",true)
+                            TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh message inbox")}
+                        } else key(opened.value("id"),opened.value("driver_id")) {
+                            conversation?.invoke(JsonObject(opened+mapOf("inbox_open" to JsonPrimitive(true))))
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
+                            Text("Your delivery conversations",style=MaterialTheme.typography.bodyMedium,color=DriverMuted,modifier=Modifier.weight(1f))
+                            TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh message inbox")}
+                        }
+                        if(state.offline || state.conversationUnread==null)DriverNotice(if(state.offline) "Reconnect to view current unread counts." else "Unread messages unavailable. Refresh to retry.")
+                        if(threads.isEmpty())Surface(color=Color.White,shape=RoundedCornerShape(16.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                Text("No conversations yet",fontWeight=FontWeight.Bold,color=DriverNavy)
+                                Text("Your office conversations will appear here when a delivery is assigned.",color=DriverMuted)
+                            }
+                        }
+                        threads.forEach {d->key(d.value("id"),d.value("driver_id")) {
+                            val reference=d.value("tracking_number").ifBlank {shipments.firstOrNull {it.value("id")==d.value("shipment_id")}?.value("tracking_number").orEmpty()}.ifBlank {"Assigned delivery"}
+                            val count=if(state.offline || state.conversationUnread==null)null else ConversationRules.unread(state.conversationUnread.filterIsInstance<JsonObject>(),d.value("id"))
+                            Surface(onClick={messageThread=d.value("id")},color=Color.White,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,DriverLine),modifier=Modifier.fillMaxWidth()) {
+                                Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                    Surface(color=DriverLine,shape=CircleShape) {Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text("O",color=DriverNavy,fontWeight=FontWeight.Bold)}}
+                                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                        Text("Office",fontWeight=FontWeight.Bold,color=DriverNavy)
+                                        Text("Delivery $reference",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                                        Text(if(count==null) "Unread unavailable" else if(count>0) "$count unread" else "Open conversation",style=MaterialTheme.typography.labelMedium,color=DriverNavy)
+                                    }
+                                    Text("›",fontSize=26.sp,color=DriverNavy)
+                                }
+                            }
+                        }}
+                    }
                 }
                 tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
                 tab=="Profile" -> {

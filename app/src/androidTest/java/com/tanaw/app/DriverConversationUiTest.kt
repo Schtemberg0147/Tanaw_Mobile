@@ -5,6 +5,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
+import android.graphics.Bitmap
 import com.tanaw.app.feature.workspace.*
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -18,6 +21,24 @@ class DriverConversationUiTest {
         put("messages",buildJsonArray {add(buildJsonObject {put("id","42");put("sender_role","staff");put("body","Use the north entrance");put("created_at","2026-10-28T12:00:00Z")})})
     }
     private fun open() {compose.onNodeWithText("Open office conversation",substring=true).performClick();compose.waitForIdle()}
+    @Test fun inboxConversationUsesBubblesAndKeepsReplyVisible() {
+        val messages=buildJsonObject {
+            put("driver_id","driver");put("can_send",true);put("has_more",false)
+            put("messages",buildJsonArray {repeat(8) {index->add(buildJsonObject {
+                put("id",index.toString());put("sender_role",if(index%2==0)"staff" else "driver")
+                put("body",if(index%2==0)"Please use the north entrance for unloading." else "Understood. I will update you when I arrive.")
+                put("created_at","2026-10-29T07:05:00+00:00")
+            })}})
+        }
+        compose.setContent {DriverTheme {DriverConversation("delivery",false,2,{messages},{_,_->},{},{},"driver",initiallyOpen=true)}}
+        compose.waitForIdle()
+        compose.onNodeWithText("Message to office").assertIsDisplayed()
+        compose.onNodeWithText("Send message").assertIsDisplayed()
+        compose.onAllNodesWithText("You").assertCountEquals(4)
+        compose.onNodeWithText("Close office conversation",substring=true).assertDoesNotExist()
+        val file=java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"conversation-bubbles.png")
+        file.outputStream().use {compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
+    }
     @Test fun lostSendResponseRetriesSameIdAndBodyThenClearsDraft() {
         val calls=mutableListOf<Pair<String,String>>()
         compose.setContent {DriverTheme {Column {DriverConversation("delivery",false,1,{page()}, {id,body->calls.add(id to body);if(calls.size==1)error("response lost")},{},{})}}}
@@ -34,8 +55,8 @@ class DriverConversationUiTest {
         val reads=mutableListOf<List<String>>();val cursors=mutableListOf<String?>()
         compose.setContent {DriverTheme {Column {DriverConversation("delivery",false,1,{cursor->cursors.add(cursor);page(more=cursor==null)},{_,_->},{reads.add(it)},{})}}}
         open();assertTrue(reads.isEmpty())
-        compose.onNodeWithText("Mark displayed messages read").performClick();compose.waitForIdle();assertEquals(listOf("42"),reads.single())
-        compose.onNodeWithText("Older messages").performClick();compose.waitForIdle();assertEquals("42",cursors.last())
+        compose.onNodeWithText("Mark displayed messages read").performScrollTo().performClick();compose.waitForIdle();assertEquals(listOf("42"),reads.single())
+        compose.onNodeWithText("Older messages").performScrollTo().performClick();compose.waitForIdle();assertEquals("42",cursors.last())
         compose.onNodeWithText("Latest messages").assertExists()
     }
     @Test fun offlineAndClosedConversationsCannotCompose() {
@@ -65,6 +86,8 @@ class DriverConversationUiTest {
             {},{},{},{},{},{_,_,_->},{_,_->},{_,_,_,_,_,_->},conversation={d->Text("Opened ${d.value("id")}")})}}
         compose.onNodeWithText("Messages (3)").performClick()
         compose.onNodeWithText("Delivery UI-MSG-001").assertExists()
+        compose.onNodeWithText("Opened exact-unread-delivery").assertDoesNotExist()
+        compose.onNodeWithText("Delivery UI-MSG-001").performClick()
         compose.onNodeWithText("Opened exact-unread-delivery").assertExists()
     }
     @Test fun staleDriverThreadDoesNotShowReplacementMessages() {
