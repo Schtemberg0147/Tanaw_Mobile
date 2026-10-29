@@ -4,7 +4,16 @@ import java.math.BigDecimal
 import java.time.Instant
 import kotlinx.serialization.json.*
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 internal data class DriverTimelineEntry(val label:String,val timestamp:String)
 
@@ -51,9 +60,18 @@ internal object DriverRecordPresentation {
 }
 
 @Composable internal fun DriverRecordedTimeline(details:JsonObject) {
-    Text("Recorded timeline")
-    if(details["history"] !is JsonArray || details["events"] !is JsonArray)Text("Some timeline records are unavailable. Refresh to retry.")
+    var expanded by rememberSaveable(details.value("shipment_id")){mutableStateOf(false)}
+    Text("Recorded timeline",fontSize=16.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
     val entries=DriverRecordPresentation.timeline(details)
+    val complete=details["history"] is JsonArray && details["events"] is JsonArray
+    TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide timeline" else if(complete)"Show timeline (${entries.size} updates)" else "Show timeline (some updates unavailable)")}
+    if(!expanded)return
+    if(details["history"] !is JsonArray || details["events"] !is JsonArray)Text("Some timeline records are unavailable. Refresh to retry.")
     if(entries.isEmpty() && details["history"] is JsonArray && details["events"] is JsonArray)Text("No status events have been recorded.")
-    entries.forEach {entry->Text("${entry.label}\n${MobilePresentation.time(entry.timestamp)}")}
+    entries.forEach {entry->Surface(color=DriverBackground,shape=RoundedCornerShape(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Text(entry.label,fontSize=14.sp,fontWeight=FontWeight.SemiBold)
+            Text(if(runCatching{Instant.parse(entry.timestamp)}.isSuccess)MobilePresentation.time(entry.timestamp)else "Date unavailable",fontSize=12.sp,color=DriverMuted)
+        }
+    }}
 }

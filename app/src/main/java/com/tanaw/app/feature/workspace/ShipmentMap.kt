@@ -2,6 +2,9 @@ package com.tanaw.app.feature.workspace
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.*
+import androidx.core.view.doOnLayout
+import androidx.core.graphics.createBitmap
+import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -20,7 +23,8 @@ import org.maplibre.android.MapLibre
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.annotations.MarkerOptions
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory.*
@@ -58,41 +62,88 @@ object MobileGeocoding {
 
 private const val STREET_MAP = "https://tiles.openfreemap.org/styles/liberty"
 
-private fun pinIcon(context:android.content.Context,label:String):org.maplibre.android.annotations.Icon {
+private fun pinIcon(context:android.content.Context,label:String):android.graphics.Bitmap {
  val scale=context.resources.displayMetrics.density
- val bitmap=android.graphics.Bitmap.createBitmap((32*scale).toInt(),(42*scale).toInt(),android.graphics.Bitmap.Config.ARGB_8888)
+ val bitmap=createBitmap((32*scale).toInt(),(42*scale).toInt())
  val canvas=android.graphics.Canvas(bitmap);canvas.scale(scale,scale)
  val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
  paint.color=if(label=="Destination")android.graphics.Color.rgb(37,99,235) else android.graphics.Color.rgb(220,38,38)
  val path=android.graphics.Path().apply {moveTo(16f,41f);lineTo(3f,22f);cubicTo(-9f,-6f,41f,-6f,29f,22f);close()}
  canvas.drawPath(path,paint)
  paint.color=android.graphics.Color.WHITE;canvas.drawCircle(16f,14f,7f,paint)
- return org.maplibre.android.annotations.IconFactory.getInstance(context).fromBitmap(bitmap)
+ return bitmap
 }
 
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
-@Composable fun ShipmentMap(points:List<Pair<String,LatLng>>,geometry:String?=null,onSelect:((LatLng)->Unit)?=null) {
+@Composable fun ShipmentMap(points:List<Pair<String,LatLng>>,geometry:String?=null,onSelect:((LatLng)->Unit)?=null,styleJson:String?=null) {
  val context=LocalContext.current;val lifecycle=LocalLifecycleOwner.current.lifecycle
  val callback by rememberUpdatedState(onSelect)
+ val currentPoints by rememberUpdatedState(points)
+ val currentGeometry by rememberUpdatedState(geometry)
  val pinIcons=remember(context) {mapOf("Pickup" to pinIcon(context,"Pickup"),"Destination" to pinIcon(context,"Destination"))}
- var previousGeometry by remember {mutableStateOf<String?>(null)}
  var fallback by remember {mutableStateOf(BuildConfig.MAPTILER_KEY.isBlank())}
  var ready by remember {mutableStateOf(false)}
  var failed by remember {mutableStateOf(false)}
  var requested by remember {mutableStateOf(false)}
+ var routeError by remember {mutableStateOf<String?>(null)}
  var previous by remember {mutableStateOf<List<Triple<String,Double,Double>>?>(null)}
+ var previousGeometry by remember {mutableStateOf<String?>(null)}
  val view=remember {MapLibre.getInstance(context);MapView(context).apply {onCreate(null)}}
+ val attached=remember {booleanArrayOf(true)}
+ fun render(map:org.maplibre.android.maps.MapLibreMap,style:org.maplibre.android.maps.Style) {
+  val locations=currentPoints
+  val signature=locations.map {(label,point)->Triple(label,point.latitude,point.longitude)}
+  val road=currentGeometry?.takeUnless{it.isBlank() || it=="null"}
+  if(previous!=signature) {
+   val old=previous
+   pinIcons.forEach {(label,bitmap)->style.addImage("shipment-pin-$label",bitmap)}
+   val pins=buildJsonObject {
+    put("type","FeatureCollection")
+    put("features",buildJsonArray {locations.forEach {(label,point)->add(buildJsonObject {
+     put("type","Feature")
+     put("properties",buildJsonObject {put("icon","shipment-pin-${if(label=="Destination")"Destination" else "Pickup"}")})
+     put("geometry",buildJsonObject {put("type","Point");put("coordinates",buildJsonArray {add(point.longitude);add(point.latitude)})})
+    })}})
+   }.toString()
+   style.getSourceAs<GeoJsonSource>("shipment-stops")?.setGeoJson(pins) ?: style.addSource(GeoJsonSource("shipment-stops",pins))
+   if(style.getLayer("shipment-stop-pins")==null)style.addLayer(SymbolLayer("shipment-stop-pins","shipment-stops").withProperties(iconImage(Expression.get("icon")),iconAnchor("bottom"),iconAllowOverlap(true),iconIgnorePlacement(true)))
+   val moved=signature.lastOrNull{it !in old.orEmpty()}
+   view.doOnLayout {
+    if(!attached[0])return@doOnLayout
+    if(callback==null && locations.map{it.second}.distinct().size>=2) {
+     val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(locations.map{it.second}).build()
+     map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
+    } else if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
+   }
+   previous=signature
+  }
+  try {
+   if(road==null) {
+    style.removeLayer("shipment-route-line");style.removeSource("shipment-route");previousGeometry=null;routeError=null
+   } else if(previousGeometry!=road || style.getLayer("shipment-route-line")==null) {
+    style.getSourceAs<GeoJsonSource>("shipment-route")?.setGeoJson(road) ?: style.addSource(GeoJsonSource("shipment-route",road))
+    if(style.getLayer("shipment-route-line")==null)style.addLayerBelow(LineLayer("shipment-route-line","shipment-route").withProperties(lineColor("#2563eb"),lineWidth(5f)),"shipment-stop-pins")
+    previousGeometry=road;routeError=null
+   }
+  } catch(_:Exception) {routeError="Route line could not be displayed. Refresh the trip and retry."}
+ }
+ fun loaded(map:org.maplibre.android.maps.MapLibreMap,style:org.maplibre.android.maps.Style) {
+  if(!attached[0])return
+  // Styles load asynchronously and replace custom layers. Draw using the latest data here,
+  // not only in AndroidView.update, which may have run before the style existed.
+  previous=null;previousGeometry=null;ready=true;failed=false
+  render(map,style)
+ }
  DisposableEffect(view,lifecycle) {
+  attached[0]=true
   view.getMapAsync {map ->
    map.cameraPosition=CameraPosition.Builder().target(LatLng(14.5995,120.9842)).zoom(11.0).build()
-   map.addOnMapClickListener {point -> if(ready && !failed) callback?.invoke(point);callback!=null}
+   map.addOnMapClickListener {point -> if(ready && !failed)callback?.invoke(point);callback!=null}
   }
-  view.addOnDidFinishLoadingMapListener {ready=true;failed=false}
   view.addOnDidFailLoadingMapListener { _ ->
    ready=false
-   if(!fallback) {fallback=true;view.getMapAsync {it.setStyle(STREET_MAP)}} else failed=true
+   if(!fallback) {fallback=true;view.getMapAsync {map->map.setStyle(STREET_MAP){style->loaded(map,style)}}} else failed=true
   }
-  // The map owns gestures inside its bounds; the page scrolls outside the map.
   view.setOnTouchListener {_,event ->
    view.parent?.requestDisallowInterceptTouchEvent(event.actionMasked!=android.view.MotionEvent.ACTION_UP && event.actionMasked!=android.view.MotionEvent.ACTION_CANCEL)
    false
@@ -101,55 +152,36 @@ private fun pinIcon(context:android.content.Context,label:String):org.maplibre.a
    Lifecycle.Event.ON_START->view.onStart();Lifecycle.Event.ON_RESUME->view.onResume();Lifecycle.Event.ON_PAUSE->view.onPause();Lifecycle.Event.ON_STOP->view.onStop();else->Unit
   }}
   lifecycle.addObserver(observer)
-  if(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.onStart()
-  if(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
-  onDispose {lifecycle.removeObserver(observer);view.onPause();view.onStop();view.onDestroy()}
+  if(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))view.onStart()
+  if(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))view.onResume()
+  onDispose {attached[0]=false;lifecycle.removeObserver(observer);view.onPause();view.onStop();view.onDestroy()}
  }
  AndroidView(factory={view},modifier=Modifier.fillMaxWidth().height(300.dp).testTag("Shipment map"),update={mapView ->
   mapView.getMapAsync {map ->
-   if(!requested) {requested=true;map.setStyle(if(fallback) STREET_MAP else "https://api.maptiler.com/maps/streets-v2/style.json?key=${BuildConfig.MAPTILER_KEY}")}
-   val signature=points.map {(label,point)->Triple(label,point.latitude,point.longitude)}
-   if(ready && previous!=signature) {
-    val old=previous
-    map.clear()
-    points.forEach {(label,point)->val marker=MarkerOptions().position(point).title(label);pinIcons[label]?.let {marker.icon(it)};map.addMarker(marker)}
-    val moved=signature.lastOrNull {it !in old.orEmpty()}
-    if(onSelect==null && points.map {it.second}.distinct().size>=2) {
-     val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(points.map {it.second}).build()
-     map.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
-    } else if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
-    previous=signature
+   if(!requested) {
+    requested=true
+    if(styleJson!=null)map.setStyle(org.maplibre.android.maps.Style.Builder().fromJson(styleJson)){style->loaded(map,style)}
+    else map.setStyle(if(fallback)STREET_MAP else "https://api.maptiler.com/maps/streets-v2/style.json?key=${BuildConfig.MAPTILER_KEY}"){style->loaded(map,style)}
    }
-   map.getStyle {style ->
-    if(geometry.isNullOrBlank() || geometry=="null") {
-     style.removeLayer("shipment-route-line");style.removeSource("shipment-route");previousGeometry=null
-    } else {
-     try {style.getSourceAs<GeoJsonSource>("shipment-route")?.setGeoJson(geometry) ?: run {
-      style.addSource(GeoJsonSource("shipment-route",geometry))
-      style.addLayer(LineLayer("shipment-route-line","shipment-route").withProperties(lineColor("#2563eb"),lineWidth(4f)))
-     }
-     if(previousGeometry!=geometry && points.size>=2) {
-      val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(points.map {it.second}).build()
-      map.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
-      previousGeometry=geometry
-     }} catch(_:Exception) { /* Keep location markers if recorded route geometry is incompatible. */ }
-    }
-   }
+   else if(ready)map.getStyle {style->render(map,style)}
   }
  })
- if(failed) Text("Map unavailable. Check your connection and reopen this step.",color=MaterialTheme.colorScheme.error)
- else if(!ready) SupportingText("Loading street map…")
- else if(onSelect!=null) SupportingText("Map ready · drag to move, pinch to zoom, tap to place a pin.")
- if(fallback) SupportingText("© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors")
+ LaunchedEffect(points.map{Triple(it.first,it.second.latitude,it.second.longitude)},geometry,ready) {
+  if(ready)view.getMapAsync {map->map.getStyle {style->render(map,style)}}
+ }
+ if(failed)Text("Map unavailable. Check your connection and reopen this step.",color=MaterialTheme.colorScheme.error)
+ else if(!ready)SupportingText("Loading street map…")
+ else if(onSelect!=null)SupportingText("Map ready · drag to move, pinch to zoom, tap to place a pin.")
+ else SupportingText(routeError ?: if(previousGeometry!=null)"Route line displayed · ${points.size} saved stops" else "Saved stops displayed · no road route loaded")
+ if(fallback)SupportingText("© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors")
 }
-
 /** Inline route editor: tapping places a pin immediately; coordinates stay internal. */
 @Composable fun BookingRouteMap(pickup:String,destination:String,pickupPoint:LatLng?,destinationPoint:LatLng?,enabled:Boolean=true,
  onPickupText:(String)->Unit,onDestinationText:(String)->Unit,onPickup:(SelectedAddress)->Unit,onDestination:(SelectedAddress)->Unit,
  routeLoader:(suspend (LatLng,LatLng)->RoutePreview)?=null,addressLoader:(suspend (LatLng)->String?)?=null) {
  val context=LocalContext.current
  val pickupCallback by rememberUpdatedState(onPickup);val destinationCallback by rememberUpdatedState(onDestination)
- val currentPickup by rememberUpdatedState(pickup);val currentDestination by rememberUpdatedState(destination)
+ val currentPickup = rememberUpdatedState(pickup);val currentDestination = rememberUpdatedState(destination)
  var lookupMessage by remember {mutableStateOf<String?>(null)}
  var route by remember {mutableStateOf<RoutePreview?>(null)}
  var routing by remember {mutableStateOf(false)}
@@ -157,20 +189,20 @@ private fun pinIcon(context:android.content.Context,label:String):org.maplibre.a
  var retry by remember {mutableIntStateOf(0)}
  LaunchedEffect(pickupPoint?.latitude,pickupPoint?.longitude) {
   val point=pickupPoint ?: return@LaunchedEffect
-  val original=currentPickup
+  val original=currentPickup.value
   if(original!="Pickup map pin") return@LaunchedEffect
   val name=addressLoader?.invoke(point) ?: MobileGeocoding.reverse(context,point)
-  if(currentPickup==original) {
+  if(currentPickup.value==original) {
    if(!name.isNullOrBlank())pickupCallback(SelectedAddress(name,point.latitude,point.longitude))
    else lookupMessage="Address lookup unavailable. The pin is saved; enter a street or landmark."
   }
  }
  LaunchedEffect(destinationPoint?.latitude,destinationPoint?.longitude) {
   val point=destinationPoint ?: return@LaunchedEffect
-  val original=currentDestination
+  val original=currentDestination.value
   if(original!="Destination map pin") return@LaunchedEffect
   val name=addressLoader?.invoke(point) ?: MobileGeocoding.reverse(context,point)
-  if(currentDestination==original) {
+  if(currentDestination.value==original) {
    if(!name.isNullOrBlank())destinationCallback(SelectedAddress(name,point.latitude,point.longitude))
    else lookupMessage="Address lookup unavailable. The pin is saved; enter a street or landmark."
   }
@@ -179,7 +211,7 @@ private fun pinIcon(context:android.content.Context,label:String):org.maplibre.a
   route=null;routeError=null;routing=false
   if(pickupPoint!=null && destinationPoint!=null && routeLoader!=null) {
    routing=true
-   try {kotlinx.coroutines.delay(450);route=routeLoader(pickupPoint,destinationPoint)}
+   try {kotlinx.coroutines.delay(450.milliseconds);route=routeLoader(pickupPoint,destinationPoint)}
    catch(cancelled:kotlinx.coroutines.CancellationException) {throw cancelled}
    catch(_:Exception) {routeError="Road route unavailable. Retry or adjust the pins; the office will verify the route."}
    finally {routing=false}

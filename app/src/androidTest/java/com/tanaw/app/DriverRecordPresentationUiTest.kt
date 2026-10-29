@@ -92,6 +92,7 @@ class DriverRecordPresentationUiTest {
         }
         compose.setContent {RecordScreen(data("A"),MobileState(details=details))}
         compose.onNodeWithText("REF-A").performScrollTo().performClick()
+        compose.onNodeWithText("Show timeline (2 updates)").performScrollTo().performClick()
         compose.onNodeWithText("Assigned → Loading · Customer present",substring=true).performScrollTo().assertExists()
         compose.onNodeWithText("Route started",substring=true).performScrollTo().assertExists()
     }

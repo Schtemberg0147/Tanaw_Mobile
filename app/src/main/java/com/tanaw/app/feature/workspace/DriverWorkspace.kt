@@ -28,7 +28,6 @@ import com.tanaw.app.R
 import com.tanaw.app.feature.driver.components.AllowanceRow
 import com.tanaw.app.feature.driver.components.AddTripExpenseSheet
 import kotlinx.serialization.json.*
-import org.maplibre.android.geometry.LatLng
 import java.time.*
 import java.util.UUID
 
@@ -75,7 +74,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     {before->vm.conversation(d.value("id"),before)},
                     {request,body->vm.sendConversation(d.value("id"),request,body,d.value("driver_id"))},
                     {ids->vm.readConversation(d.value("id"),ids)},vm::refresh,d.value("driver_id"))
-            }})
+            }},vm::previewDriverRoute)
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium)
@@ -96,7 +95,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     onFuel:((String,String,FuelEntry,()->Unit)->Unit)?=null,
     onClearOffline:(()->Unit)?=null,
     onEvidence:((String,String,String)->Unit)?=null,
-    conversation:(@Composable (JsonObject)->Unit)?=null
+    conversation:(@Composable (JsonObject)->Unit)?=null,
+    routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf("Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
@@ -131,7 +131,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 DriverNotice("Offline · saved ${state.lastSync.ifBlank {"at an unknown time"}}. Records may have changed. Reconnect and refresh before making changes.")
                 TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry connection")}
             }
-            if(onClearOffline!=null)TextButton(onClick=onClearOffline,enabled=!state.busy){Text("Clear saved offline workspace")}
+            if(onClearOffline!=null && tab=="Profile")TextButton(onClick=onClearOffline,enabled=!state.busy){Text("Clear saved offline workspace")}
             data.value("driver_read_error").takeIf(String::isNotBlank)?.let {DriverNotice(it,true)}
             when {
                 selected!=null && shipment==null -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -164,9 +164,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Refresh")}
                 }
                 tab=="Navigate" && shipment!=null -> {
-                    DriverNavigation(shipment,delivery?:buildJsonObject{},state,{s,d->tripActions(s,d){selected=null;tab="Home"}}) {expense=true}
-                    if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))
-                        OutlinedButton(onClick={fuel=true},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp)){Text("Record Fuel")}
+                    DriverNavigation(shipment,delivery?:buildJsonObject{},state,{s,d->tripActions(s,d){selected=null;tab="Home"}},expense={expense=true},
+                        fuel=if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))({fuel=true})else null,routePreview=routePreview)
                     Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof,onEvidence)}
                     delivery?.takeIf{it.value("id").isNotBlank()}?.let {Column(Modifier.padding(16.dp)){conversation?.invoke(it)}}
                 }
@@ -307,56 +306,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     }
 }
 
-@Composable private fun DriverNavigation(s:JsonObject,d:JsonObject,state:MobileState,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit) {
-    val stage=DriverUiRules.stage(d)
-    val heading=listOf("Ready to start route","Heading to Pick-up","Waiting for Customer","Waiting to Load Cargo","Heading to Destination","Delivery submitted")[stage]
-    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
-        val points=listOf("Pickup" to ("pickup_lat" to "pickup_lng"),"Destination" to ("dropoff_lat" to "dropoff_lng")).mapNotNull {(label,keys)->
-            val lat=s.value(keys.first).toDoubleOrNull();val lng=s.value(keys.second).toDoubleOrNull()
-            if(lat!=null && lng!=null && lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 && lng in -180.0..180.0)label to LatLng(lat,lng)else null
-        }.toMutableList()
-        val position=state.details?.takeIf {it.value("shipment_id")==s.value("id")}?.obj("position")
-        val lat=position?.value("latitude")?.toDoubleOrNull();val lng=position?.value("longitude")?.toDoubleOrNull()
-        if(lat!=null && lng!=null)points.add("Last recorded vehicle position" to LatLng(lat,lng))
-        Surface(Modifier.padding(16.dp).fillMaxWidth(),color=Color(0xFF11213F),shadowElevation=3.dp) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text(heading,fontSize=18.sp,color=Color.White,fontWeight=FontWeight.Bold)
-            Text(s.value(if(stage>=4)"dropoff_address" else "pickup_address"),fontSize=14.sp,color=Color(0xFFA9C7EF))
-            HorizontalDivider(color=Color.White.copy(alpha=.15f))
-            Text("Recorded route: ${MobilePresentation.number(s.value("distance_km"),"km")} · ${MobilePresentation.number(s.value("route_duration_minutes"),"min")}",color=Color.White,fontSize=12.sp)
-        }}
-        if(points.isNotEmpty())ShipmentMap(points,s["route_geometry"]?.toString())
-        else DriverNotice("This assignment has no saved map pins or road route. Use address directions below; confirm the exact entrance with the office.")
-        if(points.isNotEmpty() && (s["route_geometry"]==null || s["route_geometry"]==JsonNull))
-            DriverNotice("No road route was saved for this assignment. The map shows recorded locations; use directions below for routing.")
-        Column(Modifier.padding(16.dp)) {
-            val routing=state.details?.takeIf{it.value("shipment_id")==s.value("id")}?.obj("routing")?:buildJsonObject{}
-            DriverRouteStatusCard(DriverRouteStatus.forAssignment(routing,s,d),state.offline)
-            Text("Scheduled arrival (office plan): ${MobilePresentation.time(s.value("estimated_arrival"))}")
-        }
-        DriverDirectionsButtons(s)
-    }
-    Surface(color=Color.White,shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.align(Alignment.CenterHorizontally).width(48.dp).height(4.dp).clip(CircleShape).background(Color(0xFFDFE0E6)))
-            Text(s.value("tracking_number"),fontWeight=FontWeight.Bold,color=DriverNavy)
-            val labels=listOf("Assigned","Route to Pick-up","Customer at Pick-up","Cargo Loaded","Delivered")
-            val dates=listOf("assigned_at","route_started_at","customer_showed_at","departed_at","arrived_at")
-            labels.forEachIndexed {index,label->
-                val complete=d.value(dates[index]).isNotBlank()
-                Row(horizontalArrangement=Arrangement.spacedBy(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(if(complete)Color(0xFF11213F)else DriverBackground).border(if(index==stage)3.dp else 1.dp,if(index<=stage)DriverNavy else Color(0xFFC3C6CF),CircleShape),contentAlignment=Alignment.Center) {
-                        if(complete)DriverAsset(R.drawable.figma_driver_c7a53,10,7)
-                    }
-                    Column(Modifier.padding(vertical=4.dp)) {
-                        Text(if(index==2 && stage==2)"Waiting for the customer at Pick-up" else label,fontSize=14.sp,fontWeight=if(index<=stage)FontWeight.SemiBold else FontWeight.Normal,color=if(index<=stage)Color(0xFF11213F)else Color(0xFF73777F))
-                        if(complete)Text(MobilePresentation.time(d.value(dates[index])),fontSize=10.sp,color=DriverMuted)
-                    }
-                }
-            }
-            if(d.value("id").isBlank())Text("No delivery assignment is available. Refresh or contact the office.")else actions(s,d)
-            if(d.value("status") in listOf("in_transit","delivered"))OutlinedButton(onClick=expense,enabled=!state.busy,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(4.dp)){Text("Add Trip Expense")}
-        }
-    }
+@Composable private fun DriverNavigation(s:JsonObject,d:JsonObject,state:MobileState,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit,fuel:(()->Unit)?=null,routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null) {
+    DriverNavigateOverview(s,d,state,actions,expense,fuel,routePreview)
 }
 
 @Composable internal fun DriverDirectionsButtons(shipment:JsonObject) {
@@ -504,20 +455,35 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 }
 
 @Composable private fun DriverRecords(s:JsonObject,state:MobileState,load:(String)->Unit,proof:(String,String)->Unit,evidence:((String,String,String)->Unit)?) {
+    DriverTripSection("Saved trip records","Fuel purchases, expenses and recorded updates for this trip.") {
     TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading){Text("Refresh trip records")}
     if(state.detailLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
     state.details?.takeIf {it.value("shipment_id")==s.value("id")}?.let {details->
         DriverEvidenceRecords(s.value("id"),details,state.busy || state.offline,evidence)
         details.value("fuel_error").takeIf(String::isNotBlank)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         if(details.containsKey("fuel_logs")) {
-            Text("Fuel records",fontWeight=FontWeight.Bold)
-            if(details.rows("fuel_logs").isEmpty())Text("No fuel records for this trip.",fontSize=12.sp)
-            details.rows("fuel_logs").forEach {record->
-                Text("${record.value("liters")} L × ${MobilePresentation.money(record.value("price_per_liter"))}/L · ${MobilePresentation.money(record.value("total_cost"))} · ${record.value("odometer_km")} km\n${record.value("station")} · ${MobilePresentation.time(record.value("logged_at"))}",fontSize=12.sp)
-            }
+            DriverFuelRecords(details.rows("fuel_logs"))
         }
         DriverRecordedTimeline(details)
         details.rows("documents").forEach {doc->TextButton(onClick={proof(s.value("id"),doc.value("id"))}){Text("View ${MobilePresentation.status(doc.value("kind"))}")}}
+    }
+    if(state.details?.value("shipment_id")!=s.value("id") && !state.detailLoading)Text("Refresh to view this trip's saved records.",fontSize=12.sp,color=DriverMuted)
+    }
+}
+
+@Composable internal fun DriverFuelRecords(records:List<JsonObject>) {
+    Text("Fuel records",fontSize=16.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
+    if(records.isEmpty())Text("No fuel records for this trip.",fontSize=13.sp,color=DriverMuted)
+    records.forEach {record->
+        Surface(color=Color(0xFFEFF6FF),shape=RoundedCornerShape(12.dp),border=BorderStroke(1.dp,DriverLine)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text(record.value("total_cost").toBigDecimalOrNull()?.let{MobilePresentation.money(it.toPlainString())}?:"Amount unavailable",fontSize=22.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
+                Text(record.value("station").ifBlank{"Station not recorded"},fontWeight=FontWeight.SemiBold)
+                Text("Purchased: ${MobilePresentation.number(record.value("liters"),"L")} · Unit price: ${record.value("price_per_liter").toBigDecimalOrNull()?.let{MobilePresentation.money(it.toPlainString())+"/L"}?:"Unavailable"}",fontSize=13.sp)
+                Text("Odometer: ${MobilePresentation.number(record.value("odometer_km"),"km")}",fontSize=13.sp)
+                Text("Recorded: ${MobilePresentation.time(record.value("logged_at"))}",fontSize=12.sp,color=DriverMuted)
+            }
+        }
     }
 }
 

@@ -597,7 +597,9 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             Json.parseToJsonElement(connection.inputStream.bufferedReader().use{it.readText()}).jsonObject
         }finally{connection.disconnect()}
     }
-    suspend fun previewRoute(pickup:org.maplibre.android.geometry.LatLng,destination:org.maplibre.android.geometry.LatLng):RoutePreview {
+    suspend fun previewRoute(pickup:org.maplibre.android.geometry.LatLng,destination:org.maplibre.android.geometry.LatLng):RoutePreview = requestRoutePreview(pickup,destination)
+    suspend fun previewDriverRoute(delivery:String,pickup:org.maplibre.android.geometry.LatLng,destination:org.maplibre.android.geometry.LatLng):RoutePreview = requestRoutePreview(pickup,destination,delivery)
+    private suspend fun requestRoutePreview(pickup:org.maplibre.android.geometry.LatLng,destination:org.maplibre.android.geometry.LatLng,delivery:String?=null):RoutePreview {
         val token=client.auth.currentSessionOrNull()?.accessToken ?: error("Sign in to preview a route.")
         return withContext(Dispatchers.IO) {
             val connection=java.net.URL("${BuildConfig.SUPABASE_URL}/functions/v1/calculate-route").openConnection() as java.net.HttpURLConnection
@@ -606,7 +608,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 connection.setRequestProperty("Authorization","Bearer $token")
                 connection.setRequestProperty("apikey",BuildConfig.SUPABASE_ANON_KEY)
                 connection.setRequestProperty("Content-Type","application/json")
-                val payload=buildJsonObject {put("preview",true);put("pickup",buildJsonObject {put("lat",pickup.latitude);put("lng",pickup.longitude)});put("destination",buildJsonObject {put("lat",destination.latitude);put("lng",destination.longitude)})}
+                val payload=buildJsonObject {put("preview",true);delivery?.let{put("delivery_id",it)};put("pickup",buildJsonObject {put("lat",pickup.latitude);put("lng",pickup.longitude)});put("destination",buildJsonObject {put("lat",destination.latitude);put("lng",destination.longitude)})}
                 connection.outputStream.use {it.write(payload.toString().toByteArray())}
                 require(connection.responseCode==200) {"Route preview unavailable. Retry when connected; the office will verify your route."}
                 RoutePreview.parse(Json.parseToJsonElement(connection.inputStream.bufferedReader().use {it.readText()}).jsonObject)

@@ -3,8 +3,11 @@ package com.tanaw.app.feature.workspace
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.*
 import java.time.Instant
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
 internal object DriverRouteStatus {
     fun forAssignment(routing:JsonObject,shipment:JsonObject,delivery:JsonObject):JsonObject {
@@ -31,10 +34,10 @@ internal object DriverRouteStatus {
 
 @Composable internal fun DriverRouteStatusCard(routing:JsonObject,offline:Boolean) {
     var now by remember {mutableStateOf(Instant.now())}
-    LaunchedEffect(Unit){while(true){delay(15000);now=Instant.now()}}
-    Text(if(routing["route_verified"]==JsonPrimitive(true))"Office-confirmed truck route" else "Truck route awaiting office confirmation")
-    Text(DriverRouteStatus.eta(routing,offline,now))
-    routing.value("calculated_at").takeIf(String::isNotBlank)?.let{Text("Calculated ${MobilePresentation.time(it)} · GPS ${MobilePresentation.time(routing.value("position_at"))}")}
-    if(routing["route_verified"]==JsonPrimitive(true))Text("OpenRouteService HGV · vehicle limits applied · no live traffic")
-    Text("Google Maps may recalculate a different route and does not enforce this truck's dimensions or weight. Obey road signs and contact the office if a route is unsuitable.")
+    LaunchedEffect(Unit){while(true){delay(15.seconds);now=Instant.now()}}
+    Text(if(routing["route_verified"]==JsonPrimitive(true))"Office-confirmed truck route" else "Truck route awaiting office confirmation",fontWeight=FontWeight.SemiBold,color=DriverNavy)
+    Text(DriverRouteStatus.eta(routing,offline,now),fontSize=14.sp)
+    routing.value("calculated_at").takeIf(String::isNotBlank)?.let{Text("Calculated ${MobilePresentation.time(it)} · GPS ${MobilePresentation.time(routing.value("position_at"))}",fontSize=12.sp,color=DriverMuted)}
+    if(routing["route_verified"]==JsonPrimitive(true))Text("OpenRouteService HGV · vehicle limits applied · no live traffic",fontSize=12.sp,color=DriverMuted)
+    Text("Google Maps may recalculate a different route and does not enforce this truck's dimensions or weight. Obey road signs and contact the office if a route is unsuitable.",fontSize=12.sp,color=DriverMuted)
 }
