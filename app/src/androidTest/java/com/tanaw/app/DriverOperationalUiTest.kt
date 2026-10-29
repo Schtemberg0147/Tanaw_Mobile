@@ -33,6 +33,37 @@ class DriverOperationalUiTest {
         compose.onNodeWithText("Save Fuel Record").performClick()
         compose.runOnIdle {assertTrue(saved)}
     }
+    @Test fun uncertainFuelSaveLocksInputsAndRetriesSameRequestAndBody() {
+        val sent=mutableListOf<Pair<String,FuelEntry>>()
+        var closed=false
+        compose.setContent {DriverTheme {DriverFuelForm("fixture",MobileState(),{closed=true}) {request,entry,saved->
+            sent.add(request to entry)
+            if(sent.size==2)saved()
+        }}}
+        compose.onNodeWithText("Liters").performTextInput("10.25")
+        compose.onNodeWithText("Price per liter (PHP)").performTextInput("66.78")
+        compose.onNodeWithText("Odometer (km)").performTextInput("12000.1")
+        compose.onNodeWithText("Save Fuel Record").performClick()
+        compose.onNodeWithText("Liters").assertIsNotEnabled()
+        compose.onNodeWithText("Price per liter (PHP)").assertIsNotEnabled()
+        compose.onNodeWithText("Odometer (km)").assertIsNotEnabled()
+        compose.onNodeWithText("Station (optional)").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Close unconfirmed fuel record?").assertIsDisplayed()
+        compose.runOnIdle {assertFalse(closed)}
+        compose.onNodeWithText("Keep retrying").performClick()
+        compose.onNodeWithText("Retry Fuel Record").performClick()
+        compose.runOnIdle {assertEquals(2,sent.size);assertEquals(sent[0],sent[1]);assertTrue(closed)}
+    }
+    @Test fun offlineFuelFormCannotSubmit() {
+        var calls=0
+        compose.setContent {DriverTheme {DriverFuelForm("fixture",MobileState(offline=true),{}) {_,_,_->calls++}}}
+        compose.onNodeWithText("Liters").performTextInput("10")
+        compose.onNodeWithText("Price per liter (PHP)").performTextInput("60")
+        compose.onNodeWithText("Odometer (km)").performTextInput("1000")
+        compose.onNodeWithText("Save Fuel Record").assertIsNotEnabled()
+        compose.runOnIdle {assertEquals(0,calls)}
+    }
     private fun data()=buildJsonObject {
         put("profile",buildJsonObject {put("role","driver");put("full_name","Fixture Driver")})
         put("shipments",JsonArray(emptyList()))
