@@ -1,5 +1,11 @@
 import java.util.Properties
 import java.net.URI
+import groovy.json.JsonSlurper
+
+// Public shared backend settings travel with the repository; SDK paths and secrets do not.
+val sharedClientProperties = Properties().apply {
+    rootProject.file("client-config.properties").inputStream().use { load(it) }
+}
 
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -7,11 +13,12 @@ val localProperties = Properties().apply {
 }
 
 fun requiredClientSetting(name: String): String {
-    val value = (System.getenv(name) ?: localProperties.getProperty(name))?.trim()
+    val value = (System.getenv(name) ?: localProperties.getProperty(name)
+        ?: sharedClientProperties.getProperty(name))?.trim()
     require(!value.isNullOrBlank() && !value.equals("null", ignoreCase = true)) {
         "Missing $name. Set it in local.properties or the environment before syncing Gradle."
     }
-    require(value.none { it == '\n' || it == '\r' || it == '"' || it == '\\' }) {
+    require(value.none { (it == '\n') || (it == '\r') || (it == '"') || (it == '\\') }) {
         "Invalid characters in $name."
     }
     return value
@@ -22,10 +29,39 @@ val supabaseUrl = requiredClientSetting("SUPABASE_URL").also {
     require(uri.scheme == "https" && !uri.host.isNullOrBlank()) {
         "SUPABASE_URL must be a valid HTTPS project URL."
     }
+    require(it == sharedClientProperties.getProperty("SUPABASE_URL")) {
+        "Wrong Tanaw backend: ${uri.host}. This branch uses the shared Tanaw Dev project. " +
+            "Remove stale SUPABASE_URL and SUPABASE_ANON_KEY overrides from local.properties/environment, " +
+            "sync Gradle and rebuild. See README.md."
+    }
 }
 val supabaseKey = requiredClientSetting("SUPABASE_ANON_KEY").also {
     require(it.startsWith("sb_publishable_")) {
         "SUPABASE_ANON_KEY must be a public sb_publishable_ key for the Android client."
+    }
+    require(it == sharedClientProperties.getProperty("SUPABASE_ANON_KEY")) {
+        "Tanaw Dev client key does not match this branch. Remove stale SUPABASE_ANON_KEY overrides " +
+            "from local.properties/environment, sync Gradle and rebuild. See README.md."
+    }
+}
+
+tasks.register("verifyPhoneSignup") {
+    group = "verification"
+    description = "Read the configured backend's public phone-signup settings without creating an account or sending SMS."
+    doLast {
+        val connection = URI("$supabaseUrl/auth/v1/settings").toURL().openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.setRequestProperty("apikey", supabaseKey)
+        try {
+            check(connection.responseCode == 200) { "Cannot read public Auth settings for ${URI(supabaseUrl).host}; HTTP ${connection.responseCode}." }
+            val settings = connection.inputStream.bufferedReader().use { JsonSlurper().parseText(it.readText()) } as Map<*, *>
+            val external = settings["external"] as? Map<*, *>
+            check(external?.get("phone") == true && settings["disable_signup"] != true) {
+                "Phone signup is disabled on ${URI(supabaseUrl).host}. The project administrator must check Auth providers."
+            }
+            println("Tanaw backend: ${URI(supabaseUrl).host}; phone signup enabled. No signup or SMS request sent.")
+        } finally { connection.disconnect() }
     }
 }
 
@@ -34,6 +70,30 @@ val googleWebClientId = (System.getenv("GOOGLE_WEB_CLIENT_ID")
     ?: localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")).trim().also {
     require(it.isEmpty() || it.matches(Regex("[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com"))) {
         "GOOGLE_WEB_CLIENT_ID must be a Google Web OAuth client ID."
+    }
+}
+
+tasks.register("verifyDriverLogin") {
+    group = "verification"
+    description = "Read public email/phone and optional Google provider settings; never signs in or sends a code."
+    doLast {
+        val connection = URI("$supabaseUrl/auth/v1/settings").toURL().openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.setRequestProperty("apikey", supabaseKey)
+        try {
+            check(connection.responseCode == 200) { "Public Auth settings unavailable; HTTP ${connection.responseCode}." }
+            val settings = connection.inputStream.bufferedReader().use { JsonSlurper().parseText(it.readText()) } as Map<*, *>
+            val external = settings["external"] as? Map<*, *> ?: emptyMap<Any, Any>()
+            check(external["phone"] == true) { "Phone Auth is disabled on the configured backend." }
+            check(external["email"] == true) { "Email Auth is disabled on the configured backend." }
+            if (googleWebClientId.isNotBlank()) check(external["google"] == true) {
+                "This build offers Google sign-in, but the backend provider is disabled. See GOOGLE_AUTH_SETUP.md."
+            }
+            println("${URI(supabaseUrl).host}: email/phone enabled; Google " +
+                if (googleWebClientId.isBlank()) "not offered (no local client ID)." else "provider enabled (owned-account runtime acceptance still required).")
+            println("Read-only configuration check. No account, session, SMS or email created.")
+        } finally { connection.disconnect() }
     }
 }
 
@@ -95,7 +155,6 @@ dependencies {
     implementation(libs.postgrest.kt)
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.github.jan-tennert.supabase:realtime-kt")
-    implementation("org.maplibre.gl:android-sdk:13.7.1")
     implementation(libs.ktor.client.android)
 
     // Lifecycle / ViewModel

@@ -139,7 +139,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             }
         }
     }
-    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){recoveryStore.clear("challenge");recoveryPhone=null;signupPhone="";timer?.cancel()};mutable.update { it.copy(page=page,error=null,message=null) }} }
+    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){recoveryStore.clear("challenge");recoveryPhone=null;signupPhone="";timer?.cancel()};mutable.update { it.copy(page=page,error=null,message=null,resendSeconds=if(page=="login")0 else it.resendSeconds,email=if(page=="login")"" else it.email) }} }
     private fun saveChallenge(page:String,target:String)=recoveryStore.write("challenge",RecoveryPolicy.challenge(page,target,System.currentTimeMillis()))
     private fun restoreWorkspace(owner:String):Boolean {
         if(mutable.value.page.startsWith("recover") || mutable.value.page=="verify_phone")return false
@@ -167,14 +167,14 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         MobileAuthErrors.message(detail)?.let { return it }
         return when {
             detail.contains("ACTIVE_") -> "This account is inactive or does not have access. Contact the office."
-            detail.contains("Invalid login",true)||detail.contains("invalid_credentials",true) -> "Email or password is incorrect."
-            detail.contains("email_not_confirmed",true) -> "Verify your email before signing in."
+            detail.contains("Invalid login", ignoreCase = true) || detail.contains("invalid_credentials", ignoreCase = true) -> "Email or password is incorrect."
+            detail.contains("email_not_confirmed", ignoreCase = true) -> "Verify your email before signing in."
             detail.contains("CAPACITY_EXCEEDED") -> "Cargo exceeds registered vehicle capacity. Choose another type or contact the office."
             detail.contains("INVALID_DEPARTURE") -> "Choose a future departure within the next year."
             detail.contains("REQUEST_ALREADY_SAVED_REFRESH") -> "This request was already saved. Refresh Active shipments before making another request."
             detail.contains("CUSTOMER_PROFILE_REQUIRED") -> "Your customer profile needs office attention before booking."
-            detail.contains("rate",true)||detail.contains("429") -> "Too many requests. Please wait before trying again."
-            detail.contains("otp",true)||detail.contains("token",true) -> "The code is invalid or expired. Request another code."
+            detail.contains("rate", ignoreCase = true) || detail.contains("429") -> "Too many requests. Please wait before trying again."
+            detail.contains("otp", ignoreCase = true) || detail.contains("token", ignoreCase = true) -> "The code is invalid or expired. Request another code."
             detail.contains("OUTSIDE_OPERATING_HOURS") -> "This action is only available during operating hours."
             detail.contains("ARRIVAL_TOO_FAR") -> "Move within the pickup arrival radius and use a fresh accurate location."
             detail.contains("WAIT_PERIOD_NOT_FINISHED") -> "The pickup waiting period has not finished. The office decides any cancellation."
@@ -294,7 +294,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             try { client.auth.signInWith(Email) { this.email=email.trim(); this.password=password } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
-                if (!error.message.orEmpty().contains("invalid_credentials",true) && !error.message.orEmpty().contains("Invalid login",true)) throw error
+                if (!error.message.orEmpty().contains("invalid_credentials", ignoreCase = true) && !error.message.orEmpty().contains("Invalid login", ignoreCase = true)) throw error
                 loginWithContactEmail(email.trim(),password)
             }
         }

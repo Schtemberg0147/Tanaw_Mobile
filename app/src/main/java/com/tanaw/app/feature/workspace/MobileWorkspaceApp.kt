@@ -37,19 +37,35 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     val data=state.data
     val activityContext = LocalContext.current
     if (state.page=="login") {
-        LoginScreen(onLoginClick=vm::login,onForgotPassword={vm.page("recover")},onCreateAccount={vm.page("signup")},
-            successMessage=state.message,isLoading=state.busy,errorMessage=state.error,allowPhone=true,
-            onGoogleSignIn=if(com.tanaw.app.BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) ({vm.googleSignIn(activityContext)}) else null)
+        var legal by rememberSaveable { mutableStateOf<String?>(null) }
+        LoginScreen(
+            onLoginClick = vm::login,
+            onForgotPassword = { vm.page("recover") },
+            onCreateAccount = { vm.page("signup") },
+            onTermsClick = { legal = "Terms of Service" },
+            onPrivacyClick = { legal = "Privacy Policy" },
+            successMessage = state.message,
+            isLoading = state.busy,
+            errorMessage = state.error,
+            allowPhone = true,
+            onGoogleSignIn = if (com.tanaw.app.BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) ({ vm.googleSignIn(activityContext) }) else null,
+        )
+        legal?.let { title ->
+            InfoDialog(title,"The office has not published an approved $title in this app. Ask your administrator for the current document. No policy acceptance is recorded by opening this panel.") { legal=null }
+        }
         return
     }
     if (state.page=="signup") {
         BackHandler(!state.busy) { vm.page("login") }
-        var terms by remember { mutableStateOf(false) }
+        var terms by remember { mutableStateOf(value = false) }
         CreateAccountScreen(onVerifyAndContinue=vm::signup,onSignIn={vm.page("login")},onTermsClick={terms=true},isLoading=state.busy,errorMessage=state.error,phoneSignup=true)
         if(terms) InfoDialog("Before creating an account","Use accurate contact details. Requests require office review and a confirmed quotation before dispatch. Contact the office for privacy and service terms; the full policy has not been published in this app.") { terms=false }
         return
     }
-    if (state.page!="workspace" || data==null) {
+    if ((state.page != "workspace") || (data == null)) {
+        BackHandler(state.page in listOf("verify","verify_phone","recover","recover_code")) {
+            if(!state.busy) vm.page("login")
+        }
         FormPage("Tanaw") {
             Notices(state)
             if(state.offline) SupportingText("Offline or reconnecting · showing the last loaded records. Tap Refresh to retry.")
@@ -255,8 +271,10 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         dropoffLat?.let {lat->dropoffLng?.let {lng->org.maplibre.android.geometry.LatLng(lat,lng)}},
         enabled=!state.busy,
         onPickupText={pickup=it},onDestinationText={dropoff=it},
-        onPickup={pickup=it.label;pickupLat=it.latitude;pickupLng=it.longitude},
-        onDestination={dropoff=it.label;dropoffLat=it.latitude;dropoffLng=it.longitude},routeLoader=vm::previewRoute)
+        onPickup = { loc -> pickup = loc.label; pickupLat = loc.latitude; pickupLng = loc.longitude },
+        onDestination = { loc -> dropoff = loc.label; dropoffLat = loc.latitude; dropoffLng = loc.longitude },
+        routeLoader = vm::previewRoute
+    )
     BookingSchedule(departure,!state.busy) {departure=it}
     if(!routeValid) SupportingText("Place both map pins and choose a future departure to continue.")
     Action("Continue to cargo",routeValid && !state.busy) {step=2}
@@ -275,7 +293,9 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     if(data.rows("vehicles").isEmpty()) Text("No vehicle types are available. Contact the office.")
     data.rows("vehicles").forEach {v ->
         val fits=MobileBookingRules.fits(weight,v.value("default_capacity_kg"))
-        Row(Modifier.fillMaxWidth().heightIn(min=48.dp).selectable(selected=vehicleId==v.value("id"),enabled=!state.busy && fits,onClick={vehicleId=v.value("id")})) {
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min=48.dp).selectable(selected=vehicleId==v.value("id"),enabled=!state.busy && fits,onClick={vehicleId=v.value("id")})
+        ) {
             RadioButton(selected=vehicleId==v.value("id"),onClick=null,enabled=!state.busy && fits)
             Column(Modifier.padding(top=10.dp)) {
                 Text(v.value("name"),color=if(fits)MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)

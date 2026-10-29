@@ -12,12 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
@@ -225,28 +221,12 @@ fun TermsFooter(
     onPrivacyClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val mutedColor  = MaterialTheme.colorScheme.onSurfaceVariant
-    val accentColor = MaterialTheme.colorScheme.secondary
-
-    val annotated = buildAnnotatedString {
-        withStyle(SpanStyle(color = mutedColor, fontSize = 11.sp)) {
-            append("By signing in you agree to our\n")
-        }
-        withStyle(SpanStyle(color = accentColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)) {
-            append("Terms of Service")
-        }
-        withStyle(SpanStyle(color = mutedColor, fontSize = 11.sp)) {
-            append(" and ")
-        }
-        withStyle(SpanStyle(color = accentColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)) {
-            append("Privacy Policy")
+    Column(modifier=modifier, horizontalAlignment=Alignment.CenterHorizontally) {
+        Text("Company policies",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=11.sp)
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            TextButton(onClick=onTermsClick) { Text("Terms of Service",fontSize=11.sp) }
+            Text("and",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=11.sp)
+            TextButton(onClick=onPrivacyClick) { Text("Privacy Policy",fontSize=11.sp) }
         }
     }
-
-    Text(
-        text       = annotated,
-        textAlign  = TextAlign.Center,
-        lineHeight = 18.sp,
-        modifier   = modifier
-    )
 }
