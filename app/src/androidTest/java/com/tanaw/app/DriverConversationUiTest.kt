@@ -73,4 +73,45 @@ class DriverConversationUiTest {
         compose.onNodeWithText("Use the north entrance").assertDoesNotExist()
         compose.onNodeWithText("Send message").assertIsNotEnabled()
     }
+
+    @Test fun inAppAlertMarksOnlyItsIdAndOpensItsLinkedTrip() {
+        val reads=mutableListOf<String>();val opened=mutableListOf<String>()
+        val data=buildJsonObject {
+            put("profile",buildJsonObject{put("id","fixture-owner");put("role","driver")})
+            put("shipments",buildJsonArray {listOf("other-trip","linked-trip").forEach {id->add(buildJsonObject {
+                put("id",id);put("tracking_number",id);put("status","assigned")
+            })}})
+            put("notifications",buildJsonArray {add(buildJsonObject {
+                put("id","exact-alert");put("title","Assignment updated");put("body","Open the assigned trip")
+                put("shipment_id","linked-trip");put("created_at","2026-10-29T10:00:00Z")
+            })})
+        }
+        compose.setContent {DriverTheme {DriverWorkspaceScreen(MobileState(page="workspace"),data,
+            {},{},{},{reads.add(it)},{opened.add(it)},{_,_,_->},{_,_->},{_,_,_,_,_,_->})}}
+        compose.onNodeWithContentDescription("Notifications").performClick()
+        compose.onNodeWithText("Assignment updated").assertExists()
+        assertTrue(reads.isEmpty());assertTrue(opened.isEmpty())
+        compose.onNodeWithText("Mark read").performScrollTo().performClick()
+        assertEquals(listOf("exact-alert"),reads)
+        compose.onNodeWithText("Open trip").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("linked-trip"),opened)
+    }
+
+    @Test fun readAlertWithUnavailableTripDoesNotOfferAnotherTripOrReadAgain() {
+        val data=buildJsonObject {
+            put("profile",buildJsonObject{put("id","fixture-owner");put("role","driver")})
+            put("shipments",JsonArray(emptyList()))
+            put("notifications",buildJsonArray {add(buildJsonObject {
+                put("id","already-read");put("title","Earlier assignment");put("shipment_id","unavailable-trip")
+                put("read_at","2026-10-29T10:00:00Z")
+            })})
+        }
+        compose.setContent {DriverTheme {DriverWorkspaceScreen(MobileState(page="workspace"),data,
+            {},{},{},{error("Must not mark again")},{error("Must not open a different trip")},{_,_,_->},{_,_->},{_,_,_,_,_,_->})}}
+        compose.onNodeWithContentDescription("Notifications").performClick()
+        compose.onNodeWithText("Earlier assignment").assertExists()
+        compose.onNodeWithText("Mark read").assertDoesNotExist()
+        compose.onNodeWithText("Open trip").assertDoesNotExist()
+    }
 }
