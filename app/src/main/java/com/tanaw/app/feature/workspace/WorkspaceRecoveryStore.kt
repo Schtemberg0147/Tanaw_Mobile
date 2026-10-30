@@ -37,10 +37,11 @@ internal object RecoveryPolicy {
 }
 
 /** Private, backup-excluded ciphertext. AAD and filenames bind every record to project and owner. */
-internal class WorkspaceRecoveryStore(context:Context,private val project:String) {
+internal class WorkspaceRecoveryStore(context:Context,private val project:String,private val maxRecordBytes:Int=2_000_000,private val preserveUnreadable:Boolean=false) {
     private val root=File(context.noBackupFilesDir,"workspace-recovery").apply {mkdirs()}
     private fun name(scope:String)=MessageDigest.getInstance("SHA-256").digest("$project/$scope".toByteArray()).joinToString(""){"%02x".format(it)}
     private fun file(scope:String)=AtomicFile(File(root,name(scope)))
+    fun contains(scope:String)=file(scope).baseFile.exists() || File(file(scope).baseFile.path+".bak").exists()
     private fun key():SecretKey {
         val store=KeyStore.getInstance("AndroidKeyStore").apply {load(null)}
         return (store.getKey("workspace-recovery-v1",null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").run {
@@ -51,18 +52,18 @@ internal class WorkspaceRecoveryStore(context:Context,private val project:String
     fun write(scope:String,data:JsonObject):Boolean = runCatching {
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.ENCRYPT_MODE,key());updateAAD(name(scope).toByteArray())}
         val bytes=cipher.iv+cipher.doFinal(data.toString().toByteArray())
-        require(bytes.size<=2_000_000)
+        require(bytes.size<=maxRecordBytes)
         val target=file(scope);val stream=target.startWrite()
         try {stream.write(bytes);target.finishWrite(stream)}catch(e:Exception){target.failWrite(stream);throw e}
         true
     }.getOrDefault(false)
     fun read(scope:String,maxAge:Long):JsonObject? = runCatching {
-        val bytes=file(scope).openRead().use {require(it.available()<=2_000_000);it.readBytes()}
+        val bytes=file(scope).openRead().use {require(it.available()<=maxRecordBytes);it.readBytes()}
         require(bytes.size>28)
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(0,12)));updateAAD(name(scope).toByteArray())}
         val data=Json.parseToJsonElement(String(cipher.doFinal(bytes.copyOfRange(12,bytes.size)))).jsonObject
         val age=System.currentTimeMillis()-(data.value("created").toLongOrNull()?:error("missing date"))
         require(age in 0..maxAge);data
-    }.getOrElse {clear(scope);null}
+    }.getOrElse {if(!preserveUnreadable)clear(scope);null}
     fun clear(scope:String){file(scope).delete()}
 }

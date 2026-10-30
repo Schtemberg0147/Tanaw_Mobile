@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -89,27 +90,47 @@ import java.util.UUID
 @Composable internal fun DriverProofForm(id:String,owner:String,reference:String,state:MobileState,onBackHome:()->Unit,close:()->Unit,
     submit:(String,ByteArray,ByteArray,String,()->Unit)->Unit) {
     val context=LocalContext.current
-    var recipient by rememberSaveable(id){mutableStateOf("")}
-    var filePath by rememberSaveable(id){mutableStateOf<String?>(null)}
-    var photoReady by rememberSaveable(id){mutableStateOf(false)}
-    var attempt by rememberSaveable(id){mutableStateOf(UUID.randomUUID().toString())}
-    val lines=remember(id){mutableStateListOf<List<Offset>>()}
-    var current by remember(id){mutableStateOf(emptyList<Offset>())}
+    val store=remember(owner,id){ProofDraftStore(context)}
+    val restored=remember(owner,id){runCatching{store.read(owner,id)}}
+    var draft by remember(owner,id){mutableStateOf(restored.getOrNull()?:ProofDraft())}
+    var filePath by rememberSaveable(owner,id){mutableStateOf<String?>(null)}
+    var current by remember(owner,id){mutableStateOf(emptyList<Offset>())}
     var canvasSize by remember {mutableStateOf(IntSize(1,1))}
     var error by remember {mutableStateOf<String?>(null)}
-    var submitted by rememberSaveable(id){mutableStateOf(false)}
-    val preview=remember(filePath,photoReady){if(photoReady)runCatching {ProofImage.decode(File(filePath!!).readBytes(),20*1024*1024)}.getOrNull()else null}
+    var submitted by rememberSaveable(owner,id){mutableStateOf(false)}
+    var confirmDiscard by remember {mutableStateOf(false)}
+    val editable=!state.busy && !draft.frozen && restored.isSuccess
+    fun persist(next:ProofDraft):Boolean {
+        if(!store.save(owner,id,next)){error="Unable to save your private draft. Free device storage and retry before leaving.";return false}
+        draft=next;error=null;return true
+    }
+    val preview=remember(draft.photo){draft.photo?.let{runCatching{ProofImage.decode(it)}.getOrNull()}}
     DisposableEffect(preview) {onDispose {preview?.recycle()}}
-    val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) {success->photoReady=success;if(success)attempt=UUID.randomUUID().toString()}
-    fun discard(){filePath?.let{File(it).delete()};close()}
+    val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) {success->
+        val file=filePath?.let(::File)
+        try {
+            if(success && file!=null) {
+                require(file.length() in 1..20L*1024*1024)
+                val bitmap=ProofImage.decode(file.readBytes(),20*1024*1024)
+                val bytes=try{ByteArrayOutputStream().also{check(bitmap.compress(Bitmap.CompressFormat.JPEG,85,it))}.toByteArray()}finally{bitmap.recycle()}
+                require(bytes.size in 1..5*1024*1024)
+                persist(draft.changed().copy(photo=bytes))
+            }else error="Photo capture cancelled. Your previous photo and signature are retained."
+        }catch(_:Exception){error="Unable to read the photo. Your existing draft is retained; retry capture."}
+        finally {file?.delete();filePath=null}
+    }
     fun takePhoto() {
         try {
             val directory=File(context.cacheDir,"proof/$owner").apply{mkdirs()}
             val file=File(directory,"${UUID.randomUUID()}.jpg")
-            filePath?.let {File(it).delete()};filePath=file.absolutePath;photoReady=false
+            filePath?.let {File(it).delete()};filePath=file.absolutePath
             camera.launch(FileProvider.getUriForFile(context,context.packageName+".proof",file))
         }catch(_:Exception){error="No camera is available. Retry on a camera-equipped device."}
     }
+    if(confirmDiscard)AlertDialog(onDismissRequest={confirmDiscard=false},title={Text("Discard saved proof draft?")},
+        text={Text("This removes this device's photo, recipient and signature. Uploaded evidence is retained for reconciliation.")},
+        confirmButton={TextButton(onClick={store.clear(owner,id);confirmDiscard=false;close()}){Text("Discard draft")}},
+        dismissButton={TextButton(onClick={confirmDiscard=false}){Text("Keep draft")}})
     if(submitted) {
         DriverTransaction("Delivery proof submitted",false,close,"BACK TO HOME",true,{close();onBackHome()}) {
             Surface(color=DriverNavy,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(32.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -117,49 +138,54 @@ import java.util.UUID
                 Text("Proof Submitted!",color=Color.White,fontSize=28.sp,fontWeight=FontWeight.Bold)
                 Text(reference,color=Color.White)
             }}
-            Text("Your delivery photo and recipient signature have been submitted. Office review is pending.")
+            Text("Your delivery photo and recipient signature are saved. Refresh your trip for the current office review or correction status.")
             Text("Final completion and allowance processing are confirmed by the office.",fontSize=12.sp,color=DriverMuted)
         }
         return
     }
-    DriverTransaction("Submit Proof of Delivery",state.busy,::discard,"COMPLETE DELIVERY",
-        recipient.trim().length in 2..100 && photoReady && lines.isNotEmpty(),{
+    DriverTransaction("Submit Proof of Delivery",state.busy,close,if(draft.frozen)"RETRY / CHECK SAVED PROOF" else "COMPLETE DELIVERY",
+        !state.offline && restored.isSuccess && draft.recipient.trim().length in 2..100 && preview!=null && draft.strokes.isNotEmpty(),{
             try {
-                val file=File(filePath?:error("Missing photo"));require(file.length() in 1..(20L*1024*1024))
-                val bitmap=ProofImage.decode(file.readBytes(),20*1024*1024)
-                val photo=ByteArrayOutputStream().also{bitmap.compress(Bitmap.CompressFormat.JPEG,85,it)}.toByteArray();bitmap.recycle()
+                var ready=draft
+                if(!ready.frozen) {
                 val signature=Bitmap.createBitmap(1000,400,Bitmap.Config.ARGB_8888)
                 val canvas=android.graphics.Canvas(signature);canvas.drawColor(android.graphics.Color.WHITE)
                 val paint=android.graphics.Paint().apply{color=android.graphics.Color.BLACK;strokeWidth=4f;isAntiAlias=true}
-                lines.forEach {line->line.zipWithNext().forEach {(a,b)->canvas.drawLine(a.x/canvasSize.width*1000,a.y/canvasSize.height*400,b.x/canvasSize.width*1000,b.y/canvasSize.height*400,paint)}}
+                ready.strokes.forEach {line->line.zipWithNext().forEach {(a,b)->canvas.drawLine(a.x*1000,a.y*400,b.x*1000,b.y*400,paint)}}
                 val bytes=ByteArrayOutputStream().also{signature.compress(Bitmap.CompressFormat.PNG,100,it)}.toByteArray();signature.recycle()
-                submit(recipient,photo,bytes,attempt){file.delete();submitted=true}
-            }catch(_:Exception){error="Unable to prepare proof. Retake a smaller photo and sign again."}
+                ready=ready.copy(signature=bytes,frozen=true)
+                }
+                if(persist(ready))submit(ready.recipient,requireNotNull(ready.photo),requireNotNull(ready.signature),ready.attempt){store.clear(owner,id);submitted=true}
+            }catch(_:Exception){error="Unable to prepare proof. Your saved draft is retained; retry or contact the office."}
         }) {
         Surface(color=Color.White,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("SHIPMENT REFERENCE",fontSize=10.sp,color=Color(0xFF536581));Text(reference,fontSize=18.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
             Text("Pending Delivery Confirmation",fontSize=14.sp,color=DriverMuted)
         }}
+        Text(if(draft.frozen)"This attempt is saved and locked while its result is uncertain. Retry checks existing proof before sending again." else "Your draft is saved privately on this device. Back keeps it for this account and delivery.",fontSize=12.sp,color=DriverMuted)
+        if(state.offline)Text("Reconnect and refresh before submitting. Your saved draft is retained.")
+        if(restored.isFailure)Text("The saved proof draft cannot be read. Contact the office before submitting another attempt.",color=MaterialTheme.colorScheme.error)
         Text("1. PHOTO OF CARGO",fontSize=12.sp,color=DriverNavy)
-        Surface(onClick=::takePhoto,enabled=!state.busy,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF))) {
+        Surface(onClick=::takePhoto,enabled=editable,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF))) {
             Column(Modifier.fillMaxWidth().heightIn(min=180.dp).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
                 if(preview!=null)Image(preview.asImageBitmap(),"Captured delivery photo",Modifier.fillMaxWidth().height(140.dp))
                 else DriverAsset(R.drawable.figma_driver_ceb65,48,46)
-                Spacer(Modifier.height(12.dp));Text(if(photoReady)"RETAKE PHOTO" else "TAKE PHOTO",color=DriverNavy,fontSize=12.sp)
+                Spacer(Modifier.height(12.dp));Text(if(preview!=null)"RETAKE PHOTO" else "TAKE PHOTO",color=DriverNavy,fontSize=12.sp)
                 Text("Capture a clear view of items & labels",fontSize=10.sp,color=DriverMuted)
             }
         }
         Text("2. RECIPIENT NAME",fontSize=12.sp,color=DriverNavy)
-        OutlinedTextField(recipient,{recipient=it},placeholder={Text("Enter full name")},enabled=!state.busy,modifier=Modifier.fillMaxWidth(),singleLine=true,shape=RoundedCornerShape(4.dp))
+        OutlinedTextField(draft.recipient,{persist(draft.changed().copy(recipient=it.take(100)))},placeholder={Text("Enter full name")},enabled=editable,modifier=Modifier.fillMaxWidth(),singleLine=true,shape=RoundedCornerShape(4.dp))
         Text("3. DIGITAL SIGNATURE",fontSize=12.sp,color=DriverNavy)
         Box(Modifier.fillMaxWidth().height(160.dp).background(Color.White).border(1.dp,Color(0xFFC3C6CF),RoundedCornerShape(4.dp))) {
-            if(lines.isEmpty() && current.isEmpty())Text("Tap and draw to sign",Modifier.align(Alignment.Center),fontSize=14.sp,color=Color(0xFF73777F))
-            Canvas(Modifier.fillMaxSize().onSizeChanged{canvasSize=it}.pointerInput(state.busy) {
-                if(!state.busy)detectDragGestures(onDragStart={attempt=UUID.randomUUID().toString();current=listOf(it)},
-                    onDragEnd={if(current.size>1)lines.add(current);current=emptyList()},onDragCancel={current=emptyList()}) {change,_->change.consume();current=current+change.position}
-            }) {(lines+listOf(current)).forEach {line->line.zipWithNext().forEach {(a,b)->drawLine(Color.Black,a,b,4f)}}}
+            if(draft.strokes.isEmpty() && current.isEmpty())Text("Tap and draw to sign",Modifier.align(Alignment.Center),fontSize=14.sp,color=Color(0xFF73777F))
+            Canvas(Modifier.fillMaxSize().testTag("proof_signature_canvas").onSizeChanged{canvasSize=it}.pointerInput(editable) {
+                if(editable)detectDragGestures(onDragStart={current=listOf(it)},
+                    onDragEnd={if(current.size>1)persist(draft.changed().copy(strokes=draft.strokes+listOf(current.map {SignaturePoint((it.x/canvasSize.width.coerceAtLeast(1)).coerceIn(0f,1f),(it.y/canvasSize.height.coerceAtLeast(1)).coerceIn(0f,1f))})));current=emptyList()},onDragCancel={current=emptyList()}) {change,_->change.consume();if(current.size<2000)current=current+change.position}
+            }) {(draft.strokes.map{line->line.map{Offset(it.x*size.width,it.y*size.height)}}+listOf(current)).forEach {line->line.zipWithNext().forEach {(a,b)->drawLine(Color.Black,a,b,4f)}}}
         }
-        TextButton(onClick={lines.clear();current=emptyList()},enabled=!state.busy){Text("Clear signature")}
+        TextButton(onClick={persist(draft.changed().copy(strokes=emptyList()));current=emptyList()},enabled=editable){Text("Clear signature")}
+        TextButton(onClick={confirmDiscard=true},enabled=editable){Text("Discard saved draft")}
         (error?:state.error)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
     }
 }

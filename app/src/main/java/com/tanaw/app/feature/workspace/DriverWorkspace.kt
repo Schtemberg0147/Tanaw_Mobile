@@ -152,6 +152,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                         if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,state.details){selected=null;tab="Home"}
                         else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
+                        if(!DriverUiRules.isActive(shipment.value("status")) && delivery?.value("status")=="delivered")tripActions(shipment,delivery){selected=null;tab="Home"}
                         DriverRecords(shipment,state,onDetails,onProof,onEvidence)
                         delivery?.takeIf{it.value("id").isNotBlank()}?.let {conversation?.invoke(it)}
                     }

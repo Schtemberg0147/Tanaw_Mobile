@@ -59,6 +59,8 @@ fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJs
 @HiltViewModel
 class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseClient,@ApplicationContext private val context:Context) : ViewModel() {
     private val recoveryStore=WorkspaceRecoveryStore(context,BuildConfig.SUPABASE_URL)
+    private val proofDraftStore=ProofDraftStore(context)
+    fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
     private var signupPhone: String = ""
     private var recoveryPhone: String? = null
     private val mutable = MutableStateFlow(MobileState())
@@ -410,6 +412,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             TrackingQueue(context).use {queue->queue.clearOwner(owner)}
             // Only this account's private, temporary camera files; uploaded proof stays on the server.
             java.io.File(context.cacheDir,"proof/$owner").deleteRecursively()
+            proofDraftStore.clearOwner(owner)
         }
         client.auth.signOut();generation++;loadedUser=null
         try { CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest()) }
@@ -524,28 +527,31 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     }
     fun submitProof(id:String,recipient:String,photo:ByteArray,signature:ByteArray,attempt:String,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
-        require(recipient.trim().length in 2..100 && photo.size in 1..(5*1024*1024) && signature.size in 1..(5*1024*1024))
+        ProofSubmission.validate(id,attempt,recipient,photo,signature)
+        withContext(Dispatchers.Default){ProofImage.decode(photo).recycle();ProofImage.decode(signature).recycle()}
         val bucket=client.storage.from("delivery-documents")
         val photoPath="$id/pod-photo-$attempt.jpg";val signaturePath="$id/signature-$attempt.png"
+        fun current()=version==generation && client.auth.currentUserOrNull()?.id==uid
         suspend fun uploadOnce(path:String,bytes:ByteArray,type:ContentType) {
-            try {bucket.upload(path,bytes) {upsert=false;contentType=type}}
-            catch(error:Exception) {if(error is CancellationException)throw error
-                // Retrying an interrupted attempt may find the immutable object already uploaded.
-                if(!error.message.orEmpty().contains("Duplicate",true) && !error.message.orEmpty().contains("already exists",true))throw error
-                require(bucket.downloadAuthenticated(path).contentEquals(bytes))
-            }
+            ExpenseSubmission.upload(bytes,{check(current());bucket.upload(path,bytes) {upsert=false;contentType=type}},
+                {check(current());bucket.downloadAuthenticated(path)})
         }
-        try {
+        ConfirmedMutation.run({ProofSubmission.run({
+            check(current())
+            val docs=client.from("delivery_documents").select {filter {eq("delivery_id",id)}}.decodeAs<JsonArray>().map{it.jsonObject}
+            ProofSubmission.recorded(docs,id,uid,recipient,photoPath,signaturePath)
+        },{
+            check(current());check(bucket.downloadAuthenticated(photoPath).contentEquals(photo) && bucket.downloadAuthenticated(signaturePath).contentEquals(signature)){"The recorded proof files differ. Contact the office."}
+        },{
             uploadOnce(photoPath,photo,ContentType.Image.JPEG);uploadOnce(signaturePath,signature,ContentType.Image.PNG)
-            check(version==generation && client.auth.currentUserOrNull()?.id==uid)
-            client.postgrest.rpc("driver_submit_pod",buildJsonObject {put("p_delivery_id",id);put("p_recipient_name",recipient.trim());put("p_photo_path",photoPath);put("p_signature_path",signaturePath)})
-        } catch(error:Exception) {
-            // A committed proof is protected from deletion even if its response was lost.
-            withContext(kotlinx.coroutines.NonCancellable) {try {bucket.delete(listOf(photoPath,signaturePath))}catch(_:Exception){}}
-            throw error
-        }
-        TripTrackingService.stop(context);onSaved();mutable.update {it.copy(message="Proof submitted. Office review is pending.")}
-        try {load()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update{it.copy(offline=true,error="Proof submitted. Refresh to reload the office review status.")}}
+        },{
+            check(current());client.postgrest.rpc("driver_submit_pod",buildJsonObject {put("p_delivery_id",id);put("p_recipient_name",recipient.trim());put("p_photo_path",photoPath);put("p_signature_path",signaturePath)})
+        })},::current,{
+            if(TripTrackingStatus.state.value.delivery==id)TripTrackingService.stop(context)
+            proofDraftStore.clear(uid,id)
+            mutable.update {it.copy(message="Proof saved. Refresh for the current office review status.",error=null)}
+            try {onSaved()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){ /* Confirmed proof remains saved. */ }
+        },{load()},{mutable.update{it.copy(offline=true,error=null,message="Proof saved. Refresh to reload office review status before another action.")}})
     }
     override fun onCleared() {liveJob?.cancel();pollJob?.cancel()}
     fun markRead(id: String) = operation {

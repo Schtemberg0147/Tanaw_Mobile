@@ -1,6 +1,7 @@
 package com.tanaw.app
 
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,7 +35,9 @@ class DriverFigmaUiTest {
         compose.waitForIdle()
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val file=File(context.getExternalFilesDir(null),"driver-ui-$name.png")
-        file.outputStream().use {InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+        // Capture the Compose surface; an unrelated emulator System UI ANR can obscure UiAutomation screenshots.
+        val surface=if(name in listOf("proof","incident","expense"))compose.onNode(isDialog())else compose.onRoot()
+        file.outputStream().use {surface.captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
     }
     @Test fun driverTabsAndAssignmentUseDedicatedFlow() {
         start()
@@ -63,10 +66,13 @@ class DriverFigmaUiTest {
         compose.onNodeWithText("View pickup-to-destination route").performScrollTo().assertIsEnabled()
     }
     @Test fun proofRequiresCaptureAndSignature() {
-        compose.setContent {DriverTheme {DriverProofForm("fixture","fixture-owner","UI-DRIVER-001",MobileState(),{},{}) {_,_,_,_,_->}}}
-        compose.onNodeWithText("COMPLETE DELIVERY").assertIsNotEnabled()
-        compose.onNodeWithText("Enter full name").performTextInput("Demo Recipient")
-        compose.onNodeWithText("COMPLETE DELIVERY").assertIsNotEnabled();shot("proof")
+        val owner=java.util.UUID.randomUUID().toString()
+        try {
+            compose.setContent {DriverTheme {DriverProofForm("fixture",owner,"UI-DRIVER-001",MobileState(),{},{}) {_,_,_,_,_->}}}
+            compose.onNodeWithText("COMPLETE DELIVERY").assertIsNotEnabled()
+            compose.onNodeWithText("Enter full name").performTextInput("Demo Recipient")
+            compose.onNodeWithText("COMPLETE DELIVERY").assertIsNotEnabled();shot("proof")
+        }finally{ProofDraftStore(InstrumentationRegistry.getInstrumentation().targetContext).clearOwner(owner)}
     }
     @Test fun incidentRetainsValidatedSubmission() {
         var reported=false
