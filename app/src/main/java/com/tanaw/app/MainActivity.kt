@@ -7,18 +7,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.tanaw.app.feature.workspace.MobileWorkspaceApp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.tanaw.app.data.model.LocationItem
@@ -26,7 +20,6 @@ import com.tanaw.app.data.model.MockData
 import com.tanaw.app.data.repository.UserRole
 import com.tanaw.app.feature.auth.CreateAccountScreen
 import com.tanaw.app.feature.auth.CreateAccountViewModel
-import com.tanaw.app.feature.auth.ForgotPasswordScreen
 import com.tanaw.app.feature.auth.LoginScreen
 import com.tanaw.app.feature.auth.LoginViewModel
 import com.tanaw.app.feature.auth.VerifyEmailScreen
@@ -56,18 +49,15 @@ import com.tanaw.app.feature.profile.ProfileScreen
 import com.tanaw.app.feature.profile.ProfileViewModel
 import com.tanaw.app.feature.tracking.ActiveBookingsScreen
 import com.tanaw.app.feature.tracking.TrackDetailScreen
-import com.tanaw.app.ui.components.TanawBottomNavBar
 import com.tanaw.app.ui.theme.TanawTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 object Routes {
     const val LOGIN             = "login"
-    const val FORGOT_PASSWORD   = "forgot_password"
     const val CREATE_ACCOUNT    = "create_account"
     const val VERIFY_EMAIL      = "verify_email"
     const val VERIFY_PHONE      = "verify_phone"
-    const val CHECK_EMAIL       = "check_email"
     const val HOME              = "home"
     const val DRIVER_HOME       = "driver_home"
     const val TRACK             = "track"
@@ -137,27 +127,12 @@ fun TanawNavHost(
                 onLoginClick = { email, password ->
                     loginViewModel.login(email, password)
                 },
-                onForgotPassword = {
-                    navController.navigate(Routes.FORGOT_PASSWORD)
-                },
                 onCreateAccount = {
                     navController.navigate(Routes.CREATE_ACCOUNT)
                 },
                 successMessage = successMessage,
                 isLoading      = uiState.isLoading,
                 errorMessage   = uiState.errorMessage,
-            )
-        }
-
-        // ── Forgot Password ────────────────────────────────────────────────
-        composable(Routes.FORGOT_PASSWORD) {
-            ForgotPasswordScreen(
-                onSendResetLink = { email ->
-                    navController.navigate(Routes.CHECK_EMAIL)
-                },
-                onBackToSignIn = {
-                    navController.popBackStack()
-                }
             )
         }
 
@@ -239,8 +214,7 @@ fun TanawNavHost(
             LaunchedEffect(uiState.isVerified) {
                 if (uiState.isVerified) {
                     navController.getBackStackEntry(Routes.LOGIN)
-                        .savedStateHandle
-                        .set("success_message", "Account successfully created! Please sign in to continue.")
+                        .savedStateHandle["success_message"] = "Account successfully created! Please sign in to continue."
 
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
@@ -470,7 +444,7 @@ fun TanawNavHost(
                 onEditField         = { fieldKey, newValue ->
                     profileViewModel.updateProfileField(fieldKey, newValue)
                 },
-                onMenuClick         = { menuId -> }
+                onMenuClick         = { _ -> }
             )
         }
 

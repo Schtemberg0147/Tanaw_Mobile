@@ -13,6 +13,13 @@ import org.junit.Test
 
 class DriverLoginFormTest {
     @get:Rule val compose=createComposeRule()
+    @Test fun hostWithoutRecoveryDoesNotOfferABrokenPasswordReset() {
+        compose.setContent {
+            TanawTheme { LoginScreen(onLoginClick={_,_->}, onCreateAccount={}) }
+        }
+        compose.onNodeWithText("Forgot Password?").assertDoesNotExist()
+        compose.onNodeWithText("Login  →").assertExists()
+    }
     @Test fun phoneAndEmailFormsSubmitTheirCurrentIdentifierAndPassword() {
         val submissions=mutableListOf<Pair<String,String>>()
         compose.setContent {

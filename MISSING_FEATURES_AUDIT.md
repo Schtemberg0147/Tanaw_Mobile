@@ -1,4 +1,10 @@
 # Tanaw Mobile — Driver Account Only Audit
+**U03 legacy recovery removal — 2026-10-30:** Removed the obsolete Forgot Password destination,
+undefined CHECK_EMAIL route and unused reset-link form from the dormant TanawNavHost. Shared
+LoginScreen only offers recovery when its host supplies a handler; the active MobileWorkspaceApp
+retains its existing phone/email recovery. This legacy maintenance item is outside the driver-only
+finding counts below. Verification is recorded in the second-brain driver-login-auth note.
+
 **U02 navigation update — 2026-10-30:** Signed-in Change Password preserves Profile/Help beneath an account-bound verification overlay; both Back paths and saved-origin restoration are verified. Signed-out recovery keeps Back to sign in.136unit/14emulator/2existing-session checks, builds/lint pass. No actual code request or password mutation.
 
 **S04/S09/U01 login update — 2026-10-30:** Recovery context was already encrypted and

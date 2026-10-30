@@ -34,7 +34,7 @@ import com.tanaw.app.ui.theme.TanawTheme
  *
  * @param onLoginClick        Called with (email, password) when the user taps Login.
  *                            The parent is responsible for validation + navigation.
- * @param onForgotPassword    Navigate to ForgotPasswordScreen
+ * @param onForgotPassword    Open working recovery; omitted when the host has no recovery flow.
  * @param onCreateAccount     Navigate to CreateAccountScreen
  * @param onTermsClick        Open Terms of Service
  * @param onPrivacyClick      Open Privacy Policy
@@ -45,7 +45,7 @@ import com.tanaw.app.ui.theme.TanawTheme
 @Composable
 fun LoginScreen(
     onLoginClick: (email: String, password: String) -> Unit,
-    onForgotPassword: () -> Unit,
+    onForgotPassword: (() -> Unit)? = null,
     onCreateAccount: () -> Unit,
     onTermsClick: () -> Unit = {},
     onPrivacyClick: () -> Unit = {},
@@ -176,7 +176,7 @@ fun LoginScreen(
                 )
 
                 // ── Forgot password ──────────────────────────────────────────
-                Row(
+                onForgotPassword?.let { openRecovery -> Row(
                     modifier              = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
@@ -187,9 +187,9 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier   = Modifier
                             .padding(top = 10.dp)
-                            .clickable { onForgotPassword() }
+                            .clickable(onClick = openRecovery)
                     )
-                }
+                } }
 
                 // ── Inline error ─────────────────────────────────────────────
                 if (errorMessage != null) {

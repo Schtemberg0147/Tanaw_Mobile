@@ -31,6 +31,19 @@ class DriverLoginAcceptanceTest {
         compose.runOnUiThread {compose.activity.viewModelStore.clear()}
         compose.activityRule.scenario.recreate()
     }
+    @Test fun activeForgotPasswordOpensWorkingFormAndReturnsToSignIn() {
+        ready("Forgot Password?")
+        compose.onNodeWithText("Forgot Password?").performScrollTo().performClick()
+        compose.onNodeWithText("Reset password").assertExists()
+        compose.onNodeWithText("Request recovery code").assertIsNotEnabled()
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("driver@example.invalid")
+        compose.onNodeWithText("Request recovery code").assertIsEnabled()
+        Espresso.closeSoftKeyboard()
+        Espresso.pressBack()
+        ready("Forgot Password?")
+        compose.onNodeWithText("Reset password").assertDoesNotExist()
+        check(store.read("challenge",RecoveryPolicy.CHALLENGE_AGE)==null)
+    }
     @Test fun legalFooterOpensBothHonestPublicationStatesAndCloses() {
         ready("Terms of Service")
         compose.onAllNodes(hasSetTextAction())[0].performScrollTo().performTextInput("09000000000")
