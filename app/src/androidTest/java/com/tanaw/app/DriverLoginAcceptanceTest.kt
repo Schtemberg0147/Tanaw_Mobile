@@ -33,13 +33,26 @@ class DriverLoginAcceptanceTest {
     }
     @Test fun legalFooterOpensBothHonestPublicationStatesAndCloses() {
         ready("Terms of Service")
-        compose.onNodeWithText("Terms of Service").performScrollTo().performClick()
-        compose.onNodeWithText("The office has not published",substring=true).assertExists()
+        compose.onAllNodes(hasSetTextAction())[0].performScrollTo().performTextInput("09000000000")
+        compose.onAllNodes(hasSetTextAction())[1].performScrollTo().performTextInput("u01-synthetic-local-only")
+        fun publicationMessage(title:String)="The office has not published an approved $title in this app. Ask your administrator for the current document. No policy acceptance is recorded by opening this panel."
+        compose.onNodeWithText("Company policies").performScrollTo().assertExists()
+        compose.onNode(hasText("Terms of Service") and hasClickAction()).performScrollTo().performClick()
+        compose.onNodeWithText(publicationMessage("Terms of Service")).assertExists()
+        compose.onNodeWithText(publicationMessage("Privacy Policy")).assertDoesNotExist()
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Privacy Policy").performScrollTo().performClick()
-        compose.onNodeWithText("The office has not published",substring=true).assertExists()
+        compose.onNodeWithText(publicationMessage("Terms of Service")).assertDoesNotExist()
+        compose.onNode(hasText("Privacy Policy") and hasClickAction()).performScrollTo().performClick()
+        compose.onNodeWithText(publicationMessage("Privacy Policy")).assertExists()
+        compose.onNodeWithText(publicationMessage("Terms of Service")).assertDoesNotExist()
         Espresso.pressBack()
+        compose.onNodeWithText(publicationMessage("Privacy Policy")).assertDoesNotExist()
         compose.onNodeWithText("Privacy Policy").assertExists()
+        compose.onAllNodes(hasSetTextAction())[0].performScrollTo().assertTextContains("09000000000")
+        compose.onAllNodes(hasSetTextAction())[1].performScrollTo()
+        compose.onNodeWithContentDescription("Show password").performClick()
+        compose.onNodeWithText("u01-synthetic-local-only").assertExists()
+        compose.onNodeWithContentDescription("Hide password").performClick()
     }
     @Test fun phoneChallengeRestoresCooldownAndBackClearsPendingContext() {
         restore("+639000000000")
