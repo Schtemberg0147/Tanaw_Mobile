@@ -4,6 +4,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.test.platform.app.InstrumentationRegistry
 import com.tanaw.app.feature.workspace.*
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -13,6 +14,13 @@ import org.junit.Test
 class DriverRecordPresentationUiTest {
     @get:Rule val compose=createComposeRule()
     private fun obj(vararg fields:Pair<String,String>)=buildJsonObject {fields.forEach {put(it.first,it.second)}}
+    private fun screenshot(name:String) {
+        compose.waitForIdle()
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        java.io.File(instrumentation.targetContext.getExternalFilesDir(null),"driver-home-$name.png").outputStream().use {
+            instrumentation.uiAutomation.takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)
+        }
+    }
     private fun data(vararg ids:String,status:String="assigned")=buildJsonObject {
         put("profile",obj("role" to "driver","full_name" to "Fixture Driver"))
         put("driver",obj("id" to "driver","status" to "available"))
@@ -24,6 +32,64 @@ class DriverRecordPresentationUiTest {
     @Composable private fun RecordScreen(data:JsonObject,state:MobileState=MobileState(),details:(String)->Unit={},refresh:()->Unit={}) {
         DriverTheme {DriverWorkspaceScreen(state,data,refresh,{},{},{},details,
             {s,_,_->Text("Controls for ${s.value("id")}")},{_,_->},{_,_,_,_,_,_->})}
+    }
+    @Test fun failedHomeReadsNeverClaimIdleAndRetryRestoresConfirmedEmpty() {
+        var records by mutableStateOf(JsonObject(data()+mapOf("driver_sections" to obj("driver_deliveries" to "error","driver_trucks" to "error","driver_roster" to "error"))))
+        compose.setContent {RecordScreen(records,refresh={records=data()})}
+        compose.onNodeWithText("No trips assigned").assertDoesNotExist()
+        compose.onNodeWithText("You are available for assignments",substring=true).assertDoesNotExist()
+        compose.onNodeWithText("Assigned vehicle unavailable").assertExists()
+        compose.onNodeWithText("UNAVAILABLE").assertExists()
+        compose.onNodeWithText("Driver roster unavailable.",substring=true).performScrollTo().assertExists()
+        screenshot("read-error")
+        compose.onNodeWithText("Retry assignments").performScrollTo().performClick()
+        compose.onNodeWithText("No trips assigned").performScrollTo().assertExists()
+        compose.onNodeWithText("No assigned vehicle").performScrollTo().assertExists()
+    }
+    @Test fun missingShipmentPayloadDoesNotClaimIdle() {
+        compose.setContent {RecordScreen(JsonObject(data().filterKeys {it!="shipments"}))}
+        compose.onNodeWithText("No trips assigned").assertDoesNotExist()
+        compose.onNodeWithText("Retry assignments").performScrollTo().assertIsEnabled()
+    }
+    @Test fun unlinkedRosterHasOfficeRecoveryInsteadOfIdleClaim() {
+        val records=JsonObject(data()+mapOf("driver" to obj(),"driver_sections" to obj("driver_roster" to "empty","driver_deliveries" to "unavailable")))
+        compose.setContent {RecordScreen(records)}
+        compose.onNodeWithText("No driver roster link was returned",substring=true).performScrollTo().assertExists()
+        compose.onNodeWithText("No trips assigned").assertDoesNotExist()
+    }
+    @Test fun missingTripVehicleDoesNotHideAssignmentOrShowPermanentVehicle() {
+        val records=JsonObject(data("A")+mapOf(
+            "driver_trucks" to buildJsonArray {add(obj("id" to "permanent","model" to "Wrong permanent vehicle","assigned_driver_id" to "driver"))},
+            "driver_deliveries" to buildJsonArray {add(obj("id" to "delivery-A","shipment_id" to "A","status" to "assigned","truck_id" to "missing"))}))
+        compose.setContent {RecordScreen(records)}
+        compose.onNodeWithText("Trip vehicle unavailable").assertExists()
+        compose.onNodeWithText("Wrong permanent vehicle",substring=true).assertDoesNotExist()
+        compose.onNodeWithText("REF-A").performScrollTo().performClick()
+        compose.onNodeWithText("Controls for A").performScrollTo().assertExists()
+    }
+    @Test fun selectedTripLosesDeliveryAccessThenRecoversExactTripWithoutSwitching() {
+        var records by mutableStateOf(data("A","B"))
+        val loads=mutableListOf<String>()
+        compose.setContent {RecordScreen(records,details={loads.add(it)},refresh={records=data("B","A")})}
+        compose.onNodeWithText("REF-A").performScrollTo().performClick()
+        compose.onNodeWithText("Controls for A").performScrollTo().assertExists()
+        compose.runOnIdle {records=JsonObject(data("B","A")+mapOf("driver_deliveries" to JsonArray(emptyList()),"driver_sections" to obj("driver_deliveries" to "error")))}
+        compose.onNodeWithText("Selected trip details unavailable").assertExists()
+        screenshot("selected-unavailable")
+        compose.onNodeWithText("Controls for A").assertDoesNotExist()
+        compose.onNodeWithText("Controls for B").assertDoesNotExist()
+        compose.onNodeWithText("Refresh selected trip").performScrollTo().performClick()
+        compose.onNodeWithText("Controls for A").performScrollTo().assertExists()
+        compose.runOnIdle {assertFalse(loads.contains("B"))}
+    }
+    @Test fun missingNotificationsNeverClaimEmptyAndRetryRecovers() {
+        var records by mutableStateOf(data())
+        compose.setContent {RecordScreen(records,refresh={records=JsonObject(data()+mapOf("notifications" to JsonArray(emptyList())))})}
+        compose.onNodeWithContentDescription("Notifications").performClick()
+        compose.onNodeWithText("Notifications unavailable.",substring=true).assertExists()
+        compose.onNodeWithText("No notifications yet.").assertDoesNotExist()
+        compose.onNodeWithText("Retry notifications").performClick()
+        compose.onNodeWithText("No notifications yet.").assertExists()
     }
     @Test fun disappearingSelectedTripNeverOpensAnotherTripEvenWithStaleHistory() {
         var records by mutableStateOf(data("A","B"))

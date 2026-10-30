@@ -141,6 +141,12 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh selected trip")}
                     DriverButton("Choose another trip",!state.busy){selected=null;tab="Home"}
                 }
+                selected!=null && shipment!=null && DriverUiRules.isActive(shipment.value("status")) && delivery?.value("id").isNullOrBlank() -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                    DriverPageHeading("Selected trip details unavailable")
+                    Text("${shipment.value("tracking_number")}: current delivery access could not be confirmed. Refresh before opening navigation or trip actions. No other trip has been opened.")
+                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh selected trip")}
+                    DriverButton("Choose another trip",!state.busy){selected=null;tab="Home"}
+                }
                 selected!=null && tab!="Navigate" && shipment!=null -> {
                     DriverPageHeading("Trip details") {selected=null}
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -152,9 +158,10 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 }
                 tab=="Home" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverIdentity(data)
+                    DriverHomeReadNotices(data,state.busy,onRefresh)
                     if(active.isEmpty())DriverEmpty(data)
                     else {
-                        if(active.any {s->DriverUiRules.delivery(data,s.value("id")).value("route_started_at").isBlank()})
+                        if(active.any {s->val d=DriverUiRules.delivery(data,s.value("id"));d.value("status")=="assigned" && d.value("route_started_at").isBlank()})
                             Surface(color=DriverNavy,shape=RoundedCornerShape(4.dp)) {
                                 Row(Modifier.fillMaxWidth().padding(17.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
                                     DriverAsset(R.drawable.figma_driver_e588e,17,12);Spacer(Modifier.width(8.dp));Text("New Trip Assigned!",color=Color.White,fontWeight=FontWeight.ExtraBold)
@@ -172,6 +179,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 }
                 tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Choose a trip to navigate")
+                    DriverHomeReadNotices(data,state.busy,onRefresh)
                     if(active.isEmpty())DriverEmpty(data)
                     else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){selected=s.value("id")}}
                 }
@@ -223,7 +231,10 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 }
                 tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Notifications") {tab="Home"}
-                    if(data.rows("notifications").isEmpty())Text("No notifications yet.")
+                    if(DriverRecordPresentation.section(data,"notifications") in listOf("error","unavailable")) {
+                        DriverNotice("Notifications unavailable. Refresh to retry.",true)
+                        TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry notifications")}
+                    } else if(data.rows("notifications").isEmpty())Text("No notifications yet.")
                     data.rows("notifications").forEach {n->DriverCard {
                         Text(n.value("title"),fontWeight=FontWeight.Bold);SupportingText(n.value("body"));SupportingText(MobilePresentation.time(n.value("created_at")))
                         if(n.value("read_at").isBlank())TextButton(onClick={onRead(n.value("id"))},enabled=!state.busy){Text("Mark read")}
@@ -255,24 +266,25 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 
 @Composable private fun DriverIdentity(data:JsonObject) {
     val driver=data.obj("driver");val vehicle=DriverUiRules.truck(data)
-    val status=driver.value("status")
+    val status=if(DriverProfileRules.rosterState(data)=="ready")driver.value("status") else ""
     val available=status=="available"
     val color=if(available)Color(0xFF22C55E) else DriverNavy
     Surface(color=Color.White,shadowElevation=1.dp) {Column {
         Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
                 Text(data.obj("profile").value("full_name").ifBlank {"Driver"},fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold)
-                Text(DriverRecordPresentation.vehicleLabel(data,vehicle),fontSize=14.sp,color=DriverMuted)
+                Text(if(DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable") || DriverRecordPresentation.section(data,"driver_trucks") in listOf("error","unavailable"))"Assigned vehicle unavailable"
+                    else if(vehicle==null && DriverUiRules.deliveryRows(data).any {it.value("status") in listOf("assigned","loading","in_transit")})"Trip vehicle unavailable"
+                    else DriverRecordPresentation.vehicleLabel(data,vehicle),fontSize=14.sp,color=DriverMuted)
             }
-            DriverBadge(if(status.isBlank())"Not recorded" else MobilePresentation.status(status),if(available)Color(0xFF166534)else DriverNavy,if(available)Color(0xFFDCFCE7)else DriverLine)
+            DriverBadge(if(DriverProfileRules.rosterState(data)!="ready")"Unavailable" else if(status.isBlank())"Not recorded" else MobilePresentation.status(status),if(available)Color(0xFF166534)else DriverNavy,if(available)Color(0xFFDCFCE7)else DriverLine)
         }
         Box(Modifier.fillMaxWidth().height(4.dp).background(color))
     }}
 }
 
 @Composable private fun DriverEmpty(data:JsonObject) {
-    if(DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable") && data.value("driver_read_error").isNotBlank()) {
-        DriverNotice("Trip availability is unavailable. Refresh to verify your assignments.",true)
+    if(DriverProfileRules.rosterState(data)!="ready" || DriverRecordPresentation.section(data,"shipments") in listOf("error","unavailable") || DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable")) {
         return
     }
     Surface(color=Color(0xFFF0F3FF),shape=RoundedCornerShape(4.dp)) {
@@ -283,6 +295,22 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
             Spacer(Modifier.height(24.dp))
             if(data.obj("driver").value("status")=="available")DriverBadge("●  You are available for assignments",Color(0xFF15803D),Color(0xFFF0FDF4),uppercase=false)
         }
+    }
+}
+
+@Composable private fun DriverHomeReadNotices(data:JsonObject,busy:Boolean,refresh:()->Unit) {
+    val roster=DriverProfileRules.rosterState(data)
+    if(roster!="ready") {
+        DriverNotice(if(roster=="empty")"No driver roster link was returned for your account. Ask the office to check your driver account." else "Driver roster unavailable. Refresh to retry.",true)
+        TextButton(onClick=refresh,enabled=!busy){Text("Retry driver roster")}
+    }
+    if(DriverRecordPresentation.section(data,"driver_trucks") in listOf("error","unavailable")) {
+        DriverNotice("Assigned vehicle records unavailable. Other loaded records remain visible.",true)
+        TextButton(onClick=refresh,enabled=!busy){Text("Retry assigned vehicle")}
+    }
+    if(DriverRecordPresentation.section(data,"shipments") in listOf("error","unavailable") || DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable")) {
+        DriverNotice("Trip details unavailable. Refresh to confirm current assignments.",true)
+        TextButton(onClick=refresh,enabled=!busy){Text("Retry assignments")}
     }
 }
 
@@ -499,14 +527,20 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 }
 
 internal object DriverUiRules {
+    fun deliveryRows(data:JsonObject):List<JsonObject> = when {
+        data.obj("driver_sections").value("driver_deliveries") in listOf("error","unavailable") -> emptyList()
+        data["driver_deliveries"] is JsonArray -> data.rows("driver_deliveries")
+        data.obj("driver_sections").value("driver_deliveries").isNotBlank() -> emptyList()
+        else -> data.rows("deliveries")
+    }
     fun truck(data:JsonObject):JsonObject? {
-        val deliveries=data.rows("driver_deliveries").ifEmpty {data.rows("deliveries")}
+        val deliveries=deliveryRows(data)
         val active=deliveries.filter {it.value("status") in listOf("assigned","loading","in_transit")}.maxByOrNull {it.value("assigned_at")}
-        return data.rows("driver_trucks").firstOrNull {it.value("id")==active?.value("truck_id")}
-            ?:data.rows("driver_trucks").firstOrNull {it.value("assigned_driver_id")==data.obj("driver").value("id")}
+        if(active!=null)return data.rows("driver_trucks").firstOrNull {it.value("id")==active.value("truck_id")}
+        return data.rows("driver_trucks").firstOrNull {it.value("assigned_driver_id")==data.obj("driver").value("id")}
     }
     fun isActive(status:String)=status !in listOf("completed","cancelled")
-    fun delivery(data:JsonObject,id:String):JsonObject=(data.rows("driver_deliveries").ifEmpty{data.rows("deliveries")})
+    fun delivery(data:JsonObject,id:String):JsonObject=deliveryRows(data)
         .filter {it.value("shipment_id")==id}.maxByOrNull {it.value("assigned_at")}?:buildJsonObject{}
     fun stage(d:JsonObject)=when {
         d.value("status") in listOf("delivered","completed")->5
