@@ -50,7 +50,7 @@ import kotlinx.serialization.json.*
                         Text("Pending or rejected documents are not approved. Expiry warnings use the office’s policy; they do not replace office dispatch checks.")
                     }
                     ProfileCard("Account access") {
-                        Text("Use Change Password from Profile to open account recovery. If your roster link or account access is unavailable, ask the administrator to check your driver account.")
+                        Text("Use Change Password from Profile to verify your account and update your password. Cancel returns to Profile. If your roster link or account access is unavailable, ask the administrator to check your driver account.")
                         OutlinedButton(onClick=recover,enabled=!busy && !offline) {Text("Change Password")}
                     }
                     ProfileCard("Published office contacts") {

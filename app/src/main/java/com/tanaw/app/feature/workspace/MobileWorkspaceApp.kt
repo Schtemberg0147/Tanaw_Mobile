@@ -122,6 +122,8 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         } else if (data.obj("profile").value("role")=="driver") DriverWorkspace(vm,state,data)
         else Workspace(vm,state,data)
     }
+    if(state.passwordChangeOwner!=null) PasswordChangeDialog(state,vm::cancelPasswordChange,
+        {vm.resetEmail(state.email)},{vm.canVerify(it,"recovery")},vm::recover)
 }
 
 @Composable private fun Workspace(vm: MobileWorkspaceViewModel,state: MobileState,data: JsonObject) {

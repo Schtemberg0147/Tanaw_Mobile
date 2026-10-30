@@ -63,7 +63,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 
 @Composable fun DriverWorkspace(vm:MobileWorkspaceViewModel,state:MobileState,data:JsonObject) {
     DriverTheme {
-        DriverWorkspaceScreen(state,data,vm::refresh,vm::logout,{vm.page("recover")},vm::markRead,vm::loadDetails,
+        DriverWorkspaceScreen(state,data,vm::refresh,vm::logout,vm::openPasswordChange,vm::markRead,vm::loadDetails,
             {s,d,home->DriverTripActions(d,state,data,vm,reference=s.value("tracking_number"),onBackHome=home)},
             {shipment,document->vm.viewProof(shipment,document)},
             {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)},
@@ -99,7 +99,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     conversation:(@Composable (JsonObject)->Unit)?=null,
     routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null
 ) {
-    var tab by rememberSaveable {mutableStateOf("Home")}
+    var tab by rememberSaveable {mutableStateOf(if(state.passwordChangeOwner!=null)"Profile" else "Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
     var messageThread by rememberSaveable {mutableStateOf<String?>(null)}
     val shipments=DriverRecordPresentation.shipments(data,state.history)

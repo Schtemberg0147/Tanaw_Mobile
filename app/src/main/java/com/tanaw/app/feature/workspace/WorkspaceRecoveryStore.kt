@@ -16,9 +16,9 @@ import javax.crypto.spec.GCMParameterSpec
 internal object RecoveryPolicy {
     const val CHALLENGE_AGE = 15 * 60 * 1000L
     const val CACHE_AGE = 7 * 24 * 60 * 60 * 1000L
-    fun challenge(page:String,target:String,now:Long):JsonObject {
+    fun challenge(page:String,target:String,now:Long,returnOwner:String?=null):JsonObject {
         require(page in listOf("recover_code","verify_phone") && target.length in 3..254)
-        return buildJsonObject {put("page",page);put("target",target);put("created",now)}
+        return buildJsonObject {put("page",page);put("target",target);put("created",now);returnOwner?.let{require(page=="recover_code" && it.isNotBlank());put("return_owner",it)}}
     }
     fun valid(data:JsonObject,now:Long):Boolean {
         val age=now-(data.value("created").toLongOrNull()?:return false)

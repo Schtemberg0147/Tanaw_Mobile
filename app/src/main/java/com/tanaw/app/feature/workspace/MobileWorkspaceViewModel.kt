@@ -51,7 +51,7 @@ data class MobileState(val page: String = "loading", val busy: Boolean = false, 
     val details: JsonObject? = null, val detailLoading: Boolean = false,
     val proof: Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
     val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null,
-    val conversationUnread:JsonArray?=null)
+    val conversationUnread:JsonArray?=null,val passwordChangeOwner:String?=null,val passwordChangeCodeSent:Boolean=false)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
@@ -63,6 +63,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
     private var signupPhone: String = ""
     private var recoveryPhone: String? = null
+    private var pendingPasswordChange:JsonObject?=null
     private val mutable = MutableStateFlow(MobileState())
     val state = mutable.asStateFlow()
     private var timer: Job? = null
@@ -106,6 +107,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     }
     init {
         recoveryStore.read("challenge",RecoveryPolicy.CHALLENGE_AGE)?.takeIf {RecoveryPolicy.valid(it,System.currentTimeMillis())}?.let {
+            if(it.value("return_owner").isNotBlank()) {pendingPasswordChange=it;return@let}
             val target=it.value("target")
             if(it.value("page")=="verify_phone")signupPhone=target else recoveryPhone=MobileValidation.phone(target)
             mutable.value=MobileState(page=it.value("page"),email=target,message="Resume verification or request a fresh code. Re-enter your code and password.")
@@ -117,17 +119,27 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 when (status) {
                     is SessionStatus.Authenticated -> {
                         val id = client.auth.currentUserOrNull()?.id
+                        if(mutable.value.passwordChangeOwner?.let{it!=id}==true) {
+                            clearPasswordChallenge();mutable.update{MobileState(page="loading")}
+                        }
+                        pendingPasswordChange?.takeIf{it.value("return_owner")!=id}?.let{clearPasswordChallenge()}
                         if (id != loadedUser) { loadedUser?.let {recoveryStore.clear(it)};stopLive();generation++; mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null) }; loadedUser = id;if(id!=null){restoreWorkspace(id);startLive(id)} }
                         if (!mutable.value.page.startsWith("recover")) refresh()
                     }
                     is SessionStatus.NotAuthenticated -> {
+                        val changing=mutable.value.passwordChangeOwner!=null || pendingPasswordChange!=null
+                        if(changing)clearPasswordChallenge()
                         stopLive();loadedUser?.let {recoveryStore.clear(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
-                        mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
+                        mutable.update { if(changing)MobileState(page="login",message="Sign in again to manage your password.") else
+                            it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
                     }
                     is SessionStatus.RefreshFailure -> {
                         stopLive()
                         generation++
+                        if(mutable.value.passwordChangeOwner!=null || pendingPasswordChange!=null) {
+                            clearPasswordChallenge();mutable.update{MobileState(page="login",error="Your session could not be verified. Sign in again to change your password.")};return@collect
+                        }
                         if(mutable.value.page.startsWith("recover") || mutable.value.page=="verify_phone")return@collect
                         // Expired sessions expose no currentUser in Auth 3.8. Read identity only;
                         // never import an expired token to authorize cached actions.
@@ -141,9 +153,26 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             }
         }
     }
-    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){recoveryStore.clear("challenge");recoveryPhone=null;signupPhone="";timer?.cancel()};mutable.update { it.copy(page=page,error=null,message=null,resendSeconds=if(page=="login")0 else it.resendSeconds,email=if(page=="login")"" else it.email) }} }
-    private fun saveChallenge(page:String,target:String)=recoveryStore.write("challenge",RecoveryPolicy.challenge(page,target,System.currentTimeMillis()))
+    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){clearPasswordChallenge();signupPhone=""};mutable.update { it.copy(page=page,error=null,message=null,resendSeconds=if(page=="login")0 else it.resendSeconds,email=if(page=="login")"" else it.email,
+        passwordChangeOwner=if(page=="login")null else it.passwordChangeOwner,passwordChangeCodeSent=page!="login" && it.passwordChangeCodeSent) }} }
+    private fun clearPasswordChallenge(){recoveryStore.clear("challenge");recoveryPhone=null;pendingPasswordChange=null;timer?.cancel()}
+    fun openPasswordChange() {
+        if(mutable.value.busy)return
+        val user=client.auth.currentUserOrNull()?:run {clearPasswordChallenge();mutable.update{MobileState(page="login",error="Sign in again to change your password.")};return}
+        try {
+            val next=PasswordChangePolicy.begin(mutable.value,user.id,user.phone,user.email)
+            clearPasswordChallenge();mutable.value=next
+        }catch(_:IllegalArgumentException){mutable.update{it.copy(error="Reconnect and verify your account phone or email before changing your password.")}}
+    }
+    fun cancelPasswordChange() {
+        if(mutable.value.busy)return
+        val next=PasswordChangePolicy.cancel(mutable.value,client.auth.currentUserOrNull()?.id)
+        clearPasswordChallenge();mutable.value=next
+    }
+    private fun saveChallenge(page:String,target:String)=recoveryStore.write("challenge",RecoveryPolicy.challenge(page,target,System.currentTimeMillis(),
+        mutable.value.passwordChangeOwner.takeIf{page=="recover_code"}))
     private fun restoreWorkspace(owner:String):Boolean {
+        if(pendingPasswordChange!=null)return false // Verify the session before restoring its Profile overlay.
         if(mutable.value.page.startsWith("recover") || mutable.value.page=="verify_phone")return false
         val saved=recoveryStore.read(owner,RecoveryPolicy.CACHE_AGE)?:return false
         val data=RecoveryPolicy.workspace(saved.obj("data"),owner)?:return false
@@ -193,7 +222,8 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             if (error is CancellationException) throw error
             if (version==generation && error.message.orEmpty().contains("ACTIVE_")) {
                 recoveryStore.clear(id)
-                mutable.update { it.copy(data=null,details=null,proof=null,page="access") }
+                clearPasswordChallenge()
+                mutable.update { it.copy(data=null,details=null,proof=null,page="access",passwordChangeOwner=null,passwordChangeCodeSent=false) }
             }
             throw error
         }
@@ -225,7 +255,17 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             val savedAt=java.time.Instant.now().toString()
             val snapshot=RecoveryPolicy.workspace(data,id)
             val cached=snapshot==null || recoveryStore.write(id,buildJsonObject {put("created",System.currentTimeMillis());put("saved_at",savedAt);put("data",snapshot)})
-            mutable.update { it.copy(page="workspace",data=data,error=null,offline=false,lastSync=savedAt,message=if(cached)it.message else "Offline copy could not be saved on this device.") }
+            val pending=pendingPasswordChange
+            val user=client.auth.currentUserOrNull()
+            val restoreChange=pending!=null && user!=null && data.obj("profile").value("role")=="driver" && PasswordChangePolicy.canRestore(pending,id,user.phone,user.email)
+            if(pending!=null) {
+                pendingPasswordChange=null
+                if(restoreChange)recoveryPhone=MobileValidation.phone(pending.value("target")) else clearPasswordChallenge()
+            }
+            mutable.update { it.copy(page="workspace",data=data,error=null,offline=false,lastSync=savedAt,message=if(cached)it.message else "Offline copy could not be saved on this device.",
+                passwordChangeOwner=if(restoreChange)id else it.passwordChangeOwner,passwordChangeCodeSent=restoreChange || it.passwordChangeCodeSent,
+                email=if(restoreChange)pending.value("target") else it.email) }
+            if(restoreChange)countdown(((pending.value("created").toLong()+60000-System.currentTimeMillis())/1000).toInt().coerceIn(0,60))
             if(data.obj("profile").value("role")!="driver" || data.rows("deliveries").none {it.value("id")==TripTrackingStatus.state.value.delivery && it.value("status") in listOf("assigned","loading","in_transit")}) TripTrackingService.stop(context)
         }
     }
@@ -385,23 +425,32 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     }
     fun resetEmail(email: String) = operation {
         if(mutable.value.resendSeconds>0)return@operation
+        val changeOwner=mutable.value.passwordChangeOwner
+        if(changeOwner!=null) {
+            val user=client.auth.currentUserOrNull()
+            require(PasswordChangePolicy.current(mutable.value,user?.id) && email.equals(PasswordChangePolicy.target(user?.phone,user?.email),true))
+        }
         val phone=MobileValidation.phone(email)
         require(MobileValidation.email(email) || phone!=null)
         if(phone!=null) client.auth.signInWith(OTP) {this.phone=phone;createUser=false}
         else client.auth.resetPasswordForEmail(email.trim())
+        if(changeOwner!=null)check(PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         recoveryPhone=phone
         val saved=saveChallenge("recover_code",phone?:email.trim())
         countdown()
         val requested=if(phone!=null)"If the account exists, a recovery SMS has been requested." else "If the account exists, a recovery email has been requested."
-        mutable.update { it.copy(page="recover_code",email=email.trim(),message=requested+if(saved)"" else " Keep this screen open; recovery context could not be saved.") }
+        mutable.update { it.copy(page=if(changeOwner!=null)"workspace" else "recover_code",passwordChangeCodeSent=changeOwner!=null,email=email.trim(),message=requested+if(saved)"" else " Keep this screen open; recovery context could not be saved.") }
     }
     fun recover(code: String,password: String,confirm: String) = operation {
         require(MobileValidation.password(password,confirm))
+        val changeOwner=mutable.value.passwordChangeOwner
+        if(changeOwner!=null)check(mutable.value.passwordChangeCodeSent && PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         val phone=recoveryPhone
         if(phone!=null) {require(code.matches(Regex("[0-9]{6,8}")));client.auth.verifyPhoneOtp(OtpType.Phone.SMS,phone,code)}
         else verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
+        if(changeOwner!=null)check(PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         client.auth.updateUser { this.password=password }
-        recoveryStore.clear("challenge");recoveryPhone=null
+        clearPasswordChallenge()
         client.auth.signOut()
         mutable.update { MobileState(page="login",message="Password updated. Sign in with your new password.") }
     }
