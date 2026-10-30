@@ -26,11 +26,12 @@ import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun AddTripExpenseSheet(deliveryId:String,trackingNumber:String,isSubmitting:Boolean,errorMessage:String?,onDismiss:()->Unit,
-    onSubmit:(category:String,amount:Double,receiptBytes:ByteArray?)->Unit,modifier:Modifier=Modifier) {
+    onSubmit:(category:String,amount:Double,receiptBytes:ByteArray?)->Unit,modifier:Modifier=Modifier,offline:Boolean=false) {
     val context=LocalContext.current
     var category by rememberSaveable(deliveryId){mutableStateOf("")}
     var amount by rememberSaveable(deliveryId){mutableStateOf("")}
     var receipt by remember(deliveryId){mutableStateOf<ByteArray?>(null)}
+    var hadReceipt by rememberSaveable(deliveryId){mutableStateOf(false)}
     var receiptError by remember {mutableStateOf<String?>(null)}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {uri->
         if(uri!=null) {
@@ -43,7 +44,8 @@ import java.io.ByteArrayOutputStream
                     output.toByteArray()
                 }
                 require(bytes!=null && bytes.isNotEmpty()) {"Unable to read the receipt. Choose it again."}
-                receipt=bytes
+                com.tanaw.app.feature.workspace.ProofImage.decode(bytes).recycle()
+                receipt=bytes;hadReceipt=true
             }catch(error:Exception){receiptError=error.message?:"Unable to read the receipt."}
         }
     }
@@ -74,10 +76,13 @@ import java.io.ByteArrayOutputStream
                     Text("JPG or PNG · Max 5MB",fontSize=12.sp,color=Color(0xFF73777F))
                 }
             }
-            if(receipt!=null)TextButton(onClick={receipt=null},enabled=!isSubmitting){Text("Remove receipt")}
+            if(receipt!=null)TextButton(onClick={receipt=null;hadReceipt=false},enabled=!isSubmitting){Text("Remove receipt")}
+            if(hadReceipt && receipt==null)Text("Receipt was not restored. Choose the same receipt again before retrying this expense.",color=MaterialTheme.colorScheme.error)
+            if(receiptError!=null)TextButton(onClick={receiptError=null;hadReceipt=false}){Text("Continue without receipt")}
+            if(offline)Text("Reconnect and refresh before submitting an expense.")
             (receiptError?:errorMessage)?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp)}
             HorizontalDivider(color=Color(0xFFE7EEFF))
-            DriverButton(if(isSubmitting)"Submitting…" else "Submit Expense",!isSubmitting && category.trim().length in 2..200 && amount.toDoubleOrNull()?.let{it.isFinite() && it>0 && it<=1000000}==true) {
+            DriverButton(if(isSubmitting)"Submitting…" else "Submit Expense",!isSubmitting && !offline && receiptError==null && (!hadReceipt || receipt!=null) && category.trim().length in 2..200 && amount.toDoubleOrNull()?.let{it.isFinite() && it>0 && it<=1000000}==true) {
                 onSubmit(category.trim(),amount.toDouble(),receipt)
             }
             Text("Submitted expenses are available for office review.",fontSize=10.sp,color=Color(0xFF73777F))

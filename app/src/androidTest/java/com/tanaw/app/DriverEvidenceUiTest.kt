@@ -41,6 +41,13 @@ class DriverEvidenceUiTest {
         compose.onNodeWithText("Evidence unavailable").assertExists()
         compose.onNodeWithText("No expenses submitted for this trip.").assertDoesNotExist()
     }
+    @Test fun failedHistoryWithEmptyFallbackDoesNotClaimNoExpenses() {
+        compose.setContent {DriverTheme {Column {DriverEvidenceRecords("s",buildJsonObject {
+            put("evidence_error","Read denied");put("expenses",JsonArray(emptyList()))
+        },false){_,_,_->}}}}
+        compose.onNodeWithText("Expense history unavailable.",substring=true).assertExists()
+        compose.onNodeWithText("No expenses submitted for this trip.").assertDoesNotExist()
+    }
     @Test fun imagePreparationBoundsAndPhotoLimit() {
         val source=Bitmap.createBitmap(32,32,Bitmap.Config.ARGB_8888)
         val bytes=ByteArrayOutputStream().also {source.compress(Bitmap.CompressFormat.PNG,100,it)}.toByteArray();source.recycle()

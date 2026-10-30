@@ -493,30 +493,34 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         require(category.trim().length in 2..200 && amount.isFinite() && amount>0 && amount<=1000000)
         val driver=mutable.value.data?.obj("driver")?.value("id").orEmpty()
         require(driver.isNotBlank())
-        val existing=client.from("delivery_expenses").select {filter {eq("id",request)}}.decodeAs<JsonArray>()
-        existing.firstOrNull()?.let {record->
-            val saved=record as JsonObject
-            require(saved.value("delivery_id")==delivery && saved.value("description").ifBlank{saved.value("category")}.equals(category.trim(),true) && saved.value("amount").toBigDecimal().compareTo(amount.toBigDecimal())==0 && saved.value("receipt_path").isNotBlank()==(receipt!=null)){"Expense request changed. Reopen the form for a new expense."}
-            if(receipt!=null)check(client.storage.from("delivery-documents").downloadAuthenticated(saved.value("receipt_path")).contentEquals(DriverEvidence.jpeg(receipt))){"The saved receipt differs. Reopen the form for a new expense."}
-        }
-        if(existing.isEmpty()) {
-            var path:String?=null
-            if(receipt!=null) {
-                require(receipt.size in 1..(5*1024*1024))
-                val jpeg=DriverEvidence.jpeg(receipt)
-                path="$delivery/receipt-$request.jpg"
-                uploadEvidence(path,jpeg)
-            }
-            check(version==generation && client.auth.currentUserOrNull()?.id==uid)
-            client.from("delivery_expenses").insert(buildJsonObject {
-                put("id",request);put("delivery_id",delivery);put("driver_id",driver);put("category",category.trim().lowercase().takeIf{it in listOf("fuel","toll","parking","repair","other")}?:"other");put("description",category.trim());put("amount",amount);put("status","pending")
-                path?.let {put("receipt_path",it)}
+        java.util.UUID.fromString(request)
+        val jpeg=receipt?.let {DriverEvidence.jpeg(it)}
+        val path=jpeg?.let {"$delivery/receipt-$request.jpg"}
+        fun current()=version==generation && client.auth.currentUserOrNull()?.id==uid
+        val bucket=client.storage.from("delivery-documents")
+        ConfirmedMutation.run({
+            ExpenseSubmission.run({
+                check(current())
+                client.from("delivery_expenses").select {filter {eq("id",request)}}.decodeAs<JsonArray>().firstOrNull() as? JsonObject
+            },{saved->
+                require(ExpenseSubmission.matches(saved,delivery,driver,category,amount.toBigDecimal(),path)){"Expense request changed. Reopen the form for a new expense."}
+                if(jpeg!=null)check(bucket.downloadAuthenticated(requireNotNull(path)).contentEquals(jpeg)){"The saved receipt differs. Reopen the form for a new expense."}
+            },{
+                if(jpeg!=null)ExpenseSubmission.upload(jpeg,{
+                    check(current());bucket.upload(requireNotNull(path),jpeg){upsert=false;contentType=ContentType.Image.JPEG}
+                },{check(current());bucket.downloadAuthenticated(requireNotNull(path))})
+            },{
+                check(current())
+                client.from("delivery_expenses").insert(buildJsonObject {
+                    put("id",request);put("delivery_id",delivery);put("driver_id",driver);put("category",category.trim().lowercase().takeIf{it in listOf("fuel","toll","parking","repair","other")}?:"other");put("description",category.trim());put("amount",amount);put("status","pending")
+                    path?.let {put("receipt_path",it)}
+                })
             })
-        }
-        check(version==generation && client.auth.currentUserOrNull()?.id==uid)
-        onSaved()
-        mutable.update {it.copy(message="Expense submitted for office review.")}
-        try {load()} catch(error:Exception) {if(error is CancellationException)throw error;mutable.update {it.copy(message="Expense saved. Refresh to reload your records.")}}
+        },::current,{
+            mutable.update {it.copy(message="Expense saved. See trip records for its current review status.",error=null)}
+            try {onSaved()}catch(cancelled:CancellationException){throw cancelled}
+            catch(_:Exception){mutable.update {it.copy(message="Expense saved. Close the form to return to your trip.")}}
+        },{load()},{mutable.update {it.copy(message="Expense saved. Refresh to reload reviewed expense history before another action.",error=null,offline=true)}})
     }
     fun submitProof(id:String,recipient:String,photo:ByteArray,signature:ByteArray,attempt:String,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation

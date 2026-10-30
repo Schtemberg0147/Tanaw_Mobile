@@ -41,7 +41,7 @@ internal object DriverEvidence {
 
 @Composable internal fun DriverEvidenceRecords(shipment:String,details:JsonObject,busy:Boolean,view:((String,String,String)->Unit)?) {
     details.value("evidence_error").takeIf(String::isNotBlank)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-    if(details.containsKey("expenses")) {
+    if(details["expenses"] is kotlinx.serialization.json.JsonArray && details.value("evidence_error").isBlank()) {
         Text("Trip expenses",style=MaterialTheme.typography.titleMedium)
         if(details.rows("expenses").isEmpty())Text("No expenses submitted for this trip.")
         details.rows("expenses").forEach {expense->
@@ -55,7 +55,7 @@ internal object DriverEvidence {
             else if(expense.value("receipt_path").isBlank())Text("No receipt attached")
             HorizontalDivider()
         }
-    }
+    } else Text("Expense history unavailable. Refresh trip records to retry.")
     details.rows("incidents").forEach {incident->
         Text("${incident.value("category")} · ${incident.value("description")}")
         Text(if(incident.value("resolved_at").isBlank())"Incident awaiting office resolution" else "Incident resolved")
