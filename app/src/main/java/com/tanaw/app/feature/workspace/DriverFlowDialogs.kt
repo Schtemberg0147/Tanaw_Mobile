@@ -60,12 +60,12 @@ import java.util.UUID
     var request by rememberSaveable(id){mutableStateOf(UUID.randomUUID().toString())}
     var photos by remember(id){mutableStateOf(emptyList<ByteArray>())}
     DriverTransaction("Report an Issue",state.busy,close,"Submit Report",
-        description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
+        !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
         {submit(request,category,description,minutes.toInt(),photos)}) {
         Text("SELECT ISSUE TYPE",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf("traffic" to "Traffic/Delay","breakdown" to "Vehicle Issue","accident" to "Safety Concern","weather" to "Weather","other" to "Other").forEach {(value,label)->
-                FilterChip(selected=category==value,onClick={category=value;request=UUID.randomUUID().toString()},enabled=!state.busy,label={Text(label)},shape=RoundedCornerShape(2.dp),
+                FilterChip(selected=category==value,onClick={if(category!=value){category=value;request=UUID.randomUUID().toString()}},enabled=!state.busy,label={Text(label)},shape=RoundedCornerShape(2.dp),
                     colors=FilterChipDefaults.filterChipColors(selectedContainerColor=DriverNavy,selectedLabelColor=Color.White))
             }
         }
@@ -75,7 +75,8 @@ import java.util.UUID
         OutlinedTextField(minutes,{minutes=it;request=UUID.randomUUID().toString()},label={Text("Expected delay in minutes")},enabled=!state.busy,singleLine=true,
             modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(2.dp),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
         Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=Color(0xFF536581))
-        IncidentPhotoPicker(photos,state.busy){photos=it;request=UUID.randomUUID().toString()}
+        IncidentPhotoPicker(photos,state.busy||state.offline){photos=it;request=UUID.randomUUID().toString()}
+        if(state.offline)Text("Reconnect and refresh before submitting an incident. Your current draft is retained.")
         state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         TextButton(onClick=close,enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=Color(0xFFBA1A1A))}
     }

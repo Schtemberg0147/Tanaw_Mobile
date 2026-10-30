@@ -473,17 +473,20 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     }
     fun reportIncident(id:String,request:String,category:String,description:String,minutes:Int,photos:List<ByteArray> = emptyList(),onSaved:()->Unit={})=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
-        require(photos.size<=3)
+        IncidentRequest.validate(request,category,description,minutes,photos)
         val paths=photos.mapIndexed {index,bytes->
             require(bytes.size in 1..DriverEvidence.MAX_BYTES)
             val path="$id/incident-$request-${index+1}.jpg"
             uploadEvidence(path,bytes);path
         }
         check(version==generation && client.auth.currentUserOrNull()?.id==uid)
-        client.postgrest.rpc("driver_report_incident_evidence",buildJsonObject {put("p_delivery",id);put("p_request",request);put("p_category",category);put("p_description",description.trim());put("p_delay",minutes);put("p_paths",JsonArray(paths.map(::JsonPrimitive)))})
-        check(version==generation && client.auth.currentUserOrNull()?.id==uid)
-        onSaved();mutable.update {it.copy(message="Incident reported to the office.")}
-        try {load()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update {it.copy(message="Incident saved. Refresh to reload your records.")}}
+        ConfirmedMutation.run({
+            client.postgrest.rpc("driver_report_incident_evidence",buildJsonObject {put("p_delivery",id);put("p_request",request);put("p_category",category);put("p_description",description.trim());put("p_delay",minutes);put("p_paths",JsonArray(paths.map(::JsonPrimitive)))})
+        },{version==generation && client.auth.currentUserOrNull()?.id==uid},{
+            mutable.update {it.copy(message="Incident reported to the office.",error=null)}
+            try {onSaved()}catch(cancelled:CancellationException){throw cancelled}
+            catch(_:Exception){mutable.update {it.copy(message="Incident saved. Close the form to return to your trip.")}}
+        },{load()},{mutable.update {it.copy(message="Incident saved. Refresh to reload your records before another action.",error=null,offline=true)}})
     }
     fun addExpense(delivery:String,request:String,category:String,amount:Double,receipt:ByteArray?,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
