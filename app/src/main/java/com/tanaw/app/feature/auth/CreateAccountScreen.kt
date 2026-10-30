@@ -31,6 +31,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.feature.workspace.MobileValidation
 import com.tanaw.app.ui.components.*
 import com.tanaw.app.ui.theme.*
 
@@ -62,17 +63,21 @@ fun CreateAccountScreen(
         lastName: String,
         contactNumber: String,
         email: String,
-        password: String
+        password: String,
+        address: String
     ) -> Unit,
     onSignIn: () -> Unit,
     onTermsClick: () -> Unit = {},
     isLoading: Boolean = false,
     errorMessage: String? = null,
+    onGoogleSignIn: (() -> Unit)? = null,
+    phoneSignup: Boolean = false,
 ) {
     var firstName       by remember { mutableStateOf("") }
     var lastName        by remember { mutableStateOf("") }
     var contactNumber   by remember { mutableStateOf("") }
     var email           by remember { mutableStateOf("") }
+    var address         by remember { mutableStateOf("") }
     var password        by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible        by remember { mutableStateOf(false) }
@@ -84,8 +89,9 @@ fun CreateAccountScreen(
     val passwordMismatch = confirmPassword.isNotEmpty() && password != confirmPassword
     val canSubmit = firstName.isNotBlank()
             && lastName.isNotBlank()
-            && contactNumber.isNotBlank()
-            && email.isNotBlank()
+            && MobileValidation.phone(contactNumber) != null
+            && MobileValidation.email(email)
+            && (!phoneSignup || address.trim().length in 1..500)
             && password.isNotBlank()
             && confirmPassword.isNotEmpty()
             && password.length >= 8
@@ -120,6 +126,8 @@ fun CreateAccountScreen(
         )
 
         Spacer(modifier = Modifier.height(28.dp))
+
+        onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -165,6 +173,9 @@ fun CreateAccountScreen(
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         )
+        if (contactNumber.isNotBlank() && MobileValidation.phone(contactNumber) == null) {
+            Text("Enter a Philippine mobile number, e.g. 0912 345 6789.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -184,6 +195,20 @@ fun CreateAccountScreen(
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
         )
+        if (email.isNotBlank() && !MobileValidation.email(email)) {
+            Text("Enter a valid email address.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
+        if (phoneSignup) {
+            Text("For your customer details only. Verification and account messages use SMS.", fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(16.dp))
+            TanawInputLabel(text = "LOCATION ADDRESS")
+            Spacer(modifier = Modifier.height(6.dp))
+            TanawTextField(value = address, onValueChange = { address = it },
+                placeholder = "House/building, street, barangay, city, province",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text))
+            if (address.length > 500) Text("Use 500 characters or fewer.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            Text("We will text a verification code to your contact number.", fontSize = 12.sp)
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -333,7 +358,7 @@ fun CreateAccountScreen(
         Button(
             onClick = {
                 onVerifyAndContinue(
-                    firstName, lastName, contactNumber, email, password
+                    firstName, lastName, contactNumber, email, password, address
                 )
             },
             modifier = Modifier

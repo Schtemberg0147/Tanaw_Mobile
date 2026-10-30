@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,7 +34,7 @@ import com.tanaw.app.ui.theme.TanawTheme
  *
  * @param onLoginClick        Called with (email, password) when the user taps Login.
  *                            The parent is responsible for validation + navigation.
- * @param onForgotPassword    Navigate to ForgotPasswordScreen
+ * @param onForgotPassword    Open working recovery; omitted when the host has no recovery flow.
  * @param onCreateAccount     Navigate to CreateAccountScreen
  * @param onTermsClick        Open Terms of Service
  * @param onPrivacyClick      Open Privacy Policy
@@ -43,16 +45,19 @@ import com.tanaw.app.ui.theme.TanawTheme
 @Composable
 fun LoginScreen(
     onLoginClick: (email: String, password: String) -> Unit,
-    onForgotPassword: () -> Unit,
+    onForgotPassword: (() -> Unit)? = null,
     onCreateAccount: () -> Unit,
     onTermsClick: () -> Unit = {},
     onPrivacyClick: () -> Unit = {},
     successMessage: String? = null,
     isLoading: Boolean = false,
     errorMessage: String? = null,
+    onGoogleSignIn: (() -> Unit)? = null,
+    allowPhone: Boolean = false,
 ) {
     // Local UI-only state
     var email           by remember { mutableStateOf("") }
+    var useEmail        by remember(allowPhone) { mutableStateOf(!allowPhone) }
     var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var showBanner      by remember { mutableStateOf(successMessage != null) }
@@ -108,13 +113,17 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(36.dp))
 
                 // ── Email field ──────────────────────────────────────────────
-                TanawInputLabel(text = "EMAIL ADDRESS")
+                onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
+                TanawInputLabel(text = if (useEmail) "EMAIL ADDRESS" else "PHONE NUMBER")
                 Spacer(modifier = Modifier.height(6.dp))
                 TanawTextField(
                     value         = email,
                     onValueChange = { email = it },
-                    placeholder   = "email@gmail.com",
+                    placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
                     leadingIcon   = {
+                        if (!useEmail) Icon(Icons.Outlined.Phone, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        else
                         Icon(
                             painter            = painterResource(id = R.drawable.ic_mail_check),
                             contentDescription = null,
@@ -122,8 +131,13 @@ fun LoginScreen(
                             modifier           = Modifier.size(18.dp)
                         )
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    keyboardOptions = KeyboardOptions(keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone),
                 )
+                if (allowPhone) {
+                    TextButton(enabled = !isLoading, onClick = { useEmail = !useEmail; email = "" }) {
+                        Text(if (useEmail) "Use phone number instead" else "Use email address instead")
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -162,7 +176,7 @@ fun LoginScreen(
                 )
 
                 // ── Forgot password ──────────────────────────────────────────
-                Row(
+                onForgotPassword?.let { openRecovery -> Row(
                     modifier              = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
@@ -173,9 +187,9 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier   = Modifier
                             .padding(top = 10.dp)
-                            .clickable { onForgotPassword() }
+                            .clickable(onClick = openRecovery)
                     )
-                }
+                } }
 
                 // ── Inline error ─────────────────────────────────────────────
                 if (errorMessage != null) {

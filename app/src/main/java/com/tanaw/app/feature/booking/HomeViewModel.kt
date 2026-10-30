@@ -44,4 +44,8 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+
+    fun updateDetectedCity(city: String) {
+        _uiState.update { it.copy(detectedCity = city) }
+    }
 }
