@@ -3,6 +3,9 @@
 This branch connects customers and drivers to **Tanaw Dev**:
 `wrcrxsvppehuaqennrla.supabase.co`.
 
+Backend setup and active driver contract: [supabase/README.md](supabase/README.md).
+The bundled historical mobile migrations alone do not install the shared lifecycle.
+
 ## Build after cloning
 
 1. Open the project in Android Studio and let it create your local SDK path.

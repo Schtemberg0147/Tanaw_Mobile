@@ -438,17 +438,29 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     suspend fun readConversation(delivery:String,ids:List<String>) {
         client.postgrest.rpc("read_delivery_messages",buildJsonObject {put("p_delivery",delivery);put("p_ids",JsonArray(ids.map(::JsonPrimitive)))})
     }
+    private suspend fun confirmedDriverAction(message:String,onConfirmed:()->Unit={},mutate:suspend ()->Unit) {
+        val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED")
+        val version=generation
+        ConfirmedMutation.run(mutate,{version==generation && client.auth.currentUserOrNull()?.id==uid},{
+            mutable.update {it.copy(message=message,error=null)}
+            try {onConfirmed()}catch(cancelled:CancellationException){throw cancelled}
+            catch(_:Exception){mutable.update {it.copy(message="$message Location sharing could not start. Tap Resume location sharing.")}}
+        },{load()},{mutable.update {it.copy(message="${it.message?:message} Saved successfully. Refresh to reload current trip status before another action.",error=null,offline=true)}})
+    }
     fun driver(id: String,action: String) = operation {
-        client.postgrest.rpc("mobile_driver_action",buildJsonObject { put("p_delivery",id);put("p_action",action) })
-        load();mutable.update { it.copy(message="Assignment updated.") }
+        confirmedDriverAction(if(action=="no_show")"No-show reported for office review." else "Assignment updated.") {
+            client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action",action)})
+        }
     }
     fun arrive(id:String,lat:Double,lng:Double)=operation {
-        client.postgrest.rpc("driver_arrive_at_pickup",buildJsonObject {put("p_delivery_id",id);put("p_lat",lat);put("p_lng",lng)})
-        load();mutable.update {it.copy(message="Pickup arrival recorded.")}
+        confirmedDriverAction("Pickup arrival recorded.") {
+            client.postgrest.rpc("driver_arrive_at_pickup",buildJsonObject {put("p_delivery_id",id);put("p_lat",lat);put("p_lng",lng)})
+        }
     }
     fun startTrip(id:String,onStarted:()->Unit)=operation {
-        client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action","start")})
-        load();onStarted();mutable.update {it.copy(message="Route started. Trip location sharing is active.")}
+        confirmedDriverAction("Route started. Check location sharing status.",onStarted) {
+            client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action","start")})
+        }
     }
     private suspend fun uploadEvidence(path:String,bytes:ByteArray) {
         val bucket=client.storage.from("delivery-documents")
