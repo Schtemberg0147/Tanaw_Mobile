@@ -25,7 +25,7 @@ internal object DriverRouteStatus {
         val expiry=runCatching{Instant.parse(data.value("expires_at"))}.getOrNull()?:return "ETA unavailable — refresh to retry"
         val calculated=runCatching{Instant.parse(data.value("calculated_at"))}.getOrNull()?:return "ETA unavailable — calculation time missing"
         val position=runCatching{Instant.parse(data.value("position_at"))}.getOrNull()?:return "ETA unavailable — GPS time missing"
-        if(!now.isBefore(expiry) || calculated.isAfter(now.plusSeconds(5)) || position.isAfter(now) || position.isBefore(now.minusSeconds(120)))return "ETA expired — waiting for fresh GPS and route calculation"
+        if(!now.isBefore(expiry) || calculated.isBefore(now.minusSeconds(120)) || expiry.isAfter(calculated.plusSeconds(120)) || expiry.isAfter(position.plusSeconds(120)) || calculated.isAfter(now.plusSeconds(5)) || position.isAfter(now) || position.isBefore(now.minusSeconds(120)))return "ETA expired — waiting for fresh GPS and route calculation"
         val arrival=runCatching{Instant.parse(data.value("eta_at"))}.getOrNull()?:return "ETA unavailable — arrival time missing"
         if(arrival.isBefore(calculated) || data.value("leg") !in listOf("pickup","destination"))return "ETA unavailable — invalid estimate"
         return "ETA to ${data.value("leg")}: ${MobilePresentation.time(arrival.toString())}"

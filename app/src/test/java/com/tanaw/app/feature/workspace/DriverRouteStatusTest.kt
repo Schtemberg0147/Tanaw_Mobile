@@ -28,6 +28,11 @@ class DriverRouteStatusTest {
         val record=JsonObject(status()+mapOf("reason" to JsonPrimitive("Fresh GPS required")))
         assertEquals("ETA unavailable: Fresh GPS required",DriverRouteStatus.eta(record,false,now))
     }
+    @Test fun oldCalculationAndOverlongExpiryCannotMasqueradeAsFreshEta() {
+        for(patch in listOf("calculated_at" to now.minusSeconds(121).toString(),"expires_at" to now.plusSeconds(121).toString())) {
+            assertFalse(DriverRouteStatus.eta(JsonObject(status()+mapOf(patch.first to JsonPrimitive(patch.second))),false,now).startsWith("ETA to"))
+        }
+    }
     @Test fun refreshedAssignmentCannotDisplayAnOldVerifiedRoute() {
         val shipment=buildJsonObject{put("weight_kg",6000);put("pickup_lat",14.6);put("pickup_lng",120.96);put("dropoff_lat",14.65);put("dropoff_lng",120.98);put("route_geometry",buildJsonObject{})}
         val plan=JsonObject(shipment.filterKeys{it!="weight_kg" && it!="route_geometry"}+mapOf("truck_id" to JsonPrimitive("truck"),"cargo_weight_kg" to JsonPrimitive(6000),"geometry" to buildJsonObject{}))

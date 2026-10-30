@@ -19,7 +19,8 @@ internal data class DriverTimelineEntry(val label:String,val timestamp:String)
 
 internal object DriverRecordPresentation {
     fun section(data:JsonObject,key:String):String = data.obj("driver_sections").value(key).ifBlank {
-        if(data[key] is JsonArray)if(data.rows(key).isEmpty())"empty" else "ready" else "unavailable"
+        val rows=if(key=="driver_deliveries" && data[key] !is JsonArray)data["deliveries"] else data[key]
+        if(rows is JsonArray)if(rows.isEmpty())"empty" else "ready" else "unavailable"
     }
     fun vehicleLabel(data:JsonObject,truck:JsonObject?):String = truck?.let {"${it.value("model")} · ${it.value("plate_number")}"}
         ?:if(section(data,"driver_trucks") in listOf("error","unavailable"))"Assigned vehicle unavailable" else "No assigned vehicle"
@@ -54,7 +55,7 @@ internal object DriverRecordPresentation {
     fun deliveries(data:JsonObject,history:JsonObject?):List<JsonObject> {
         val liveIds=data.rows("shipments").map{it.value("id")}.toSet()
         val terminalIds=history?.rows("shipments").orEmpty().filter{it.value("status") in listOf("completed","cancelled")}.map{it.value("id")}.toSet()
-        val live=if(data["driver_deliveries"] is JsonArray)data.rows("driver_deliveries") else data.rows("deliveries")
+        val live=DriverUiRules.deliveryRows(data)
         return (live+history?.rows("driver_deliveries").orEmpty().filter{it.value("shipment_id") !in liveIds && it.value("shipment_id") in terminalIds}).distinctBy{it.value("id")}
     }
 }

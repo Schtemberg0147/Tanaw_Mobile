@@ -23,7 +23,8 @@ class DevDriverRoadPreviewTest {
         val workspace=runBlocking {client.postgrest.rpc("mobile_workspace").decodeAs<JsonObject>()}
         assertEquals("driver",workspace.obj("profile").value("role"))
         val deliveries=workspace.rows("driver_deliveries").ifEmpty{workspace.rows("deliveries")}
-        val assignment=deliveries.firstOrNull {d->d.value("status") in listOf("assigned","loading","in_transit") && workspace.rows("shipments").any{s->s.value("id")==d.value("shipment_id") && driverStopPins(s).size==2}}
+        val target=InstrumentationRegistry.getArguments().getString("targetDeliveryId")
+        val assignment=deliveries.firstOrNull {d->(target==null || d.value("id")==target) && d.value("status") in listOf("assigned","loading","in_transit") && workspace.rows("shipments").any{s->s.value("id")==d.value("shipment_id") && driverStopPins(s).size==2}}
         assertNotNull("An existing assigned Dev trip with saved pins is required",assignment)
         val shipment=workspace.rows("shipments").first{it.value("id")==assignment!!.value("shipment_id")}
         val pins=driverStopPins(shipment)

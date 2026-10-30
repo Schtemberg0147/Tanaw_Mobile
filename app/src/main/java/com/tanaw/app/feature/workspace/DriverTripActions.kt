@@ -28,7 +28,7 @@ import kotlin.coroutines.resumeWithException
 @SuppressLint("MissingPermission")
 suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.seconds) {
  val manager=context.getSystemService(LocationManager::class.java)
- val provider=if(manager.isProviderEnabled(LocationManager.GPS_PROVIDER))LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+ val provider=TrackingSafety.provider(manager::isProviderEnabled)
  val location=suspendCancellableCoroutine { continuation ->
   val signal=CancellationSignal()
   continuation.invokeOnCancellation {signal.cancel()}
@@ -39,7 +39,7 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
    }
   }
  }
- require(location.hasAccuracy() && location.accuracy<=100 && System.currentTimeMillis()-location.time in 0..60000) {"A fresh location accurate within 100 metres is required. Try outdoors."}
+ require(location.hasAccuracy() && TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time)) {"A fresh location accurate within 100 metres is required. Try outdoors."}
  location
 }
 
@@ -73,7 +73,7 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
  if(status=="assigned" && delivery.value("route_started_at").isBlank()) DriverButton("START ROUTE AND SHARE LOCATION",!busy){request("start")}
  if(status in listOf("assigned","loading","in_transit") && delivery.value("route_started_at").isNotBlank()) {
-  SupportingText(if(tracking.delivery==id)"${tracking.message} · ${tracking.buffered} queued" else "Location sharing stopped. Resume it while this trip is active.")
+  SupportingText(if(tracking.delivery==id)"${tracking.message} · ${tracking.buffered} queued" else "${tracking.message} Resume location sharing while this trip is active.")
   if(tracking.delivery!=id)OutlinedButton(onClick={request("resume")},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Resume location sharing")}
   else TextButton(onClick={TripTrackingService.stop(context)}){Text("Stop location sharing")}
  }

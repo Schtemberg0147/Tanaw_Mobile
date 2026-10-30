@@ -7,6 +7,25 @@ import java.time.LocalDate
 
 class DriverUiRulesTest {
     private fun obj(vararg fields:Pair<String,String>)=buildJsonObject {fields.forEach{put(it.first,it.second)}}
+    @Test fun failedOrConfirmedEmptyDeliveryReadNeverFallsBackToOlderRows() {
+        val older=buildJsonArray {add(obj("id" to "old","shipment_id" to "s","status" to "assigned"))}
+        for(state in listOf("error","empty","unavailable")) {
+            val data=buildJsonObject {
+                put("deliveries",older)
+                put("driver_sections",obj("driver_deliveries" to state))
+                if(state=="empty")put("driver_deliveries",JsonArray(emptyList()))
+            }
+            assertTrue("Must not revive delivery after $state",DriverUiRules.delivery(data,"s").isEmpty())
+        }
+    }
+    @Test fun missingActiveTruckNeverDisplaysPermanentTruckAsTripVehicle() {
+        val data=buildJsonObject {
+            put("driver",obj("id" to "driver"))
+            put("driver_trucks",buildJsonArray {add(obj("id" to "roster","assigned_driver_id" to "driver"))})
+            put("driver_deliveries",buildJsonArray {add(obj("status" to "assigned","truck_id" to "missing"))})
+        }
+        assertNull(DriverUiRules.truck(data))
+    }
     @Test fun deliveredProofStaysAccessibleUntilOfficeCompletion() {
         assertTrue(DriverUiRules.isActive("delivered"))
         assertFalse(DriverUiRules.isActive("completed"))

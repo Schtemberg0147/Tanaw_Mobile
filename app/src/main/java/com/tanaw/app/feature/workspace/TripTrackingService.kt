@@ -25,6 +25,7 @@ import java.time.Instant
 import java.net.URI
 import java.util.UUID
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.seconds
 
 data class TrackingStatus(val delivery:String?=null,val message:String="Tracking is stopped",val buffered:Int=0)
 object TripTrackingStatus { val state=MutableStateFlow(TrackingStatus()) }
@@ -53,24 +54,29 @@ class TripTrackingService:Service(),LocationListener {
  private lateinit var locations:LocationManager
  private lateinit var queue:TrackingQueue
  private var owner:String?=null;private var delivery:String?=null;private var loop:Job?=null
+ private var lastFix:Long?=null
+ private var stoppedReason:String?=null
+ private fun fail(message:String) {stoppedReason=message;TripTrackingStatus.state.value=TrackingStatus(message=message);stopSelf()}
  override fun onBind(intent:Intent?) = null
  override fun onCreate() {super.onCreate();locations=getSystemService(LocationManager::class.java);queue=TrackingQueue(this)}
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
   if(intent?.action=="stop") {stopSelf();return START_NOT_STICKY}
   val uid=intent?.getStringExtra("owner");val id=intent?.getStringExtra("delivery")
   if(uid==null || id==null || client.auth.currentUserOrNull()?.id!=uid || ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {stopSelf();return START_NOT_STICKY}
-  owner=uid;delivery=id
+  owner=uid;delivery=id;lastFix=null;stoppedReason=null
   val manager=getSystemService(NotificationManager::class.java)
   if(Build.VERSION.SDK_INT>=26)manager.createNotificationChannel(NotificationChannel("active_trip","Active trip location",NotificationManager.IMPORTANCE_LOW))
   val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
   val stop=PendingIntent.getService(this,1,Intent(this,TripTrackingService::class.java).setAction("stop"),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
   val notification=NotificationCompat.Builder(this,"active_trip").setSmallIcon(android.R.drawable.ic_menu_mylocation).setContentTitle("Tanaw trip tracking")
-   .setContentText("Sharing location for your active delivery").setContentIntent(open).setOngoing(true).addAction(0,"Stop tracking",stop).build()
+   .setContentText("Trip location service · open app for current GPS status").setContentIntent(open).setOngoing(true).addAction(0,"Stop tracking",stop).build()
   try {
    ServiceCompat.startForeground(this,731,notification,if(Build.VERSION.SDK_INT>=29)ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
-   val provider=if(locations.isProviderEnabled(LocationManager.GPS_PROVIDER))LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+   locations.removeUpdates(this)
+   val provider=TrackingSafety.provider(locations::isProviderEnabled)
    locations.requestLocationUpdates(provider,15000,0f,this,Looper.getMainLooper())
-  } catch(_:SecurityException) {TripTrackingStatus.state.value=TrackingStatus(message="Location permission is required");stopSelf();return START_NOT_STICKY}
+  } catch(_:SecurityException) {fail("Precise location permission is required. Allow it, then Resume location sharing.");return START_NOT_STICKY}
+  catch(_:RuntimeException) {fail("Location services could not start. Enable location, then Resume location sharing.");return START_NOT_STICKY}
   loop?.cancel()
   loop=scope.launch {
    queue.retain(uid,id)
@@ -85,14 +91,14 @@ class TripTrackingService:Service(),LocationListener {
       flush(uid,id);queue.clearOwner(uid);stopSelf();break
      }
      flush(uid,id)
-     TripTrackingStatus.state.value=TrackingStatus(id,"Sharing trip location",queue.pending(uid,id).size)
+     TripTrackingStatus.state.value=TrackingStatus(id,if(lastFix?.let {System.currentTimeMillis()-it in 0..60000}==true)"Sharing trip location" else "Waiting for fresh accurate GPS · try outdoors",queue.pending(uid,id).size)
     } catch(cancelled:CancellationException) {throw cancelled}
     catch(error:Exception) {
      val detail=error.message.orEmpty()
      if(detail.contains("ACTIVE_") || detail.contains("DELIVERY_CLOSED")) {queue.clearOwner(uid);stopSelf();break}
      TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",queue.pending(uid,id).size)
     }
-    delay(15000)
+    delay(15.seconds)
    }
   }
   TripTrackingStatus.state.value=TrackingStatus(id,"Waiting for a location fix")
@@ -107,12 +113,14 @@ class TripTrackingService:Service(),LocationListener {
  }
  override fun onLocationChanged(location:Location) {
   val uid=owner?:return;val id=delivery?:return
-  if(client.auth.currentUserOrNull()?.id!=uid || !location.hasAccuracy() || location.accuracy>10000)return
+  if(client.auth.currentUserOrNull()?.id!=uid || !location.hasAccuracy() || !TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time))return
+  lastFix=location.time
   queue.add(uid,id,location)
  }
+ override fun onProviderDisabled(provider:String) {fail("Location provider disabled. Enable location, then Resume location sharing.")}
  override fun onDestroy() {
-  if(::locations.isInitialized) locations.removeUpdates(this)
-  scope.cancel();queue.close();TripTrackingStatus.state.value=TrackingStatus()
+  if(::locations.isInitialized) runCatching {locations.removeUpdates(this)}
+  scope.cancel();queue.close();TripTrackingStatus.state.value=TrackingStatus(message=stoppedReason?:"Location sharing stopped. Resume it while this trip is active.")
   ServiceCompat.stopForeground(this,ServiceCompat.STOP_FOREGROUND_REMOVE);super.onDestroy()
  }
  companion object {
