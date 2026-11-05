@@ -18,7 +18,7 @@ Type: `client` = Android code only | `backend?` = may need backend change, check
 | [x] C02 | Show profile-save success even if the following refresh fails | #7 | client | Done (`feat/C02-profile-save-confirmation`). Optimistic update in `CustomerProfileRules.kt`, resilient confirmation in `MobileWorkspaceViewModel.kt`, notices visible in `CustomerProfile.kt`. |
 | D02 | Durable drafts for incident and expense forms (incl. attachments) | #20, #21, #22 | client | Reuse the `ProofDraftStore` pattern (encrypted draft persistence) |
 | C04 | Restore booking drafts and uncertain submissions after cold restart | #9 | client | Reuse `WorkspaceRecoveryStore` pattern |
-| C07 | Keep signed-in password change inside the customer Profile | #5 | client | `PasswordChangeDialog.kt`, `ProfileForm` |
+| [x] C07 | Keep signed-in password change inside the customer Profile | #5 | client | Done (`feat/C07-customer-profile-password-change`). Allowed customer role in `PasswordChangePolicy.kt`, `MobileWorkspaceViewModel.kt`, and `MobileWorkspaceApp.kt`. `PasswordChangeDialog` opens cleanly from customer Profile and retains workspace state on cancellation. |
 
 ## Wave 2: needs a plan and a backend check
 

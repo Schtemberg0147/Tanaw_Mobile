@@ -31,7 +31,7 @@
 | **C02** | Show profile-save success even if following refresh fails | Customer Profile | #7 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested against refresh exceptions. |
 | **D02** | Durable drafts for incident & expense forms (incl. attachments) | Driver Operations | #20, #21, #22 | **Pending** | Ready for implementation on `feat/D02-durable-incident-expense-drafts`. |
 | **C04** | Restore booking drafts & uncertain submissions after cold restart | Customer Booking | #9 | **Pending** | Ready for implementation on `feat/C04-booking-recovery-store`. |
-| **C07** | Keep signed-in password change inside customer Profile | Profile / Auth | #5 | **Pending** | Ready for implementation on `feat/C07-customer-profile-password-change`. |
+| **C07** | Keep signed-in password change inside customer Profile | Profile / Auth | #5 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested customer role initiation, verification, and cancellation. |
 
 ---
 
@@ -143,8 +143,8 @@ Customer multi-step booking forms in `CustomerBookingFlow.kt` do not persist int
 ---
 
 ### Module C07: Customer Signed-In Password Change Inside Profile
-* **Status:** `Pending`
-* **Target Branch:** `feat/C07-customer-profile-password-change`
+* **Status:** `Done (just need testing)`
+* **Branch:** `feat/C07-customer-profile-password-change` (merged to `JBranch`)
 * **Reference Docs:** `docs/BACKLOG.md` (#5), `docs/FEATURES.md` (#5)
 
 #### Problem & Root Cause
