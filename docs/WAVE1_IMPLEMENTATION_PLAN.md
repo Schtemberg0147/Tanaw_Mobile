@@ -30,7 +30,7 @@
 | **D03** | Separate network failures from auth/backend errors + Auto-refresh | Workspace Core | #28 | **Done (just need testing)** | Merged into `JBranch`. Needs physical airplane mode / reconnect test. |
 | **C02** | Show profile-save success even if following refresh fails | Customer Profile | #7 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested against refresh exceptions. |
 | **D02** | Durable drafts for incident & expense forms (incl. attachments) | Driver Operations | #20, #21, #22 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested and encrypted storage instrumented. |
-| **C04** | Restore booking drafts & uncertain submissions after cold restart | Customer Booking | #9 | **Pending** | Ready for implementation on `feat/C04-booking-recovery-store`. |
+| **C04** | Restore booking drafts & uncertain submissions after cold restart | Customer Booking | #9 | **Done (just need testing)** | Developed on `feat/C04-booking-recovery-store`. Encrypted draft persistence, auto-save, screen resumption prompt, and cold restart reconciliation for uncertain submissions. |
 | **C07** | Keep signed-in password change inside customer Profile | Profile / Auth | #5 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested customer role initiation, verification, and cancellation. |
 
 ---
@@ -119,21 +119,26 @@ If `mobile_save_profile` succeeds on Supabase but `load()` fails, `operation` ca
 ---
 
 ### Module C04: Restore Booking Drafts Across Cold Restart
-* **Status:** `Pending`
-* **Target Branch:** `feat/C04-booking-recovery-store`
+* **Status:** `Done (just need testing)`
+* **Branch:** `feat/C04-booking-recovery-store` (merged to `JBranch`)
 * **Reference Docs:** `docs/BACKLOG.md` (#9), `docs/FEATURES.md` (#9)
 
-#### Problem & Root Cause
-Customer multi-step booking forms in `CustomerBookingFlow.kt` do not persist intermediate wizard state to disk. If the app is closed or killed, customer inputs are lost. Additionally, in-flight requests that were submitted right as network dropped cannot reconcile their tracking number on cold restart.
-
-#### Implementation Instructions
-1. In `CustomerBookingFlow.kt`:
-   - Persist active booking wizard state to `WorkspaceRecoveryStore` under `"${customerId}_booking_draft"`.
-   - On screen entry, offer to resume draft if found.
-2. For uncertain submissions:
-   - Persist client `requestId` before sending `mobile_create_request`.
-   - On cold start `load()`, check if `requestId` was created in `shipments`. If yes, display confirmation; if not, restore draft for retry.
-3. Clear draft once `book()` returns verified tracking number.
+#### Implementation Summary
+- `BookingDraftStore.kt`:
+  - Defined `BookingDraft` data class capturing full wizard state (`requestId`, `stepName`, addresses, coordinates, vehicle, cargo, weight, handling, notes, departure, `submitted` flag, and timestamp).
+  - Defined `BookingRecoveryRules` with `reconcile(draft, matchingShipment)` evaluating whether an uncertain submission succeeded on the server (`Confirmed` with shipment ID and tracking number) or should be restored for retry (`RestoredForRetry`).
+  - Implemented `BookingDraftStore` with AES-GCM encrypted atomic persistence (`WorkspaceRecoveryStore`) under `"${customerId}_booking_draft"`.
+- `MobileWorkspaceViewModel.kt`:
+  - Added `RestoredBookingConfirmation` state in `MobileState` and `bookingDraftStore` instance.
+  - `book()` calls `bookingDraftStore.markSubmitted(customerId, requestId)` before dispatching `mobile_create_request`, and clears the draft upon receiving a verified tracking number.
+  - `load()` runs `reconcileUncertainBooking()` on cold start for customer accounts: checks `shipments` table by `client_request_id`, clearing and surfacing confirmation if created, or restoring draft for retry if the server never received it.
+  - `signOut()` invokes `bookingDraftStore.clearOwner(owner)`.
+- `CustomerBookingFlow.kt`:
+  - Wizard state auto-persisted to `BookingDraftStore` whenever inputs or steps change.
+  - On screen entry (`HOME` step with clean inputs), detects unfinished drafts and presents an "Unfinished Booking Draft" resumption banner with "Resume Draft" and "Discard" actions.
+  - Listens to `state.restoredBookingConfirmation` to transition directly to `CustomerBookingStep.SUBMITTED` displaying the server-confirmed tracking number.
+- `BookingRecoveryRulesTest.kt`: Added unit tests covering draft emptiness checks, full JSON serialization round-trips, and uncertain submission reconciliation paths.
+- **Testing Required:** Cold restart scenario test: fill booking form, kill process, relaunch, verify resume prompt; simulate uncertain submission, verify server reconciliation and confirmation banner.
 
 ---
 

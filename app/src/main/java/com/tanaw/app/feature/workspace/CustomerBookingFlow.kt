@@ -214,6 +214,7 @@ fun CustomerBookingFlow(
     val customer = data.obj("customer")
     val vehicles = data.rows("vehicles")
     val unreadCount = data.rows("notifications").count { it.value("read_at").isBlank() }
+    val customerId = customer.value("id").ifBlank { profile.value("id") }
 
     var stepName by rememberSaveable { mutableStateOf(CustomerBookingStep.HOME.name) }
     val step = runCatching { CustomerBookingStep.valueOf(stepName) }.getOrDefault(CustomerBookingStep.HOME)
@@ -254,6 +255,64 @@ fun CustomerBookingFlow(
     var submittedShipmentId by rememberSaveable { mutableStateOf("") }
     var submittedTrackingNumber by rememberSaveable { mutableStateOf("") }
 
+    LaunchedEffect(state.restoredBookingConfirmation) {
+        state.restoredBookingConfirmation?.let { conf ->
+            submittedShipmentId = conf.id
+            submittedTrackingNumber = conf.trackingNumber
+            pickup = conf.pickup
+            dropoff = conf.dropoff
+            if (conf.vehicleId.isNotBlank()) selectedVehicleId = conf.vehicleId
+            isPickupNow = conf.isPickupNow
+            scheduledDeparture = conf.scheduledDeparture
+            setStep(CustomerBookingStep.SUBMITTED)
+            vm.clearRestoredBookingConfirmation()
+        }
+    }
+
+    var availableDraft by remember { mutableStateOf<BookingDraft?>(null) }
+    var draftOfferDismissed by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(customerId) {
+        if (customerId.isNotBlank() && !draftOfferDismissed && pickup.isBlank() && dropoff.isBlank() && cargo.isBlank() && step == CustomerBookingStep.HOME) {
+            val saved = vm.bookingDraftStore.read(customerId)
+            if (saved != null && saved.hasMeaningfulContent() && !saved.submitted) {
+                availableDraft = saved
+            }
+        }
+    }
+
+    val onResumeDraft: () -> Unit = {
+        availableDraft?.let { draft ->
+            requestId = draft.requestId
+            pickup = draft.pickup
+            pickupLat = draft.pickupLat
+            pickupLng = draft.pickupLng
+            dropoff = draft.dropoff
+            dropoffLat = draft.dropoffLat
+            dropoffLng = draft.dropoffLng
+            isPickupNow = draft.isPickupNow
+            scheduledDeparture = draft.scheduledDeparture
+            if (draft.selectedVehicleId.isNotBlank()) selectedVehicleId = draft.selectedVehicleId
+            if (draft.contact.isNotBlank()) contact = draft.contact
+            cargo = draft.cargo
+            weight = draft.weight
+            handling = draft.handling
+            notes = draft.notes
+            val targetStep = runCatching { CustomerBookingStep.valueOf(draft.stepName) }.getOrDefault(CustomerBookingStep.HOME)
+            if (targetStep != CustomerBookingStep.SUBMITTED) {
+                setStep(targetStep)
+            }
+            availableDraft = null
+        }
+    }
+    val onDiscardDraft: () -> Unit = {
+        if (customerId.isNotBlank()) {
+            vm.bookingDraftStore.clear(customerId)
+        }
+        availableDraft = null
+        draftOfferDismissed = true
+    }
+
     var bookingClock by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -287,6 +346,10 @@ fun CustomerBookingFlow(
     }
 
     fun resetForm() {
+        if (customerId.isNotBlank()) {
+            vm.bookingDraftStore.clear(customerId)
+        }
+        availableDraft = null
         requestId = UUID.randomUUID().toString()
         pickup = ""
         pickupLat = null
@@ -303,6 +366,37 @@ fun CustomerBookingFlow(
         submittedShipmentId = ""
         submittedTrackingNumber = ""
         setStep(CustomerBookingStep.HOME)
+    }
+
+    LaunchedEffect(
+        customerId, requestId, step, pickup, pickupLat, pickupLng,
+        dropoff, dropoffLat, dropoffLng, isPickupNow, scheduledDeparture,
+        selectedVehicleId, contact, cargo, weight, handling, notes
+    ) {
+        if (customerId.isNotBlank() && step != CustomerBookingStep.SUBMITTED && availableDraft == null) {
+            val currentDraft = BookingDraft(
+                requestId = requestId,
+                stepName = step.name,
+                pickup = pickup,
+                pickupLat = pickupLat,
+                pickupLng = pickupLng,
+                dropoff = dropoff,
+                dropoffLat = dropoffLat,
+                dropoffLng = dropoffLng,
+                isPickupNow = isPickupNow,
+                scheduledDeparture = scheduledDeparture,
+                selectedVehicleId = selectedVehicleId,
+                contact = contact,
+                cargo = cargo,
+                weight = weight,
+                handling = handling,
+                notes = notes,
+                submitted = false
+            )
+            if (currentDraft.hasMeaningfulContent()) {
+                vm.bookingDraftStore.save(customerId, currentDraft)
+            }
+        }
     }
 
     BackHandler(step != CustomerBookingStep.HOME && !state.busy) {
@@ -338,6 +432,9 @@ fun CustomerBookingFlow(
                     busy = state.busy,
                     errorMessage = state.error,
                     statusMessage = state.message,
+                    availableDraft = availableDraft,
+                    onResumeDraft = onResumeDraft,
+                    onDiscardDraft = onDiscardDraft,
                     onRefresh = vm::refresh,
                     onOpenAlerts = onOpenAlerts,
                     onOpenActiveShipments = { onTrackShipment("") },
@@ -498,7 +595,13 @@ fun CustomerBookingFlow(
                             put("dropoff_lng", dropoffLng)
                             put("handling", handling)
                         }
+                        if (customerId.isNotBlank()) {
+                            vm.bookingDraftStore.markSubmitted(customerId, requestId)
+                        }
                         vm.book(requestId, payload) { id, tracking ->
+                            if (customerId.isNotBlank()) {
+                                vm.bookingDraftStore.clear(customerId)
+                            }
                             submittedShipmentId = id
                             submittedTrackingNumber = tracking
                             setStep(CustomerBookingStep.SUBMITTED)
@@ -570,7 +673,10 @@ internal fun CustomerBookingHomeContent(
     modifier: Modifier = Modifier,
     activeShipmentsCount: Int = 0,
     completedShipmentsCount: Int = 0,
-    onOpenActiveShipments: () -> Unit = {}
+    onOpenActiveShipments: () -> Unit = {},
+    availableDraft: BookingDraft? = null,
+    onResumeDraft: () -> Unit = {},
+    onDiscardDraft: () -> Unit = {}
 ) {
     val selectedVehicle = vehicles.firstOrNull { it.value("id") == selectedVehicleId }
     val sameLocationError = pickup.trim().length >= 5 && dropoff.trim().length >= 5 &&
@@ -657,6 +763,77 @@ internal fun CustomerBookingHomeContent(
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodySmall
                     )
+                }
+            }
+
+            availableDraft?.let { draft ->
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Assignment,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Unfinished Booking Draft",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        val summaryText = buildString {
+                            if (draft.pickup.isNotBlank() || draft.dropoff.isNotBlank()) {
+                                append(draft.pickup.ifBlank { "Pickup" })
+                                append(" → ")
+                                append(draft.dropoff.ifBlank { "Dropoff" })
+                            }
+                            if (draft.cargo.isNotBlank()) {
+                                if (isNotEmpty()) append(" • ")
+                                append(draft.cargo)
+                            }
+                        }.ifBlank { "Draft inputs from previous session" }
+                        Text(
+                            text = summaryText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
+                            maxLines = 2
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = onDiscardDraft) {
+                                Text(
+                                    text = "Discard",
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = onResumeDraft,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondary,
+                                    contentColor = MaterialTheme.colorScheme.onSecondary
+                                )
+                            ) {
+                                Text("Resume Draft")
+                            }
+                        }
+                    }
                 }
             }
 

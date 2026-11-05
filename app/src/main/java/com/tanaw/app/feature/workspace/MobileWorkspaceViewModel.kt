@@ -46,12 +46,23 @@ import io.github.jan.supabase.realtime.*
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.awaitCancellation
 
+data class RestoredBookingConfirmation(
+    val id: String,
+    val trackingNumber: String,
+    val pickup: String,
+    val dropoff: String,
+    val vehicleId: String,
+    val isPickupNow: Boolean,
+    val scheduledDeparture: String
+)
+
 data class MobileState(val page: String = "loading", val busy: Boolean = false, val error: String? = null,
     val message: String? = null, val data: JsonObject? = null, val email: String = "", val resendSeconds: Int = 0,
     val details: JsonObject? = null, val detailLoading: Boolean = false,
     val proof: Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
     val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null,
-    val conversationUnread:JsonArray?=null,val passwordChangeOwner:String?=null,val passwordChangeCodeSent:Boolean=false)
+    val conversationUnread:JsonArray?=null,val passwordChangeOwner:String?=null,val passwordChangeCodeSent:Boolean=false,
+    val restoredBookingConfirmation: RestoredBookingConfirmation? = null)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
@@ -66,9 +77,11 @@ class MobileWorkspaceViewModel @Inject constructor(
     private val proofDraftStore=ProofDraftStore(context)
     private val incidentDraftStore=IncidentDraftStore(context)
     private val expenseDraftStore=ExpenseDraftStore(context)
+    internal val bookingDraftStore=BookingDraftStore(context)
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
     fun hasIncidentDraft(owner:String,delivery:String)=incidentDraftStore.exists(owner,delivery)
     fun hasExpenseDraft(owner:String,delivery:String)=expenseDraftStore.exists(owner,delivery)
+    fun clearRestoredBookingConfirmation() { mutable.update { it.copy(restoredBookingConfirmation = null) } }
     private var signupPhone: String = ""
     private var recoveryPhone: String? = null
     private var pendingPasswordChange:JsonObject?=null
@@ -266,7 +279,10 @@ class MobileWorkspaceViewModel @Inject constructor(
             catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){null}
             if(version==generation && client.auth.currentUserOrNull()?.id==id)mutable.update {it.copy(conversationUnread=unread)}
         }
-        if(data.obj("profile").value("role")!="driver")data=JsonObject(data+readSmsPreferences(id))
+        if(data.obj("profile").value("role")!="driver") {
+            data=JsonObject(data+readSmsPreferences(id))
+            reconcileUncertainBooking(data,id)
+        }
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
             val savedAt=java.time.Instant.now().toString()
             val snapshot=RecoveryPolicy.workspace(data,id)
@@ -486,6 +502,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             proofDraftStore.clearOwner(owner)
             incidentDraftStore.clearOwner(owner)
             expenseDraftStore.clearOwner(owner)
+            bookingDraftStore.clearOwner(owner)
         }
         client.auth.signOut();generation++;loadedUser=null
         try { CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest()) }
@@ -494,11 +511,62 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     fun book(requestId: String,data: JsonObject,onSuccess: (String) -> Unit) = book(requestId,data) { id,_ -> onSuccess(id) }
     fun book(requestId: String,data: JsonObject,onCreated: (String,String) -> Unit) = operation {
+        val customerId = mutable.value.data?.obj("customer")?.value("id")?.ifBlank { client.auth.currentUserOrNull()?.id }.orEmpty()
+        if (customerId.isNotBlank()) {
+            bookingDraftStore.markSubmitted(customerId, requestId)
+        }
         val result=client.postgrest.rpc("mobile_create_request",buildJsonObject { put("p_request_id",requestId);put("p_data",data) }).decodeAs<JsonObject>()
         require(result.value("id").isNotBlank() && result.value("tracking_number").isNotBlank())
+        if (customerId.isNotBlank()) {
+            bookingDraftStore.clear(customerId)
+        }
         mutable.update { it.copy(message="Request ${result.value("tracking_number")} saved. Office review and quotation are pending.") }
         onCreated(result.value("id"),result.value("tracking_number"))
         try { load() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { mutable.update { it.copy(error="Request saved. Refresh to reload shipment details.") } }
+    }
+    private suspend fun reconcileUncertainBooking(data: JsonObject, userId: String) {
+        val customerId = data.obj("customer").value("id").ifBlank { userId }
+        val draft = bookingDraftStore.read(customerId) ?: return
+        if (!draft.submitted) return
+
+        val matching = try {
+            client.from("shipments").select {
+                filter { eq("client_request_id", draft.requestId) }
+            }.decodeAs<JsonArray>().firstOrNull()?.jsonObject
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return
+        }
+
+        when (val result = BookingRecoveryRules.reconcile(draft, matching)) {
+            is BookingReconciliationResult.Confirmed -> {
+                bookingDraftStore.clear(customerId)
+                mutable.update { state ->
+                    state.copy(
+                        message = "Request ${result.trackingNumber} confirmed. Office review and quotation are pending.",
+                        restoredBookingConfirmation = RestoredBookingConfirmation(
+                            id = result.shipmentId,
+                            trackingNumber = result.trackingNumber,
+                            pickup = draft.pickup,
+                            dropoff = draft.dropoff,
+                            vehicleId = draft.selectedVehicleId,
+                            isPickupNow = draft.isPickupNow,
+                            scheduledDeparture = draft.scheduledDeparture
+                        )
+                    )
+                }
+            }
+            is BookingReconciliationResult.RestoredForRetry -> {
+                bookingDraftStore.save(customerId, result.draft)
+                mutable.update { state ->
+                    state.copy(
+                        message = "Previous booking attempt was not received by the server. Your draft has been restored for retry."
+                    )
+                }
+            }
+            else -> Unit
+        }
     }
     fun profile(name: String,phone: String,address: String,city: String) = operation {
         val normalized=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
