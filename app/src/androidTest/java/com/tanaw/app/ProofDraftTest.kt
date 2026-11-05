@@ -117,4 +117,14 @@ class ProofDraftTest {
             assertTrue(file.exists())
         }finally{store.clearOwner(owner)}
     }
+    @Test fun corruptPhotoBytesDisableCompleteDelivery() {
+        val owner=UUID.randomUUID().toString();val delivery=UUID.randomUUID().toString();val store=ProofDraftStore(context)
+        val draftWithBadPhoto=draft().copy(photo=byteArrayOf(1,2,3,4))
+        store.save(owner,delivery,draftWithBadPhoto)
+        try {
+            compose.setContent {DriverTheme {DriverProofForm(delivery,owner,"SYNTHETIC",MobileState(),{},{}){_,_,_,_,_->fail("corrupt photo submit")}}}
+            compose.onNodeWithText("COMPLETE DELIVERY").assertIsNotEnabled()
+            compose.onNodeWithText("TAKE PHOTO").assertExists()
+        }finally{store.clearOwner(owner)}
+    }
 }

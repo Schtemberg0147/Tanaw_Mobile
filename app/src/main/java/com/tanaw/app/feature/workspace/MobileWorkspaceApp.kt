@@ -132,22 +132,58 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     var info by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable(tab) { mutableStateOf("") }
     var historyFilter by rememberSaveable { mutableStateOf("All") }
+    var fullScreenBookingStep by rememberSaveable { mutableStateOf(false) }
     val bookingDraft=rememberSaveableStateHolder()
     val profile=data.obj("profile")
     val role=profile.value("role")
+    val isCustomerHome = role == "customer" && tab == "Home" && detail == null
+    val isCustomerProfile = role == "customer" && tab == "Profile" && detail == null
     BackHandler(detail!=null) { detail=null }
     Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={
-        NavigationBar(containerColor=MaterialTheme.colorScheme.surface) {
-            val icons=listOf(Icons.Outlined.Home,Icons.Outlined.LocalShipping,Icons.Outlined.History,Icons.Outlined.Notifications,Icons.Outlined.Person)
-            listOf("Home","Active","History","Alerts","Profile").forEachIndexed { index,label ->
-                NavigationBarItem(selected=tab==label,onClick={tab=label;detail=null},enabled=!state.busy,
-                    icon={Icon(icons[index],null)},label={Text(label,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)})
+        if (!(isCustomerHome && fullScreenBookingStep)) {
+            NavigationBar(containerColor=MaterialTheme.colorScheme.surface) {
+                val icons=listOf(Icons.Outlined.Home,Icons.Outlined.LocalShipping,Icons.Outlined.History,Icons.Outlined.Notifications,Icons.Outlined.Person)
+                listOf("Home","Active","History","Alerts","Profile").forEachIndexed { index,label ->
+                    NavigationBarItem(selected=tab==label,onClick={tab=label;detail=null},enabled=!state.busy,
+                        icon={Icon(icons[index],null)},label={Text(label,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)})
+                }
             }
         }
     }) { padding ->
+        if (isCustomerHome) {
+            Box(modifier = Modifier.fillMaxSize().padding(if (fullScreenBookingStep) PaddingValues(0.dp) else padding)) {
+                bookingDraft.SaveableStateProvider("booking") {
+                    CustomerBookingFlow(
+                        vm = vm,
+                        state = state,
+                        data = data,
+                        onOpenAlerts = { tab = "Alerts"; detail = null },
+                        onTrackShipment = { id ->
+                            tab = "Active"
+                            detail = id.takeIf { it.isNotBlank() }
+                        },
+                        onFullScreenStepChanged = { fullScreenBookingStep = it }
+                    )
+                }
+            }
+        } else if (isCustomerProfile) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                CustomerProfile(
+                    vm = vm,
+                    state = state,
+                    data = data,
+                    onOpenAlerts = { tab = "Alerts"; detail = null },
+                    onOpenBookings = { tab = "Active"; detail = null },
+                    onLogout = vm::logout
+                )
+            }
+        } else {
         Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                Column(Modifier.weight(1f)) { Text("TANAW",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);SupportingText("${role.replaceFirstChar(Char::uppercase)} workspace") }
+                Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                    TanawBrandLogo(modifier=Modifier.size(36.dp))
+                    Column { Text("TANAW",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);SupportingText("${role.replaceFirstChar(Char::uppercase)} workspace") }
+                }
                 TextButton(onClick=vm::refresh,enabled=!state.busy) { Text("Refresh") }
             }
             Notices(state)
@@ -165,12 +201,9 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                         val shipments=data.rows("shipments")
                         Text("${shipments.count{it.value("status") !in listOf("completed","cancelled")}} active  ·  ${shipments.count{it.value("status")=="completed"}} completed",style=MaterialTheme.typography.bodyLarge,fontWeight=FontWeight.SemiBold)
                     }
-                    if(role=="customer") WorkspaceCard { bookingDraft.SaveableStateProvider("booking") { BookingForm(vm,state,data) { detail=it;tab="Active" } } }
-                    else {
-                        Text(if(role=="driver") "Your assigned trips" else "Shipment overview")
-                        SupportingText(if(role=="driver") "Open your assigned trip to start location sharing, record pickup milestones and submit delivery proof." else "Dispatch, quotation and completion review are available on the office website.")
-                        ShipmentList(data.rows("shipments").filter{it.value("status") !in listOf("completed","cancelled")}) {detail=it}
-                    }
+                    Text(if(role=="driver") "Your assigned trips" else "Shipment overview")
+                    SupportingText(if(role=="driver") "Open your assigned trip to start location sharing, record pickup milestones and submit delivery proof." else "Dispatch, quotation and completion review are available on the office website.")
+                    ShipmentList(data.rows("shipments").filter{it.value("status") !in listOf("completed","cancelled")}) {detail=it}
                 }
                 "Active","History" -> {
                     Text(if(tab=="History") "Shipment history" else "Active shipments",style=MaterialTheme.typography.headlineSmall)
@@ -208,6 +241,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
             }
             Spacer(Modifier.height(12.dp))
         }
+        }
     }
     if(info!=null) InfoDialog("Tanaw",info!!) {info=null}
     state.proof?.let { bitmap ->
@@ -222,126 +256,6 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
             }
         }
     }
-}
-
-@Composable private fun BookingForm(vm: MobileWorkspaceViewModel,state: MobileState,data: JsonObject,onSaved:(String)->Unit) {
-    var requestId by rememberSaveable {mutableStateOf(UUID.randomUUID().toString())}
-    var pickup by rememberSaveable {mutableStateOf("")}
-    var dropoff by rememberSaveable {mutableStateOf("")}
-    var cargo by rememberSaveable {mutableStateOf("")}
-    var weight by rememberSaveable {mutableStateOf("")}
-    var contact by rememberSaveable {mutableStateOf(data.obj("profile").value("phone"))}
-    var departure by rememberSaveable {mutableStateOf("")}
-    var notes by rememberSaveable {mutableStateOf("")}
-    var vehicleId by rememberSaveable {mutableStateOf("")}
-    var review by remember {mutableStateOf(false)}
-    var started by rememberSaveable {mutableStateOf(false)}
-    var step by rememberSaveable {mutableIntStateOf(1)}
-    val stepHeading=remember {BringIntoViewRequester()}
-    LaunchedEffect(step,started) {if(started) stepHeading.bringIntoView()}
-    var bookingClock by remember {mutableStateOf(java.time.Instant.now())}
-    LaunchedEffect(Unit) {while(true) {bookingClock=java.time.Instant.now();kotlinx.coroutines.delay(1.seconds)}}
-    var pickupLat by rememberSaveable {mutableStateOf<Double?>(null)}
-    var pickupLng by rememberSaveable {mutableStateOf<Double?>(null)}
-    var dropoffLat by rememberSaveable {mutableStateOf<Double?>(null)}
-    var dropoffLng by rememberSaveable {mutableStateOf<Double?>(null)}
-    var handling by rememberSaveable {mutableStateOf("None")}
-    val vehicle=data.rows("vehicles").firstOrNull{it.value("id")==vehicleId}
-    val parsedWeight=MobileValidation.weight(weight)
-    val date=MobileBookingRules.departure(departure,bookingClock)
-    val vehicleFits=vehicle?.let {MobileBookingRules.fits(weight,it.value("default_capacity_kg"))}==true
-    val valid=pickup.trim().length in 5..500 && dropoff.trim().length in 5..500 && !pickup.trim().equals(dropoff.trim(),true) && cargo.trim().length in 3..1000 && parsedWeight!=null && MobileValidation.phone(contact)!=null && date!=null && vehicle!=null && vehicleFits && notes.length<=2000 && pickupLat!=null && pickupLng!=null && dropoffLat!=null && dropoffLng!=null
-    if(!started) {
-        Icon(Icons.Outlined.LocalShipping,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(32.dp))
-        Text("Plan your next delivery",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
-        SupportingText("Set your route and schedule, add your cargo, then review your request.")
-        Action("New shipment",!state.busy) {started=true}
-        SupportingText("The office will prepare your quotation and confirm availability.")
-        return
-    }
-    val routeValid=pickup.trim().length in 5..500 && dropoff.trim().length in 5..500 && !pickup.trim().equals(dropoff.trim(),true) && pickupLat!=null && pickupLng!=null && dropoffLat!=null && dropoffLng!=null && date!=null
-    val cargoValid=cargo.trim().length in 3..1000 && parsedWeight!=null && vehicle!=null && vehicleFits && MobileValidation.phone(contact)!=null && notes.length<=2000
-    BackHandler(!state.busy && !review) {if(step>1) step-- else started=false}
-    Text("New shipment",modifier=Modifier.bringIntoViewRequester(stepHeading),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
-    SupportingText("Step $step of 3 · ${listOf("Route & schedule","Cargo & vehicle","Review request")[step-1]}")
-    LinearProgressIndicator(progress={step/3f},modifier=Modifier.fillMaxWidth())
-    if(step==1) {
-    Text("Route & schedule",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
-    SupportingText("Place pickup and destination pins on the map, then choose your departure in Philippine time.")
-    BookingRouteMap(pickup,dropoff,
-        pickupLat?.let {lat->pickupLng?.let {lng->org.maplibre.android.geometry.LatLng(lat,lng)}},
-        dropoffLat?.let {lat->dropoffLng?.let {lng->org.maplibre.android.geometry.LatLng(lat,lng)}},
-        enabled=!state.busy,
-        onPickupText={pickup=it},onDestinationText={dropoff=it},
-        onPickup = { loc -> pickup = loc.label; pickupLat = loc.latitude; pickupLng = loc.longitude },
-        onDestination = { loc -> dropoff = loc.label; dropoffLat = loc.latitude; dropoffLng = loc.longitude },
-        routeLoader = vm::previewRoute
-    )
-    BookingSchedule(departure,!state.busy) {departure=it}
-    if(!routeValid) SupportingText("Place both map pins and choose a future departure to continue.")
-    Action("Continue to cargo",routeValid && !state.busy) {step=2}
-    }
-    if(step==2) {
-    Text("Cargo & vehicle",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
-    SupportingText("Describe your cargo and select a vehicle. Capacity is checked before dispatch.")
-    Field("Cargo description and handling requirements",cargo,{cargo=it})
-    SupportingText("Special handling")
-    Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        listOf("None","Fragile","Keep Dry","Temperature Sensitive","Perishable","Cold Chain (Refrigerated)").forEach { h->FilterChip(selected=handling==h,onClick={handling=h},label={Text(h)}) }
-    }
-    Field("Weight in kg",weight,{weight=it;if(vehicle!=null && !MobileBookingRules.fits(it,vehicle.value("default_capacity_kg")))vehicleId=""})
-    Text("Vehicle type",fontWeight=FontWeight.Bold)
-    SupportingText(if(parsedWeight==null)"Enter cargo weight first to see suitable vehicle types." else "Showing types with capacity from $weight to ${parsedWeight+2000} kg, matching the website.")
-    if(data.rows("vehicles").isEmpty()) Text("No vehicle types are available. Contact the office.")
-    data.rows("vehicles").forEach {v ->
-        val fits=MobileBookingRules.fits(weight,v.value("default_capacity_kg"))
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min=48.dp).selectable(selected=vehicleId==v.value("id"),enabled=!state.busy && fits,onClick={vehicleId=v.value("id")})
-        ) {
-            RadioButton(selected=vehicleId==v.value("id"),onClick=null,enabled=!state.busy && fits)
-            Column(Modifier.padding(top=10.dp)) {
-                Text(v.value("name"),color=if(fits)MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                SupportingText("Capacity: ${v.value("default_capacity_kg")} kg${if(parsedWeight!=null && !fits)" · outside this weight range" else ""}")
-            }
-        }
-    }
-    if(parsedWeight!=null && data.rows("vehicles").none {MobileBookingRules.fits(weight,it.value("default_capacity_kg"))}) SupportingText("No vehicle type matches this weight range. Contact the office for help.")
-
-    Field("Contact number (09… or +639…)",contact,{contact=it})
-    Field("Notes (optional)",notes,{notes=it})
-    if(!cargoValid) SupportingText("Add your cargo description, valid weight, vehicle type and Philippine mobile number to continue.")
-    Action("Review request",routeValid && cargoValid && !state.busy) {step=3}
-    TextButton(onClick={step=1},enabled=!state.busy) {Text("Back to route")}
-    }
-    if(step==3) {
-        Text("Review request",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
-        SupportingText("Check your details before sending them to the office.")
-        Text("ROUTE & SCHEDULE",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
-        Text("Pickup",fontWeight=FontWeight.SemiBold);Text(pickup)
-        Text("Destination",fontWeight=FontWeight.SemiBold);Text(dropoff)
-        Text("Departure: $departure · Philippine time")
-        TextButton(onClick={step=1},enabled=!state.busy) {Text("Edit route & schedule")}
-        HorizontalDivider()
-        Text("CARGO & VEHICLE",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
-        Text(cargo);Text("${vehicle?.value("name")} · $weight kg")
-        Text("Special handling: $handling")
-        Text("Contact: ${MobileValidation.phone(contact)}")
-        if(notes.isNotBlank()) Text("Notes: $notes")
-        TextButton(onClick={step=2},enabled=!state.busy) {Text("Edit cargo & vehicle")}
-        HorizontalDivider()
-        Text("Awaiting office quotation",fontWeight=FontWeight.SemiBold)
-        SupportingText("Submitting creates a pending request. The office confirms the road route, price and dispatch availability.")
-        if(!valid) SupportingText("Check your route, future departure and cargo details before submitting.")
-        Action("Send request",valid && !state.busy && !state.offline) {review=true}
-        if(state.offline) SupportingText("Reconnect before submitting. Your current details are kept here.")
-        TextButton(onClick={step=2},enabled=!state.busy) {Text("Back to cargo")}
-    }
-    if(review) AlertDialog(onDismissRequest={if(!state.busy)review=false},title={Text("Submit delivery request?")},text={
-        Text("$pickup → $dropoff\n${vehicle?.value("name")} · $weight kg\nDeparture: $departure Philippine time\nContact: ${MobileValidation.phone(contact)}\n\nOffice review and quotation are required.")
-    },confirmButton={TextButton(enabled=valid && !state.busy,onClick={
-        val payload=buildJsonObject {put("pickup",pickup.trim());put("dropoff",dropoff.trim());put("cargo",cargo.trim());put("weight",parsedWeight);put("vehicle_id",vehicleId);put("contact",MobileValidation.phone(contact));put("departure",date);put("notes",notes.trim());put("pickup_lat",pickupLat);put("pickup_lng",pickupLng);put("dropoff_lat",dropoffLat);put("dropoff_lng",dropoffLng);put("handling",handling)}
-        vm.book(requestId,payload) { id -> review=false;started=false;step=1;vehicleId="";handling="None";requestId=UUID.randomUUID().toString();pickup="";dropoff="";cargo="";weight="";notes="";departure="";pickupLat=null;pickupLng=null;dropoffLat=null;dropoffLng=null;onSaved(id) }
-    }) {Text(if(state.busy) "Submitting…" else "Submit request")}},dismissButton={TextButton(enabled=!state.busy,onClick={review=false}){Text("Back")}})
 }
 
 @Composable private fun ShipmentList(rows: List<JsonObject>,open:(String)->Unit) {

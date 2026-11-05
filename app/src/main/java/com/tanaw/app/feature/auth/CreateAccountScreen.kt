@@ -111,7 +111,7 @@ fun CreateAccountScreen(
         Spacer(modifier = Modifier.height(48.dp))
 
         Image(
-            painter = painterResource(id = R.drawable.ic_tanaw_logo),
+            painter = painterResource(id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo),
             contentDescription = "TANAW logo",
             modifier = Modifier.size(48.dp)
         )

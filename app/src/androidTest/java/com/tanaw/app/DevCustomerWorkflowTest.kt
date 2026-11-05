@@ -24,40 +24,29 @@ class DevCustomerWorkflowTest {
         }
         compose.waitUntil(30000) { compose.onAllNodesWithText("Home").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Home").performClick()
-        compose.onNodeWithText("New shipment").performScrollTo().performClick()
-        fun input(label:String,value:String) { compose.onNode(hasText(label) and hasSetTextAction()).performScrollTo().performTextReplacement(value) }
-        input("Pickup address","Manila North Harbor, Manila")
-        fun placePin(mode:String) {
-            compose.onNodeWithText(mode).performScrollTo().performClick()
-            compose.waitUntil(45000) {compose.onAllNodesWithText("Map ready",substring=true).fetchSemanticsNodes().isNotEmpty()}
-            compose.onNodeWithTag("Shipment map").performScrollTo().performTouchInput {click(androidx.compose.ui.geometry.Offset(width*.4f,height*.4f))}
-        }
-        placePin("Pin pickup")
-        input("Destination address","Caloocan City Hall, Caloocan")
-        placePin("Pin destination")
-        compose.onNodeWithText("Choose date & time").performScrollTo().performClick()
-        val chosen=java.time.LocalDate.now(ZoneId.of("Asia/Manila")).plusDays(2)
-        androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(android.widget.DatePicker::class.java)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).perform(object:androidx.test.espresso.ViewAction {
-            override fun getConstraints()=androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(android.widget.DatePicker::class.java)
-            override fun getDescription()="Choose a future departure date"
-            override fun perform(ui:androidx.test.espresso.UiController,view:android.view.View) {(view as android.widget.DatePicker).updateDate(chosen.year,chosen.monthValue-1,chosen.dayOfMonth)}
-        })
-        androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withId(android.R.id.button1)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).perform(androidx.test.espresso.action.ViewActions.click())
-        compose.onNodeWithText("Set departure").performClick()
-        compose.onNodeWithText("Continue to cargo").performScrollTo().assertIsEnabled().performClick()
-        input("Cargo description and handling requirements","Dev workflow acceptance")
-        input("Weight in kg","100")
+        compose.onNodeWithTag("PickupLocationField").performClick()
+        compose.onNodeWithTag("TopFloatingAddressCard").performClick()
+        compose.onNodeWithTag("LocationSearchInput").performTextReplacement("Manila North Harbor, Manila")
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Manila North Harbor",substring=true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithText("Manila North Harbor",substring=true).onFirst().performClick()
+        compose.onNodeWithTag("ConfirmLocationButton").performClick()
+        compose.onNodeWithTag("DestinationLocationField").performClick()
+        compose.onNodeWithTag("TopFloatingAddressCard").performClick()
+        compose.onNodeWithTag("LocationSearchInput").performTextReplacement("Caloocan City Hall, Caloocan")
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Caloocan",substring=true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithText("Caloocan",substring=true).onFirst().performClick()
+        compose.onNodeWithTag("ConfirmLocationButton").performClick()
         compose.onNodeWithText("Closed Van").performScrollTo().performClick()
-        input("Contact number (09… or +639…)","+639000000001")
-        input("Notes (optional)","shared-dev-e2e acceptance request")
-        compose.onNodeWithText("Review request").performScrollTo().assertIsEnabled().performClick()
-        compose.onNodeWithText("Send request").performScrollTo().assertIsEnabled().performClick()
-        compose.onNodeWithText("Submit request").performClick()
-        compose.waitUntil(30000) { compose.onAllNodesWithText("Request ",substring=true).fetchSemanticsNodes().any { it.config.toString().contains("saved") } }
-        compose.waitUntil(30000) { runCatching {compose.onNodeWithText("Active").assertIsEnabled();true}.getOrDefault(false) }
-        compose.onNodeWithText("Active").performClick()
-        compose.waitUntil(30000) { compose.onAllNodesWithText("Active shipments").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Active shipments").assertExists()
-        compose.onAllNodesWithText("Manila North Harbor, Manila",substring=true).onFirst().assertExists()
+        compose.onNodeWithTag("BookingContinueButton").performClick()
+        compose.onNodeWithTag("OrderContactInput").performScrollTo().performTextReplacement("+639000000001")
+        compose.onNodeWithTag("CargoDescriptionInput").performScrollTo().performTextReplacement("Dev workflow acceptance")
+        compose.onNodeWithTag("EstWeightInput").performScrollTo().performTextReplacement("100")
+        compose.onNodeWithTag("NotesToDriverInput").performScrollTo().performTextReplacement("shared-dev-e2e acceptance request")
+        compose.onNodeWithTag("ConfirmDetailsButton").assertIsEnabled().performClick()
+        compose.onNodeWithTag("ConfirmBookingButton").assertIsEnabled().performClick()
+        compose.waitUntil(30000) { compose.onAllNodesWithText("Booking Submitted!").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("TrackShipmentButton").performClick()
+        compose.waitUntil(30000) { compose.onAllNodesWithText("Manila North Harbor",substring=true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithText("Manila North Harbor",substring=true).onFirst().assertExists()
     }
 }
