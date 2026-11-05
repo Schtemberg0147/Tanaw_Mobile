@@ -64,7 +64,11 @@ class MobileWorkspaceViewModel @Inject constructor(
 ) : ViewModel() {
     private val recoveryStore=WorkspaceRecoveryStore(context,BuildConfig.SUPABASE_URL)
     private val proofDraftStore=ProofDraftStore(context)
+    private val incidentDraftStore=IncidentDraftStore(context)
+    private val expenseDraftStore=ExpenseDraftStore(context)
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
+    fun hasIncidentDraft(owner:String,delivery:String)=incidentDraftStore.exists(owner,delivery)
+    fun hasExpenseDraft(owner:String,delivery:String)=expenseDraftStore.exists(owner,delivery)
     private var signupPhone: String = ""
     private var recoveryPhone: String? = null
     private var pendingPasswordChange:JsonObject?=null
@@ -480,6 +484,8 @@ class MobileWorkspaceViewModel @Inject constructor(
             // Only this account's private, temporary camera files; uploaded proof stays on the server.
             java.io.File(context.cacheDir,"proof/$owner").deleteRecursively()
             proofDraftStore.clearOwner(owner)
+            incidentDraftStore.clearOwner(owner)
+            expenseDraftStore.clearOwner(owner)
         }
         client.auth.signOut();generation++;loadedUser=null
         try { CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest()) }
@@ -574,6 +580,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         ConfirmedMutation.run({
             client.postgrest.rpc("driver_report_incident_evidence",buildJsonObject {put("p_delivery",id);put("p_request",request);put("p_category",category);put("p_description",description.trim());put("p_delay",minutes);put("p_paths",JsonArray(paths.map(::JsonPrimitive)))})
         },{version==generation && client.auth.currentUserOrNull()?.id==uid},{
+            incidentDraftStore.clear(uid,id)
             mutable.update {it.copy(message="Incident reported to the office.",error=null)}
             try {onSaved()}catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){mutable.update {it.copy(message="Incident saved. Close the form to return to your trip.")}}
@@ -608,6 +615,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                 })
             })
         },::current,{
+            expenseDraftStore.clear(uid,delivery)
             mutable.update {it.copy(message="Expense saved. See trip records for its current review status.",error=null)}
             try {onSaved()}catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){mutable.update {it.copy(message="Expense saved. Close the form to return to your trip.")}}

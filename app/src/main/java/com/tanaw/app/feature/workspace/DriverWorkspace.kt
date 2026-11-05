@@ -105,6 +105,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     val shipments=DriverRecordPresentation.shipments(data,state.history)
     val active=data.rows("shipments").filter {DriverUiRules.isActive(it.value("status"))}
     val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,state.history))))
+    val owner=data.obj("profile").value("id")
     val shipment=shipments.firstOrNull {it.value("id")==selected}
     val delivery=shipment?.let {s->DriverUiRules.delivery(tripData,s.value("id"))}
     var expense by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
@@ -246,7 +247,7 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         }
     }
     if(expense && delivery!=null)AddTripExpenseSheet(delivery.value("id"),shipment.value("tracking_number"),state.busy,state.error,
-        onDismiss={if(!state.busy)expense=false},onSubmit={category,amount,receipt->onExpense(delivery.value("id"),request,category,amount,receipt){expense=false}},offline=state.offline)
+        onDismiss={if(!state.busy)expense=false},onSubmit={category,amount,receipt->onExpense(delivery.value("id"),request,category,amount,receipt){expense=false}},offline=state.offline,owner=owner)
     if(fuel && delivery!=null && onFuel!=null)DriverFuelForm(delivery.value("id"),state,{fuel=false}) {fuelRequest,entry,close->onFuel(delivery.value("id"),fuelRequest,entry,close)}
 }
 

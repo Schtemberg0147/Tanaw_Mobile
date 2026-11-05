@@ -94,6 +94,6 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
  if(status=="delivered" && delivery.value("proof_review_status")!="correction_requested" && vm.hasProofDraft(owner,id))
   DriverButton("RECOVER SAVED PROOF",!busy){proof=true}
  if(status in listOf("assigned","loading","in_transit"))TextButton(onClick={incident=true},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Report an Issue")}
- if(incident)DriverIncidentDialog(id,state,vm){incident=false}
+ if(incident)DriverIncidentDialog(id,owner,state,vm){incident=false}
  if(proof)DriverProofDialog(id,owner,reference,state,vm,onBackHome=onBackHome){proof=false}
 }

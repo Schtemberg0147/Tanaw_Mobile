@@ -53,35 +53,81 @@ import kotlinx.coroutines.withContext
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable internal fun DriverIncidentDialog(id:String,state:MobileState,vm:MobileWorkspaceViewModel,close:()->Unit) {
-    DriverIncidentForm(id,state,close) {request,category,description,minutes,photos->vm.reportIncident(id,request,category,description,minutes,photos,close)}
+@Composable internal fun DriverIncidentDialog(id:String,state:MobileState,vm:MobileWorkspaceViewModel,owner:String="",close:()->Unit) {
+    DriverIncidentForm(id,state,close,owner) {request,category,description,minutes,photos->vm.reportIncident(id,request,category,description,minutes,photos,close)}
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable internal fun DriverIncidentForm(id:String,state:MobileState,close:()->Unit,submit:(String,String,String,Int,List<ByteArray>)->Unit) {
-    var category by rememberSaveable(id){mutableStateOf("traffic")}
-    var description by rememberSaveable(id){mutableStateOf("")}
-    var minutes by rememberSaveable(id){mutableStateOf("0")}
-    var request by rememberSaveable(id){mutableStateOf(UUID.randomUUID().toString())}
-    var photos by remember(id){mutableStateOf(emptyList<ByteArray>())}
+@Composable internal fun DriverIncidentDialog(id:String,owner:String,state:MobileState,vm:MobileWorkspaceViewModel,close:()->Unit) {
+    DriverIncidentForm(id,state,close,owner) {request,category,description,minutes,photos->vm.reportIncident(id,request,category,description,minutes,photos,close)}
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable internal fun DriverIncidentForm(
+    id:String,
+    state:MobileState,
+    close:()->Unit,
+    owner:String="",
+    submit:(String,String,String,Int,List<ByteArray>)->Unit
+) {
+    val context=LocalContext.current
+    val scope=rememberCoroutineScope()
+    val store=remember(owner,id){if(owner.isNotBlank())IncidentDraftStore(context) else null}
+    val restored=remember(owner,id){if(store!=null)runCatching{store.read(owner,id)}.getOrNull() else null}
+    var category by rememberSaveable(id){mutableStateOf(restored?.category ?: "traffic")}
+    var description by rememberSaveable(id){mutableStateOf(restored?.description ?: "")}
+    var minutes by rememberSaveable(id){mutableStateOf(restored?.minutes?.toString() ?: "0")}
+    var request by rememberSaveable(id){mutableStateOf(restored?.request ?: UUID.randomUUID().toString())}
+    var photos by remember(id){mutableStateOf(restored?.photos ?: emptyList<ByteArray>())}
     var preparingPhotos by remember {mutableStateOf(false)}
+
+    fun persist(c: String = category, d: String = description, m: String = minutes, p: List<ByteArray> = photos, r: String = request) {
+        if(store!=null) {
+            scope.launch(Dispatchers.IO) {
+                store.save(owner,id,IncidentDraft(request=r,category=c,description=d,minutes=m.toIntOrNull()?.coerceIn(0,10080)?:0,photos=p))
+            }
+        }
+    }
+
     DriverTransaction("Report an Issue",state.busy || preparingPhotos,close,if(preparingPhotos)"PREPARING PHOTO…" else "Submit Report",
         !preparingPhotos && !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
         {if(!preparingPhotos)submit(request,category,description,minutes.toInt(),photos)}) {
         Text("SELECT ISSUE TYPE",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf("traffic" to "Traffic/Delay","breakdown" to "Vehicle Issue","accident" to "Safety Concern","weather" to "Weather","other" to "Other").forEach {(value,label)->
-                FilterChip(selected=category==value,onClick={if(category!=value){category=value;request=UUID.randomUUID().toString()}},enabled=!state.busy && !preparingPhotos,label={Text(label)},shape=RoundedCornerShape(2.dp),
+                FilterChip(selected=category==value,onClick={
+                    if(category!=value){
+                        category=value
+                        val nextReq=UUID.randomUUID().toString()
+                        request=nextReq
+                        persist(c=value,r=nextReq)
+                    }
+                },enabled=!state.busy && !preparingPhotos,label={Text(label)},shape=RoundedCornerShape(2.dp),
                     colors=FilterChipDefaults.filterChipColors(selectedContainerColor=DriverNavy,selectedLabelColor=Color.White))
             }
         }
         Text("DESCRIPTION",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
-        OutlinedTextField(description,{description=it;request=UUID.randomUUID().toString()},placeholder={Text("Describe the issue in detail…")},enabled=!state.busy && !preparingPhotos,
+        OutlinedTextField(description,{
+            description=it
+            val nextReq=UUID.randomUUID().toString()
+            request=nextReq
+            persist(d=it,r=nextReq)
+        },placeholder={Text("Describe the issue in detail…")},enabled=!state.busy && !preparingPhotos,
             modifier=Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(2.dp))
-        OutlinedTextField(minutes,{minutes=it;request=UUID.randomUUID().toString()},label={Text("Expected delay in minutes")},enabled=!state.busy && !preparingPhotos,singleLine=true,
+        OutlinedTextField(minutes,{
+            minutes=it
+            val nextReq=UUID.randomUUID().toString()
+            request=nextReq
+            persist(m=it,r=nextReq)
+        },label={Text("Expected delay in minutes")},enabled=!state.busy && !preparingPhotos,singleLine=true,
             modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(2.dp),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
         Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=Color(0xFF536581))
-        IncidentPhotoPicker(photos,state.busy||state.offline,onPreparingChange={preparingPhotos=it}){photos=it;request=UUID.randomUUID().toString()}
+        IncidentPhotoPicker(photos,state.busy||state.offline,onPreparingChange={preparingPhotos=it}){
+            photos=it
+            val nextReq=UUID.randomUUID().toString()
+            request=nextReq
+            persist(p=it,r=nextReq)
+        }
         if(state.offline)Text("Reconnect and refresh before submitting an incident. Your current draft is retained.")
         state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         TextButton(onClick=close,enabled=!state.busy && !preparingPhotos,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=Color(0xFFBA1A1A))}

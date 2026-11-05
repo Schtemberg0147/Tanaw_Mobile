@@ -29,7 +29,7 @@
 | **D04** | Process photos, receipts & signatures off UI thread | Driver Workspace | #28 | **Done (just need testing)** | Merged into `JBranch`. Needs physical device bitmap/memory check. |
 | **D03** | Separate network failures from auth/backend errors + Auto-refresh | Workspace Core | #28 | **Done (just need testing)** | Merged into `JBranch`. Needs physical airplane mode / reconnect test. |
 | **C02** | Show profile-save success even if following refresh fails | Customer Profile | #7 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested against refresh exceptions. |
-| **D02** | Durable drafts for incident & expense forms (incl. attachments) | Driver Operations | #20, #21, #22 | **Pending** | Ready for implementation on `feat/D02-durable-incident-expense-drafts`. |
+| **D02** | Durable drafts for incident & expense forms (incl. attachments) | Driver Operations | #20, #21, #22 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested and encrypted storage instrumented. |
 | **C04** | Restore booking drafts & uncertain submissions after cold restart | Customer Booking | #9 | **Pending** | Ready for implementation on `feat/C04-booking-recovery-store`. |
 | **C07** | Keep signed-in password change inside customer Profile | Profile / Auth | #5 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested customer role initiation, verification, and cancellation. |
 
@@ -103,23 +103,18 @@ If `mobile_save_profile` succeeds on Supabase but `load()` fails, `operation` ca
 ---
 
 ### Module D02: Durable Drafts for Incidents and Expenses
-* **Status:** `Pending`
-* **Target Branch:** `feat/D02-durable-incident-expense-drafts`
+* **Status:** `Done (just need testing)`
+* **Branch:** `feat/D02-durable-incident-expense-drafts` (merged to `JBranch`)
 * **Reference Docs:** `docs/BACKLOG.md` (#20, #21, #22), `docs/FEATURES.md` (#20, #21, #22)
 
-#### Problem & Root Cause
-`DriverIncidentForm` in `DriverFlowDialogs.kt` and `AddTripExpenseSheet.kt` keep input fields and attached photo byte arrays solely in in-memory Compose state (`rememberSaveable`). If the process is killed in the background or the user switches tabs, captured photo attachments and form inputs are wiped out.
-
-#### Implementation Instructions
-1. Follow the `ProofDraftStore` pattern (which uses encrypted file storage via `WorkspaceRecoveryStore`):
-   - Create an encrypted draft store for incident and expense forms.
-   - Keys: `"${driverId}_incident_${deliveryId}"` and `"${driverId}_expense_${deliveryId}"`.
-   - Store category, description, delay minutes, and photo byte arrays.
-2. In `DriverFlowDialogs.kt` (`DriverIncidentForm`) and `AddTripExpenseSheet.kt`:
-   - Restore draft on open.
-   - Auto-persist draft when fields or photos change.
-   - Delete draft upon successful RPC submission (`reportIncident` / `addExpense`).
-3. Add unit tests for draft persistence, retrieval, and deletion.
+#### Implementation Summary
+- `DriverDraftStore.kt`: Implemented `IncidentDraft`, `IncidentDraftStore`, `ExpenseDraft`, and `ExpenseDraftStore` following the `ProofDraftStore` pattern with `WorkspaceRecoveryStore` (AES/GCM authenticated encryption). Scopes: `"${owner}_incident_${delivery}"` and `"${owner}_expense_${delivery}"`.
+- `DriverFlowDialogs.kt`: `DriverIncidentForm` restores draft on open, populating category, description, minutes, request, and photos. Automatically persists changes to `IncidentDraftStore` on `Dispatchers.IO` without blocking the main UI thread.
+- `AddTripExpenseSheet.kt`: Restores draft on open, populating category, amount, and receipt byte array. Automatically persists edits and receipt selections on `Dispatchers.IO`.
+- `MobileWorkspaceViewModel.kt`: Clears incident drafts upon successful `reportIncident` RPC, clears expense drafts upon successful `addExpense` submission, and clears all driver drafts upon `logout()`.
+- `DriverTripActions.kt` & `DriverWorkspace.kt`: Wired `owner` parameter through to `DriverIncidentDialog` and `AddTripExpenseSheet`.
+- **Testing:** Added unit tests in `DriverDraftsTest.kt` verifying draft equality, hashing, empty detection, and byte array handling. Added instrumented tests in `DriverDraftStoreTest.kt` verifying encrypted save, read, clear, clearOwner, and account/delivery separation.
+- **Testing Required:** On a physical phone or emulator: enter an incident or expense with photo/receipt attached, exit/background the app or kill process, reopen the screen, and verify draft fields and attachments are fully restored. Submit the form and verify the draft is deleted upon completion.
 
 ---
 

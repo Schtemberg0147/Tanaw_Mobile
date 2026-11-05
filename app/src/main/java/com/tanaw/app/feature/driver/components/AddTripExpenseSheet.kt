@@ -23,20 +23,34 @@ import com.tanaw.app.feature.workspace.DriverAsset
 import com.tanaw.app.feature.workspace.DriverButton
 import com.tanaw.app.feature.workspace.DriverEvidence
 import com.tanaw.app.feature.workspace.DriverNavy
+import com.tanaw.app.feature.workspace.ExpenseDraft
+import com.tanaw.app.feature.workspace.ExpenseDraftStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun AddTripExpenseSheet(deliveryId:String,trackingNumber:String,isSubmitting:Boolean,errorMessage:String?,onDismiss:()->Unit,
-    onSubmit:(category:String,amount:Double,receiptBytes:ByteArray?)->Unit,modifier:Modifier=Modifier,offline:Boolean=false) {
+    onSubmit:(category:String,amount:Double,receiptBytes:ByteArray?)->Unit,modifier:Modifier=Modifier,offline:Boolean=false,owner:String="") {
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
-    var category by rememberSaveable(deliveryId){mutableStateOf("")}
-    var amount by rememberSaveable(deliveryId){mutableStateOf("")}
-    var receipt by remember(deliveryId){mutableStateOf<ByteArray?>(null)}
-    var hadReceipt by rememberSaveable(deliveryId){mutableStateOf(false)}
+    val store=remember(owner,deliveryId){if(owner.isNotBlank())ExpenseDraftStore(context) else null}
+    val restored=remember(owner,deliveryId){if(store!=null)runCatching{store.read(owner,deliveryId)}.getOrNull() else null}
+    var category by rememberSaveable(deliveryId){mutableStateOf(restored?.category ?: "")}
+    var amount by rememberSaveable(deliveryId){mutableStateOf(restored?.amount ?: "")}
+    var receipt by remember(deliveryId){mutableStateOf<ByteArray?>(restored?.receipt)}
+    var hadReceipt by rememberSaveable(deliveryId){mutableStateOf(restored?.receipt!=null)}
     var receiptError by remember {mutableStateOf<String?>(null)}
     var preparingReceipt by remember {mutableStateOf(false)}
+
+    fun persist(c:String=category,a:String=amount,r:ByteArray?=receipt) {
+        if(store!=null) {
+            scope.launch(Dispatchers.IO) {
+                store.save(owner,deliveryId,ExpenseDraft(category=c,amount=a,receipt=r))
+            }
+        }
+    }
+
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {uri->
         if(uri!=null) {
             receiptError=null;receipt=null
@@ -45,6 +59,7 @@ import kotlinx.coroutines.launch
                 try {
                     val bytes=DriverEvidence.readReceiptAsync(context,uri)
                     receipt=bytes;hadReceipt=true
+                    persist(r=bytes)
                 }catch(cancelled:CancellationException){
                     throw cancelled
                 }catch(error:Exception){receiptError=error.message?:"Unable to read the receipt."}
@@ -62,11 +77,11 @@ import kotlinx.coroutines.launch
             }
             HorizontalDivider(color=Color(0xFFE7EEFF))
             Text("WHAT WAS THE EXPENSE?",fontSize=10.sp)
-            OutlinedTextField(category,{category=it},placeholder={Text("e.g. Loading fee, parking, etc.")},enabled=!isSubmitting && !preparingReceipt,
+            OutlinedTextField(category,{category=it;persist(c=it)},placeholder={Text("e.g. Loading fee, parking, etc.")},enabled=!isSubmitting && !preparingReceipt,
                 modifier=Modifier.fillMaxWidth().testTag("expense_category_input"),shape=RoundedCornerShape(0.dp),singleLine=true,
                 colors=OutlinedTextFieldDefaults.colors(unfocusedContainerColor=Color(0xFFF0F3FF),unfocusedBorderColor=Color(0xFFCDD7F7)))
             Text("AMOUNT",fontSize=10.sp)
-            OutlinedTextField(amount,{if(it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d{0,2}$")))amount=it},placeholder={Text("0.00",fontSize=24.sp)},
+            OutlinedTextField(amount,{if(it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d{0,2}$"))){amount=it;persist(a=it)}},placeholder={Text("0.00",fontSize=24.sp)},
                 prefix={Text("₱ ",fontSize=24.sp,fontWeight=FontWeight.Bold,color=DriverNavy)},enabled=!isSubmitting && !preparingReceipt,
                 modifier=Modifier.fillMaxWidth().testTag("expense_amount_input"),singleLine=true,shape=RoundedCornerShape(0.dp),
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
@@ -80,9 +95,9 @@ import kotlinx.coroutines.launch
                 }
             }
             if(preparingReceipt)LinearProgressIndicator(Modifier.fillMaxWidth())
-            if(receipt!=null)TextButton(onClick={receipt=null;hadReceipt=false},enabled=!isSubmitting && !preparingReceipt){Text("Remove receipt")}
+            if(receipt!=null)TextButton(onClick={receipt=null;hadReceipt=false;persist(r=null)},enabled=!isSubmitting && !preparingReceipt){Text("Remove receipt")}
             if(hadReceipt && receipt==null && !preparingReceipt)Text("Receipt was not restored. Choose the same receipt again before retrying this expense.",color=MaterialTheme.colorScheme.error)
-            if(receiptError!=null)TextButton(onClick={receiptError=null;hadReceipt=false}){Text("Continue without receipt")}
+            if(receiptError!=null)TextButton(onClick={receiptError=null;hadReceipt=false;persist(r=null)}){Text("Continue without receipt")}
             if(offline)Text("Reconnect and refresh before submitting an expense.")
             (receiptError?:errorMessage)?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp)}
             HorizontalDivider(color=Color(0xFFE7EEFF))
