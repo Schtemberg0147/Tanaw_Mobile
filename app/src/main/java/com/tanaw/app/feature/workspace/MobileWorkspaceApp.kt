@@ -127,7 +127,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
 }
 
 @Composable private fun Workspace(vm: MobileWorkspaceViewModel,state: MobileState,data: JsonObject) {
-    var tab by rememberSaveable { mutableStateOf("Home") }
+    var tab by rememberSaveable { mutableStateOf(if(state.passwordChangeOwner!=null)"Profile" else "Home") }
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable(tab) { mutableStateOf("") }

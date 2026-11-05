@@ -269,7 +269,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             val cached=snapshot==null || recoveryStore.write(id,buildJsonObject {put("created",System.currentTimeMillis());put("saved_at",savedAt);put("data",snapshot)})
             val pending=pendingPasswordChange
             val user=client.auth.currentUserOrNull()
-            val restoreChange=pending!=null && user!=null && data.obj("profile").value("role")=="driver" && PasswordChangePolicy.canRestore(pending,id,user.phone,user.email)
+            val restoreChange=pending!=null && user!=null && data.obj("profile").value("role") in listOf("driver","customer") && PasswordChangePolicy.canRestore(pending,id,user.phone,user.email)
             if(pending!=null) {
                 pendingPasswordChange=null
                 if(restoreChange)recoveryPhone=MobileValidation.phone(pending.value("target")) else clearPasswordChallenge()
