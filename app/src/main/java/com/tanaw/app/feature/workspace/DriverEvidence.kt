@@ -14,25 +14,68 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
+internal object EvidenceRules {
+    const val MAX_IMAGE_BYTES=5*1024*1024
+    val PHOTO_MIME_TYPES=setOf("image/jpeg","image/png","image/webp")
+    val RECEIPT_MIME_TYPES=setOf("image/jpeg","image/png")
+
+    fun validatePhotoMime(mimeType:String?) {
+        require(mimeType in PHOTO_MIME_TYPES){"Choose a JPG, PNG or WebP photo."}
+    }
+    fun validateReceiptMime(mimeType:String?) {
+        require(mimeType in RECEIPT_MIME_TYPES){"Choose a JPG or PNG receipt."}
+    }
+    fun readStreamWithinLimit(input:java.io.InputStream,maxBytes:Int,limitExceededMessage:String):ByteArray {
+        val output=ByteArrayOutputStream()
+        val buffer=ByteArray(8192)
+        while(true){
+            val count=input.read(buffer)
+            if(count<0)break
+            require(output.size()+count<=maxBytes){limitExceededMessage}
+            output.write(buffer,0,count)
+        }
+        val bytes=output.toByteArray()
+        require(bytes.isNotEmpty()){"File is empty."}
+        return bytes
+    }
+}
+
 internal object DriverEvidence {
-    const val MAX_BYTES=5*1024*1024
-    fun readPhoto(context:Context,uri:Uri):ByteArray {
-        require(context.contentResolver.getType(uri) in listOf("image/jpeg","image/png","image/webp")) {"Choose a JPG, PNG or WebP photo."}
-        val bytes=context.contentResolver.openInputStream(uri)?.use {input->
-            val output=ByteArrayOutputStream();val buffer=ByteArray(8192)
-            while(true){val count=input.read(buffer);if(count<0)break;require(output.size()+count<=MAX_BYTES){"Choose a photo no larger than 5 MB."};output.write(buffer,0,count)}
-            output.toByteArray()
+    const val MAX_BYTES=EvidenceRules.MAX_IMAGE_BYTES
+    suspend fun readPhotoAsync(context:Context,uri:Uri):ByteArray = withContext(Dispatchers.IO) {
+        EvidenceRules.validatePhotoMime(context.contentResolver.getType(uri))
+        val rawBytes=context.contentResolver.openInputStream(uri)?.use {input->
+            EvidenceRules.readStreamWithinLimit(input,MAX_BYTES,"Choose a photo no larger than 5 MB.")
         } ?: error("Unable to read photo.")
-        require(bytes.size in 1..MAX_BYTES) {"Choose a photo no larger than 5 MB."}
-        return jpeg(bytes)
+        withContext(Dispatchers.Default) { jpeg(rawBytes) }
     }
     fun jpeg(bytes:ByteArray):ByteArray {
         val bitmap=ProofImage.decode(bytes,MAX_BYTES)
         return try {ByteArrayOutputStream().also {bitmap.compress(Bitmap.CompressFormat.JPEG,85,it)}.toByteArray().also {
             require(it.size in 1..MAX_BYTES) {"Prepared photo exceeds 5 MB. Choose a smaller photo."}
         }}finally {bitmap.recycle()}
+    }
+    suspend fun jpegAsync(bytes:ByteArray):ByteArray = withContext(Dispatchers.Default) {
+        jpeg(bytes)
+    }
+    suspend fun readReceiptAsync(context:Context,uri:Uri):ByteArray = withContext(Dispatchers.IO) {
+        EvidenceRules.validateReceiptMime(context.contentResolver.getType(uri))
+        val bytes=context.contentResolver.openInputStream(uri)?.use {input->
+            EvidenceRules.readStreamWithinLimit(input,MAX_BYTES,"Receipt must be 5 MB or smaller.")
+        } ?: error("Unable to read the receipt.")
+        require(bytes.isNotEmpty()) {"Unable to read the receipt. Choose it again."}
+        withContext(Dispatchers.Default) {
+            val bitmap=ProofImage.decode(bytes)
+            bitmap.recycle()
+        }
+        bytes
     }
     fun status(record:JsonObject)=when(record.value("status")) {
         "pending"->"Pending office review";"approved"->"Approved";"rejected"->"Rejected";else->"Review status unavailable"
@@ -65,21 +108,75 @@ internal object DriverEvidence {
     }
 }
 
-@Composable internal fun IncidentPhotoPicker(photos:List<ByteArray>,busy:Boolean,onChange:(List<ByteArray>)->Unit) {
+@Composable internal fun IncidentPhotoPicker(photos:List<ByteArray>,busy:Boolean,onPreparingChange:(Boolean)->Unit={},onChange:(List<ByteArray>)->Unit) {
     val context=LocalContext.current
+    val scope=rememberCoroutineScope()
     var error by remember {mutableStateOf<String?>(null)}
+    var preparing by remember {mutableStateOf(false)}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {uri->
-        if(uri!=null)try {if(photos.size<3)onChange(photos+listOf(DriverEvidence.readPhoto(context,uri)));error=null}
-        catch(failure:Exception){error=failure.message?:"Unable to prepare photo. Choose another image."}
+        if(uri!=null) {
+            preparing=true
+            onPreparingChange(true)
+            error=null
+            scope.launch {
+                try {
+                    if(photos.size<3) {
+                        val photo=DriverEvidence.readPhotoAsync(context,uri)
+                        onChange(photos+listOf(photo))
+                    }
+                }catch(cancelled:CancellationException){
+                    throw cancelled
+                }catch(failure:Exception){
+                    error=failure.message?:"Unable to prepare photo. Choose another image."
+                }finally{
+                    preparing=false
+                    onPreparingChange(false)
+                }
+            }
+        }
     }
     Text("Private incident photos · ${photos.size}/3 · up to 5 MB each")
     DriverAsset(com.tanaw.app.R.drawable.figma_driver_f0840,20,18)
-    OutlinedButton(onClick={picker.launch("image/*")},enabled=!busy && photos.size<3){Text("Add incident photo")}
+    OutlinedButton(onClick={picker.launch("image/*")},enabled=!busy && !preparing && photos.size<3){
+        Text(if(preparing)"Preparing photo…" else "Add incident photo")
+    }
+    if(preparing)LinearProgressIndicator(Modifier.fillMaxWidth())
     photos.forEachIndexed {index,bytes->
-        val preview=remember(bytes){ProofImage.decode(bytes,DriverEvidence.MAX_BYTES)}
-        DisposableEffect(preview){onDispose {preview.recycle()}}
-        Image(preview.asImageBitmap(),"Incident photo ${index+1}",Modifier.fillMaxWidth().height(140.dp))
-        TextButton(onClick={onChange(photos.filterIndexed {position,_->position!=index})},enabled=!busy){Text("Remove incident photo ${index+1}")}
+        key(bytes) {
+            IncidentPhotoThumbnail(bytes,index,busy || preparing){
+                onChange(photos.filterIndexed {position,_->position!=index})
+            }
+        }
     }
     error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+}
+
+@Composable
+private fun IncidentPhotoThumbnail(bytes:ByteArray,index:Int,disabled:Boolean,onRemove:()->Unit) {
+    var preview by remember(bytes){mutableStateOf<Bitmap?>(null)}
+    var decodeFailed by remember(bytes){mutableStateOf(false)}
+    LaunchedEffect(bytes) {
+        val bitmap=withContext(Dispatchers.Default){
+            runCatching{ProofImage.decode(bytes,DriverEvidence.MAX_BYTES)}.getOrNull()
+        }
+        if(isActive) {
+            preview?.recycle()
+            preview=bitmap
+            decodeFailed=(bitmap==null)
+        } else {
+            bitmap?.recycle()
+        }
+    }
+    DisposableEffect(bytes) {
+        onDispose {
+            preview?.recycle()
+            preview=null
+        }
+    }
+    if(preview!=null) {
+        Image(preview!!.asImageBitmap(),"Incident photo ${index+1}",Modifier.fillMaxWidth().height(140.dp))
+    } else if(decodeFailed) {
+        Text("Unable to display photo preview",color=MaterialTheme.colorScheme.error)
+    }
+    TextButton(onClick=onRemove,enabled=!disabled){Text("Remove incident photo ${index+1}")}
 }

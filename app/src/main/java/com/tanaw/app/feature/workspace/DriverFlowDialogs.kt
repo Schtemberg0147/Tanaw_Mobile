@@ -28,9 +28,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.tanaw.app.R
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable internal fun DriverTransaction(title:String,busy:Boolean,close:()->Unit,
     label:String,enabled:Boolean,submit:()->Unit,content:@Composable ColumnScope.()->Unit) {
@@ -60,26 +64,27 @@ import java.util.UUID
     var minutes by rememberSaveable(id){mutableStateOf("0")}
     var request by rememberSaveable(id){mutableStateOf(UUID.randomUUID().toString())}
     var photos by remember(id){mutableStateOf(emptyList<ByteArray>())}
-    DriverTransaction("Report an Issue",state.busy,close,"Submit Report",
-        !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
-        {submit(request,category,description,minutes.toInt(),photos)}) {
+    var preparingPhotos by remember {mutableStateOf(false)}
+    DriverTransaction("Report an Issue",state.busy || preparingPhotos,close,if(preparingPhotos)"PREPARING PHOTO…" else "Submit Report",
+        !preparingPhotos && !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
+        {if(!preparingPhotos)submit(request,category,description,minutes.toInt(),photos)}) {
         Text("SELECT ISSUE TYPE",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf("traffic" to "Traffic/Delay","breakdown" to "Vehicle Issue","accident" to "Safety Concern","weather" to "Weather","other" to "Other").forEach {(value,label)->
-                FilterChip(selected=category==value,onClick={if(category!=value){category=value;request=UUID.randomUUID().toString()}},enabled=!state.busy,label={Text(label)},shape=RoundedCornerShape(2.dp),
+                FilterChip(selected=category==value,onClick={if(category!=value){category=value;request=UUID.randomUUID().toString()}},enabled=!state.busy && !preparingPhotos,label={Text(label)},shape=RoundedCornerShape(2.dp),
                     colors=FilterChipDefaults.filterChipColors(selectedContainerColor=DriverNavy,selectedLabelColor=Color.White))
             }
         }
         Text("DESCRIPTION",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
-        OutlinedTextField(description,{description=it;request=UUID.randomUUID().toString()},placeholder={Text("Describe the issue in detail…")},enabled=!state.busy,
+        OutlinedTextField(description,{description=it;request=UUID.randomUUID().toString()},placeholder={Text("Describe the issue in detail…")},enabled=!state.busy && !preparingPhotos,
             modifier=Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(2.dp))
-        OutlinedTextField(minutes,{minutes=it;request=UUID.randomUUID().toString()},label={Text("Expected delay in minutes")},enabled=!state.busy,singleLine=true,
+        OutlinedTextField(minutes,{minutes=it;request=UUID.randomUUID().toString()},label={Text("Expected delay in minutes")},enabled=!state.busy && !preparingPhotos,singleLine=true,
             modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(2.dp),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
         Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=Color(0xFF536581))
-        IncidentPhotoPicker(photos,state.busy||state.offline){photos=it;request=UUID.randomUUID().toString()}
+        IncidentPhotoPicker(photos,state.busy||state.offline,onPreparingChange={preparingPhotos=it}){photos=it;request=UUID.randomUUID().toString()}
         if(state.offline)Text("Reconnect and refresh before submitting an incident. Your current draft is retained.")
         state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-        TextButton(onClick=close,enabled=!state.busy,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=Color(0xFFBA1A1A))}
+        TextButton(onClick=close,enabled=!state.busy && !preparingPhotos,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=Color(0xFFBA1A1A))}
     }
 }
 
@@ -90,6 +95,7 @@ import java.util.UUID
 @Composable internal fun DriverProofForm(id:String,owner:String,reference:String,state:MobileState,onBackHome:()->Unit,close:()->Unit,
     submit:(String,ByteArray,ByteArray,String,()->Unit)->Unit) {
     val context=LocalContext.current
+    val scope=rememberCoroutineScope()
     val store=remember(owner,id){ProofDraftStore(context)}
     val restored=remember(owner,id){runCatching{store.read(owner,id)}}
     var draft by remember(owner,id){mutableStateOf(restored.getOrNull()?:ProofDraft())}
@@ -99,27 +105,65 @@ import java.util.UUID
     var error by remember {mutableStateOf<String?>(null)}
     var submitted by rememberSaveable(owner,id){mutableStateOf(false)}
     var confirmDiscard by remember {mutableStateOf(false)}
-    val editable=!state.busy && !draft.frozen && restored.isSuccess
+    var processing by remember {mutableStateOf(false)}
+    val editable=!state.busy && !processing && !draft.frozen && restored.isSuccess
     fun persist(next:ProofDraft):Boolean {
         if(!store.save(owner,id,next)){error="Unable to save your private draft. Free device storage and retry before leaving.";return false}
         draft=next;error=null;return true
     }
-    val preview=remember(draft.photo){draft.photo?.let{runCatching{ProofImage.decode(it)}.getOrNull()}}
-    DisposableEffect(preview) {onDispose {preview?.recycle()}}
+    var preview by remember(draft.photo){mutableStateOf<Bitmap?>(null)}
+    LaunchedEffect(draft.photo) {
+        val bytes=draft.photo
+        if(bytes==null) {
+            preview?.recycle()
+            preview=null
+        } else {
+            val bitmap=withContext(Dispatchers.Default){
+                runCatching{ProofImage.decode(bytes)}.getOrNull()
+            }
+            if(isActive) {
+                preview?.recycle()
+                preview=bitmap
+            } else {
+                bitmap?.recycle()
+            }
+        }
+    }
+    DisposableEffect(draft.photo) {
+        onDispose {
+            preview?.recycle()
+            preview=null
+        }
+    }
     val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) {success->
         val file=filePath?.let(::File)
-        try {
-            if(success && file!=null) {
-                require(file.length() in 1..20L*1024*1024)
-                val bitmap=ProofImage.decode(file.readBytes(),20*1024*1024)
-                val bytes=try{ByteArrayOutputStream().also{check(bitmap.compress(Bitmap.CompressFormat.JPEG,85,it))}.toByteArray()}finally{bitmap.recycle()}
-                require(bytes.size in 1..5*1024*1024)
-                persist(draft.changed().copy(photo=bytes))
-            }else error="Photo capture cancelled. Your previous photo and signature are retained."
-        }catch(_:Exception){error="Unable to read the photo. Your existing draft is retained; retry capture."}
-        finally {file?.delete();filePath=null}
+        if(success && file!=null) {
+            processing=true
+            error=null
+            scope.launch {
+                try {
+                    val bytes=ProofImage.processCameraPhoto(file)
+                    persist(draft.changed().copy(photo=bytes))
+                    file.delete()
+                    filePath=null
+                }catch(cancelled:CancellationException){
+                    throw cancelled
+                }catch(_:Exception){
+                    file.delete()
+                    filePath=null
+                    error="Unable to read the photo. Your existing draft is retained; retry capture."
+                }finally {
+                    processing=false
+                }
+            }
+        } else {
+            file?.delete()
+            filePath=null
+            error="Photo capture cancelled. Your previous photo and signature are retained."
+        }
     }
     fun takePhoto() {
+        if(processing)return
         try {
             val directory=File(context.cacheDir,"proof/$owner").apply{mkdirs()}
             val file=File(directory,"${UUID.randomUUID()}.jpg")
@@ -143,21 +187,29 @@ import java.util.UUID
         }
         return
     }
-    DriverTransaction("Submit Proof of Delivery",state.busy,close,if(draft.frozen)"RETRY / CHECK SAVED PROOF" else "COMPLETE DELIVERY",
-        !state.offline && restored.isSuccess && draft.recipient.trim().length in 2..100 && preview!=null && draft.strokes.isNotEmpty(),{
-            try {
-                var ready=draft
-                if(!ready.frozen) {
-                val signature=Bitmap.createBitmap(1000,400,Bitmap.Config.ARGB_8888)
-                val canvas=android.graphics.Canvas(signature);canvas.drawColor(android.graphics.Color.WHITE)
-                val paint=android.graphics.Paint().apply{color=android.graphics.Color.BLACK;strokeWidth=4f;isAntiAlias=true}
-                ready.strokes.forEach {line->line.zipWithNext().forEach {(a,b)->canvas.drawLine(a.x*1000,a.y*400,b.x*1000,b.y*400,paint)}}
-                val bytes=ByteArrayOutputStream().also{signature.compress(Bitmap.CompressFormat.PNG,100,it)}.toByteArray();signature.recycle()
-                ready=ready.copy(signature=bytes,frozen=true)
+    DriverTransaction("Submit Proof of Delivery",state.busy || processing,close,
+        if(processing)"PREPARING PROOF…" else if(draft.frozen)"RETRY / CHECK SAVED PROOF" else "COMPLETE DELIVERY",
+        !processing && !state.offline && restored.isSuccess && draft.recipient.trim().length in 2..100 && preview!=null && draft.strokes.isNotEmpty(),{
+            if(processing)return@DriverTransaction
+            processing=true
+            scope.launch {
+                try {
+                    var ready=draft
+                    if(!ready.frozen) {
+                        val bytes=ProofImage.renderSignaturePng(ready.strokes)
+                        ready=ready.copy(signature=bytes,frozen=true)
+                    }
+                    if(persist(ready))submit(ready.recipient,requireNotNull(ready.photo),requireNotNull(ready.signature),ready.attempt){store.clear(owner,id);submitted=true}
+                }catch(cancelled:CancellationException){
+                    throw cancelled
+                }catch(_:Exception){
+                    error="Unable to prepare proof. Your saved draft is retained; retry or contact the office."
+                }finally {
+                    processing=false
                 }
-                if(persist(ready))submit(ready.recipient,requireNotNull(ready.photo),requireNotNull(ready.signature),ready.attempt){store.clear(owner,id);submitted=true}
-            }catch(_:Exception){error="Unable to prepare proof. Your saved draft is retained; retry or contact the office."}
+            }
         }) {
+        if(processing)LinearProgressIndicator(Modifier.fillMaxWidth())
         Surface(color=Color.White,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("SHIPMENT REFERENCE",fontSize=10.sp,color=Color(0xFF536581));Text(reference,fontSize=18.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
             Text("Pending Delivery Confirmation",fontSize=14.sp,color=DriverMuted)
@@ -168,7 +220,7 @@ import java.util.UUID
         Text("1. PHOTO OF CARGO",fontSize=12.sp,color=DriverNavy)
         Surface(onClick=::takePhoto,enabled=editable,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF))) {
             Column(Modifier.fillMaxWidth().heightIn(min=180.dp).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-                if(preview!=null)Image(preview.asImageBitmap(),"Captured delivery photo",Modifier.fillMaxWidth().height(140.dp))
+                if(preview!=null)Image(preview!!.asImageBitmap(),"Captured delivery photo",Modifier.fillMaxWidth().height(140.dp))
                 else DriverAsset(R.drawable.figma_driver_ceb65,48,46)
                 Spacer(Modifier.height(12.dp));Text(if(preview!=null)"RETAKE PHOTO" else "TAKE PHOTO",color=DriverNavy,fontSize=12.sp)
                 Text("Capture a clear view of items & labels",fontSize=10.sp,color=DriverMuted)
