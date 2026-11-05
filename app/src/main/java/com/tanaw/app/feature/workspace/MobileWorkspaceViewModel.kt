@@ -496,8 +496,28 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     fun profile(name: String,phone: String,address: String,city: String) = operation {
         val normalized=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
-        client.postgrest.rpc("mobile_save_profile",buildJsonObject { put("p_name",name.trim());put("p_phone",normalized);put("p_address",address.trim());put("p_city",city.trim()) })
-        load();mutable.update { it.copy(message="Profile saved.") }
+        val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val version=generation
+        CustomerProfileRules.saveProfile(
+            mutate = {
+                client.postgrest.rpc("mobile_save_profile",buildJsonObject { put("p_name",name.trim());put("p_phone",normalized);put("p_address",address.trim());put("p_city",city.trim()) })
+            },
+            current = { version==generation && client.auth.currentUserOrNull()?.id==uid },
+            onOptimisticUpdate = {
+                mutable.update { state ->
+                    val currentData = state.data
+                    val updated = CustomerProfileRules.optimisticUpdate(currentData, name, normalized, address, city)
+                    state.copy(data = updated ?: currentData, message = CustomerProfileRules.MSG_PROFILE_SAVED, error = null)
+                }
+            },
+            refresh = {
+                load()
+                mutable.update { it.copy(message = CustomerProfileRules.MSG_PROFILE_SAVED, error = null) }
+            },
+            onRefreshFailed = {
+                mutable.update { it.copy(message = CustomerProfileRules.MSG_PROFILE_SAVED_REFRESH_FAILED, error = null) }
+            }
+        )
     }
     suspend fun conversation(delivery:String,before:String?):JsonObject = client.postgrest.rpc("delivery_conversation",buildJsonObject {
         put("p_delivery",delivery);put("p_before",before?.let(::JsonPrimitive)?:JsonNull)

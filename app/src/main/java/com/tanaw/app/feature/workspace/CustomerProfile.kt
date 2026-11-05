@@ -82,6 +82,8 @@ internal fun CustomerProfile(
                 color = DriverNavy
             )
 
+            CustomerProfileNotices(state)
+
             if (linkError) {
                 Text(
                     text = "This device could not open the link. Check that a browser or suitable app is installed.",
@@ -432,36 +434,7 @@ internal fun CustomerProfile(
             )
 
             // Status Notices (Loading / Error / Success)
-            if (state.busy) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = DriverNavy)
-            }
-            state.error?.let {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(
-                        text = it,
-                        modifier = Modifier.padding(14.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-            state.message?.let {
-                Surface(
-                    color = DriverNavy.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text(
-                        text = it,
-                        modifier = Modifier.padding(14.dp),
-                        color = DriverNavy,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
+            CustomerProfileNotices(state)
 
             // Hero Avatar Section
             Column(
@@ -851,6 +824,40 @@ private fun CustomerMenuItemRow(
             tint = DriverMuted,
             modifier = Modifier.size(16.dp)
         )
+    }
+}
+
+@Composable
+private fun CustomerProfileNotices(state: MobileState) {
+    if (state.busy) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = DriverNavy)
+    }
+    state.error?.let {
+        Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = it,
+                modifier = Modifier.padding(14.dp),
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+    state.message?.let {
+        Surface(
+            color = DriverNavy.copy(alpha = 0.08f),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = it,
+                modifier = Modifier.padding(14.dp),
+                color = DriverNavy,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 

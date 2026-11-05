@@ -15,7 +15,7 @@ Type: `client` = Android code only | `backend?` = may need backend change, check
 |----|------|--------------|------|-------|
 | [x] D04 | Process photos/receipts/signatures off the UI thread | #28 | client | Done (`feat/D04-image-off-ui-thread`). Bitmap compression in `DriverFlowDialogs.kt`, `DriverEvidence.kt`, `AddTripExpenseSheet.kt`, `MobileWorkspaceViewModel.kt` moved off UI thread (`Dispatchers.Default` / `IO`). |
 | [x] D03 | Separate network failures from auth/backend errors | #28 | client | Done (`feat/D03-error-classification`). `MobileErrorClassifier.kt` isolates network transport errors (`offline = true`) from auth and contract/server errors. `WorkspaceNetworkMonitor.kt` auto-refreshes when reconnecting while offline, retaining manual refresh. |
-| C02 | Show profile-save success even if the following refresh fails | #7 | client | `MobileWorkspaceViewModel` profile flow |
+| [x] C02 | Show profile-save success even if the following refresh fails | #7 | client | Done (`feat/C02-profile-save-confirmation`). Optimistic update in `CustomerProfileRules.kt`, resilient confirmation in `MobileWorkspaceViewModel.kt`, notices visible in `CustomerProfile.kt`. |
 | D02 | Durable drafts for incident and expense forms (incl. attachments) | #20, #21, #22 | client | Reuse the `ProofDraftStore` pattern (encrypted draft persistence) |
 | C04 | Restore booking drafts and uncertain submissions after cold restart | #9 | client | Reuse `WorkspaceRecoveryStore` pattern |
 | C07 | Keep signed-in password change inside the customer Profile | #5 | client | `PasswordChangeDialog.kt`, `ProfileForm` |

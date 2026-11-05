@@ -28,7 +28,7 @@
 |:---|:----------------------|:----:|:------------:|:------:|:------------------|
 | **D04** | Process photos, receipts & signatures off UI thread | Driver Workspace | #28 | **Done (just need testing)** | Merged into `JBranch`. Needs physical device bitmap/memory check. |
 | **D03** | Separate network failures from auth/backend errors + Auto-refresh | Workspace Core | #28 | **Done (just need testing)** | Merged into `JBranch`. Needs physical airplane mode / reconnect test. |
-| **C02** | Show profile-save success even if following refresh fails | Customer Profile | #7 | **Pending** | Ready for implementation on `feat/C02-profile-save-confirmation`. |
+| **C02** | Show profile-save success even if following refresh fails | Customer Profile | #7 | **Done (just need testing)** | Merged into `JBranch`. Unit-tested against refresh exceptions. |
 | **D02** | Durable drafts for incident & expense forms (incl. attachments) | Driver Operations | #20, #21, #22 | **Pending** | Ready for implementation on `feat/D02-durable-incident-expense-drafts`. |
 | **C04** | Restore booking drafts & uncertain submissions after cold restart | Customer Booking | #9 | **Pending** | Ready for implementation on `feat/C04-booking-recovery-store`. |
 | **C07** | Keep signed-in password change inside customer Profile | Profile / Auth | #5 | **Pending** | Ready for implementation on `feat/C07-customer-profile-password-change`. |
@@ -71,8 +71,8 @@
 ---
 
 ### Module C02: Profile-Save Confirmation Resilience
-* **Status:** `Pending`
-* **Target Branch:** `feat/C02-profile-save-confirmation`
+* **Status:** `Done (just need testing)`
+* **Branch:** `feat/C02-profile-save-confirmation` (merged to `JBranch`)
 * **Reference Docs:** `docs/BACKLOG.md` (#7), `docs/FEATURES.md` (#7)
 
 #### Problem & Root Cause
