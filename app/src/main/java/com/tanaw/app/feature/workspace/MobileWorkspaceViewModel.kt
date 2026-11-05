@@ -57,7 +57,11 @@ fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.f
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
 
 @HiltViewModel
-class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseClient,@ApplicationContext private val context:Context) : ViewModel() {
+class MobileWorkspaceViewModel @Inject constructor(
+    private val client: SupabaseClient,
+    @ApplicationContext private val context: Context,
+    private val networkMonitor: WorkspaceNetworkMonitor = WorkspaceNetworkMonitor(context)
+) : ViewModel() {
     private val recoveryStore=WorkspaceRecoveryStore(context,BuildConfig.SUPABASE_URL)
     private val proofDraftStore=ProofDraftStore(context)
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
@@ -98,14 +102,42 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
     }
     private suspend fun backgroundRefresh() {
         if(mutable.value.busy || mutable.value.page!="workspace")return
-        try {load();mutable.value.details?.value("shipment_id")?.takeIf(String::isNotBlank)?.let { id ->
-            val version=generation
-            val detailRequest=detailVersion
-            val detail=readDetails(id)
-            if(version==generation && detailRequest==detailVersion && mutable.value.details?.value("shipment_id")==id)mutable.update {it.copy(details=detail)}
-        }}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){mutable.update {it.copy(offline=true)}}
+        try {
+            load()
+            mutable.value.details?.value("shipment_id")?.takeIf(String::isNotBlank)?.let { id ->
+                val version=generation
+                val detailRequest=detailVersion
+                val detail=readDetails(id)
+                if(version==generation && detailRequest==detailVersion && mutable.value.details?.value("shipment_id")==id)mutable.update {it.copy(details=detail)}
+            }
+        } catch(cancelled:CancellationException){throw cancelled}
+        catch(error:Exception){
+            when {
+                MobileErrorClassifier.isNetworkError(error) -> {
+                    mutable.update { it.copy(offline=true) }
+                }
+                MobileErrorClassifier.isAuthError(error) -> {
+                    if (error.message.orEmpty().contains("ACTIVE_")) {
+                        loadedUser?.let { recoveryStore.clear(it) }
+                        clearPasswordChallenge()
+                        mutable.update { it.copy(data=null,details=null,proof=null,page="access",passwordChangeOwner=null,passwordChangeCodeSent=false,error=MobileErrorClassifier.friendlyMessage(error)) }
+                    } else {
+                        mutable.update { it.copy(error=MobileErrorClassifier.friendlyMessage(error)) }
+                    }
+                }
+                else -> Unit
+            }
+        }
     }
     init {
+        viewModelScope.launch {
+            networkMonitor.isOnline.collect { online ->
+                if (online && mutable.value.page == "workspace" && mutable.value.offline) {
+                    delay(1.seconds)
+                    backgroundRefresh()
+                }
+            }
+        }
         recoveryStore.read("challenge",RecoveryPolicy.CHALLENGE_AGE)?.takeIf {RecoveryPolicy.valid(it,System.currentTimeMillis())}?.let {
             if(it.value("return_owner").isNotBlank()) {pendingPasswordChange=it;return@let}
             val target=it.value("target")
@@ -193,27 +225,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
             finally { mutable.update { it.copy(busy=false) } }
         }
     }
-    private fun friendly(error: Exception): String {
-        val detail=error.message.orEmpty()
-        MobileAuthErrors.message(detail)?.let { return it }
-        return when {
-            detail.contains("ACTIVE_") -> "This account is inactive or does not have access. Contact the office."
-            detail.contains("Invalid login", ignoreCase = true) || detail.contains("invalid_credentials", ignoreCase = true) -> "Email or password is incorrect."
-            detail.contains("email_not_confirmed", ignoreCase = true) -> "Verify your email before signing in."
-            detail.contains("CAPACITY_EXCEEDED") -> "Cargo exceeds registered vehicle capacity. Choose another type or contact the office."
-            detail.contains("INVALID_DEPARTURE") -> "Choose a future departure within the next year."
-            detail.contains("REQUEST_ALREADY_SAVED_REFRESH") -> "This request was already saved. Refresh Active shipments before making another request."
-            detail.contains("CUSTOMER_PROFILE_REQUIRED") -> "Your customer profile needs office attention before booking."
-            detail.contains("rate", ignoreCase = true) || detail.contains("429") -> "Too many requests. Please wait before trying again."
-            detail.contains("otp", ignoreCase = true) || detail.contains("token", ignoreCase = true) -> "The code is invalid or expired. Request another code."
-            detail.contains("OUTSIDE_OPERATING_HOURS") -> "This action is only available during operating hours."
-            detail.contains("ARRIVAL_TOO_FAR") -> "Move within the pickup arrival radius and use a fresh accurate location."
-            detail.contains("WAIT_PERIOD_NOT_FINISHED") -> "The pickup waiting period has not finished. The office decides any cancellation."
-            detail.contains("DELIVERY_CLOSED") -> "This delivery has closed. Refresh its current status."
-            detail.contains("INVALID_")||error is IllegalArgumentException -> "Check the entered details and try again."
-            else -> "Unable to complete the request. Check your connection, refresh and try again."
-        }
-    }
+    private fun friendly(error: Exception): String = MobileErrorClassifier.friendlyMessage(error)
     private suspend fun load() {
         val version=generation
         val id=client.auth.currentUserOrNull()?.id ?: return
@@ -277,7 +289,13 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
                 require(client.auth.currentUserOrNull()!=null){"ACTIVE_ACCOUNT_REQUIRED"}
             }
             load();loadedUser?.let(::startLive)
-        }catch(e:Exception){if(e is CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException)throw e;if(mutable.value.data!=null)mutable.update {it.copy(offline=true)};throw e}
+        }catch(e:Exception){
+            if(e is CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException)throw e
+            if(mutable.value.data!=null && MobileErrorClassifier.isNetworkError(e)) {
+                mutable.update {it.copy(offline=true)}
+            }
+            throw e
+        }
     }
     fun loadHistory(period:String,more:Boolean=false) {
         val uid=client.auth.currentUserOrNull()?.id?:return
@@ -468,11 +486,12 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         catch (_: ClearCredentialException) { /* Supabase sign-out already succeeded. */ }
         mutable.update { MobileState(page="login") }
     }
-    fun book(requestId: String,data: JsonObject,onSuccess: (String) -> Unit) = operation {
+    fun book(requestId: String,data: JsonObject,onSuccess: (String) -> Unit) = book(requestId,data) { id,_ -> onSuccess(id) }
+    fun book(requestId: String,data: JsonObject,onCreated: (String,String) -> Unit) = operation {
         val result=client.postgrest.rpc("mobile_create_request",buildJsonObject { put("p_request_id",requestId);put("p_data",data) }).decodeAs<JsonObject>()
         require(result.value("id").isNotBlank() && result.value("tracking_number").isNotBlank())
         mutable.update { it.copy(message="Request ${result.value("tracking_number")} saved. Office review and quotation are pending.") }
-        onSuccess(result.value("id"))
+        onCreated(result.value("id"),result.value("tracking_number"))
         try { load() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { mutable.update { it.copy(error="Request saved. Refresh to reload shipment details.") } }
     }
     fun profile(name: String,phone: String,address: String,city: String) = operation {
@@ -546,7 +565,7 @@ class MobileWorkspaceViewModel @Inject constructor(private val client: SupabaseC
         val driver=mutable.value.data?.obj("driver")?.value("id").orEmpty()
         require(driver.isNotBlank())
         java.util.UUID.fromString(request)
-        val jpeg=receipt?.let {DriverEvidence.jpeg(it)}
+        val jpeg=receipt?.let {DriverEvidence.jpegAsync(it)}
         val path=jpeg?.let {"$delivery/receipt-$request.jpg"}
         fun current()=version==generation && client.auth.currentUserOrNull()?.id==uid
         val bucket=client.storage.from("delivery-documents")
