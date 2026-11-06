@@ -60,12 +60,15 @@
 * **Reference Docs:** `docs/BACKLOG.md` (#28), `docs/FEATURES.md` (#28), `MISSING_FEATURES_AUDIT.md` (E05)
 
 #### Implementation Summary
-- `MobileErrorClassifier.kt`: Pure-Kotlin classifier isolating `NETWORK` (socket/host timeouts, connection aborts), `AUTH` (401/403, JWT expiration, inactive account), `CONTRACT` (SerializationException, 500/502/503), and `VALIDATION` errors with sanitized friendly messages.
-- `WorkspaceNetworkMonitor.kt`: Reactive network state flow leveraging `ConnectivityManager.NetworkCallback` with `NET_CAPABILITY_INTERNET` and `NET_CAPABILITY_VALIDATED`.
+- `WorkspaceAutoRefreshRules.kt`: Pure-Kotlin decision matrix isolating background refresh outcomes (`MarkOffline`, `AccessRevoked`, `SessionExpired`, `ServerUnavailable`, `Ignore`) and auto-refresh preconditions (`shouldAutoRefresh`).
+- `MobileErrorClassifier.kt`: Typed exception integration (`RestException`, `UnauthorizedRestException`, `PostgrestRestException`, `AuthRestException`, `HttpRequestException`, `HttpRequestTimeoutException`, `TimeoutCancellationException`), HTTP status code regex boundary matching (`\b(401|403)\b`, `\b(500|502|503|504)\b`) preventing false positives on domain errors with numbers (e.g. `ARRIVAL_TOO_FAR 1500m`, `CAPACITY_EXCEEDED 5000kg`, UUIDs), excluding `statement timeout` from network transport classification, and prioritizing transport network errors over URL keyword matching (e.g. `/otp` network failures).
+- `WorkspaceNetworkMonitor.kt`: Uses `registerDefaultNetworkCallback` for tracking the system default active network, added `ACCESS_NETWORK_STATE` permission in `AndroidManifest.xml`, safely guarded capability checks with `runCatching`, and validated network capabilities before declaring online.
 - `MobileWorkspaceViewModel.kt`:
   - `backgroundRefresh()` and `refresh()` only set `state.offline = true` on genuine transport failures.
-  - Reactive reconnection listener: when `isOnline` transitions to `true` and the workspace is currently `offline`, it automatically triggers a debounced refresh without requiring manual user button clicks.
-  - Manual refresh fallback remains intact.
+  - Background refresh notifies server unavailable errors without clearing cached data.
+  - Handles session restoration when `currentUserOrNull()` is null during background reconnect.
+  - Reactive reconnection listener: leverages `collectLatest` for debouncing, waits if an operation is briefly busy, and auto-refreshes when reconnecting.
+- **Unit Tests:** `MobileErrorClassifierTest.kt` expanded with number false positive guards, typed exceptions, statement timeout checks, null safety, and domain error message assertions. `WorkspaceAutoRefreshRulesTest.kt` verifying all background outcomes and auto-refresh guards.
 - **Testing Required:** Physical phone or emulator run: toggle Airplane Mode ON -> verify offline notice; toggle Airplane Mode OFF -> verify app automatically reconnects and dismisses offline state.
 
 ---

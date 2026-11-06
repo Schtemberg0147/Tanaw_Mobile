@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +26,10 @@ open class WorkspaceNetworkMonitor @Inject constructor(
 
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                trySend(true)
+                val caps = runCatching { connectivityManager.getNetworkCapabilities(network) }.getOrNull()
+                val isOnline = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                trySend(isOnline)
             }
 
             override fun onLost(network: Network) {
@@ -44,20 +46,19 @@ open class WorkspaceNetworkMonitor @Inject constructor(
             }
         }
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
+        val initialOnline = runCatching {
+            val active = connectivityManager.activeNetwork
+            val caps = active?.let { connectivityManager.getNetworkCapabilities(it) }
+            caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }.getOrDefault(true)
+        trySend(initialOnline)
 
         try {
-            connectivityManager.registerNetworkCallback(request, callback)
+            connectivityManager.registerDefaultNetworkCallback(callback)
         } catch (_: Exception) {
             trySend(true)
         }
-
-        val initialCapabilities = connectivityManager.activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
-        val isInitiallyOnline = initialCapabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                initialCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        trySend(isInitiallyOnline)
 
         awaitClose {
             try {

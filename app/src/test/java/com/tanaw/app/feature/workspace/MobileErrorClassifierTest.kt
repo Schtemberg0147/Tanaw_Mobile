@@ -1,5 +1,8 @@
 package com.tanaw.app.feature.workspace
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.*
 import org.junit.Test
@@ -27,7 +30,51 @@ class MobileErrorClassifierTest {
         assertTrue(MobileErrorClassifier.isNetworkError(IOException("connect timed out")))
         assertTrue(MobileErrorClassifier.isNetworkError(RuntimeException("Wrapped", UnknownHostException())))
 
+        val timeoutCancellation = runBlocking {
+            runCatching {
+                withTimeout(1) {
+                    delay(50)
+                }
+            }.exceptionOrNull()!!
+        }
+        assertTrue(MobileErrorClassifier.isNetworkError(timeoutCancellation))
+
         assertEquals(ErrorCategory.NETWORK, MobileErrorClassifier.classify(UnknownHostException()))
+    }
+
+    @Test
+    fun databaseStatementTimeoutIsNotNetworkError() {
+        assertFalse(MobileErrorClassifier.isNetworkError(Exception("canceling statement due to statement timeout")))
+        assertFalse(MobileErrorClassifier.isNetworkError(Exception("statement timeout on query")))
+    }
+
+    @Test
+    fun numbersInBusinessErrorsAreNotContractOrAuthErrors() {
+        // 1500 meters contains "500", but it is a domain validation error, not a 500 server error
+        val arrivalError = IllegalArgumentException("ARRIVAL_TOO_FAR: Distance 1500 meters exceeds threshold")
+        assertFalse(MobileErrorClassifier.isContractError(arrivalError))
+        assertFalse(MobileErrorClassifier.isAuthError(arrivalError))
+        assertEquals(ErrorCategory.VALIDATION, MobileErrorClassifier.classify(arrivalError))
+        assertEquals(
+            "Move within the pickup arrival radius and use a fresh accurate location.",
+            MobileErrorClassifier.friendlyMessage(arrivalError)
+        )
+
+        // 5000 kg contains "500", but it is a domain validation error
+        val capacityError = IllegalStateException("CAPACITY_EXCEEDED: 5000 kg exceeds vehicle limit")
+        assertFalse(MobileErrorClassifier.isContractError(capacityError))
+        assertFalse(MobileErrorClassifier.isAuthError(capacityError))
+        assertEquals(ErrorCategory.VALIDATION, MobileErrorClassifier.classify(capacityError))
+        assertEquals(
+            "Cargo exceeds registered vehicle capacity. Choose another type or contact the office.",
+            MobileErrorClassifier.friendlyMessage(capacityError)
+        )
+
+        // UUID containing 401 or 500
+        val uuidError = Exception("Record 1401b500-1111-2222-3333-444455556666 not found")
+        assertFalse(MobileErrorClassifier.isAuthError(uuidError))
+        assertFalse(MobileErrorClassifier.isContractError(uuidError))
+        assertEquals(ErrorCategory.UNKNOWN, MobileErrorClassifier.classify(uuidError))
     }
 
     @Test
@@ -51,7 +98,9 @@ class MobileErrorClassifierTest {
         assertTrue(MobileErrorClassifier.isContractError(Exception("HTTP 500 Internal Server Error")))
         assertTrue(MobileErrorClassifier.isContractError(Exception("HTTP 502 Bad Gateway")))
         assertTrue(MobileErrorClassifier.isContractError(Exception("HTTP 503 Service Unavailable")))
+        assertTrue(MobileErrorClassifier.isContractError(Exception("HTTP 504 Gateway Timeout")))
         assertTrue(MobileErrorClassifier.isContractError(Exception("PGRST202: Could not find function")))
+        assertTrue(MobileErrorClassifier.isContractError(Exception("PGRST200: Ambiguous function")))
 
         assertEquals(ErrorCategory.CONTRACT, MobileErrorClassifier.classify(SerializationException("Missing field")))
         assertFalse(MobileErrorClassifier.isNetworkError(SerializationException("Missing field")))
@@ -62,6 +111,62 @@ class MobileErrorClassifierTest {
         assertEquals(ErrorCategory.VALIDATION, MobileErrorClassifier.classify(IllegalArgumentException("INVALID_PHONE")))
         assertEquals(ErrorCategory.VALIDATION, MobileErrorClassifier.classify(IllegalStateException("Bad state")))
         assertFalse(MobileErrorClassifier.isNetworkError(IllegalArgumentException("INVALID_PHONE")))
+    }
+
+    @Test
+    fun nullHandlingIsSafe() {
+        assertEquals(ErrorCategory.UNKNOWN, MobileErrorClassifier.classify(null))
+        assertFalse(MobileErrorClassifier.isNetworkError(null))
+        assertFalse(MobileErrorClassifier.isAuthError(null))
+        assertFalse(MobileErrorClassifier.isContractError(null))
+    }
+
+    @Test
+    fun networkFailureOnOtpRequestReturnsConnectionIssueNotInvalidCode() {
+        val netOtpError = IOException("HTTP request to https://supabase.co/auth/v1/otp failed with message: Unable to resolve host")
+        assertTrue(MobileErrorClassifier.isNetworkError(netOtpError))
+        val msg = MobileErrorClassifier.friendlyMessage(netOtpError)
+        assertEquals("Connection issue. Check your network connection and tap Refresh to retry.", msg)
+    }
+
+    @Test
+    fun domainFriendlyMessagesAreExact() {
+        assertEquals(
+            "Move within the pickup arrival radius and use a fresh accurate location.",
+            MobileErrorClassifier.friendlyMessage(Exception("ARRIVAL_TOO_FAR"))
+        )
+        assertEquals(
+            "Cargo exceeds registered vehicle capacity. Choose another type or contact the office.",
+            MobileErrorClassifier.friendlyMessage(Exception("CAPACITY_EXCEEDED"))
+        )
+        assertEquals(
+            "Choose a future departure within the next year.",
+            MobileErrorClassifier.friendlyMessage(Exception("INVALID_DEPARTURE"))
+        )
+        assertEquals(
+            "This request was already saved. Refresh Active shipments before making another request.",
+            MobileErrorClassifier.friendlyMessage(Exception("REQUEST_ALREADY_SAVED_REFRESH"))
+        )
+        assertEquals(
+            "Your customer profile needs office attention before booking.",
+            MobileErrorClassifier.friendlyMessage(Exception("CUSTOMER_PROFILE_REQUIRED"))
+        )
+        assertEquals(
+            "This action is only available during operating hours.",
+            MobileErrorClassifier.friendlyMessage(Exception("OUTSIDE_OPERATING_HOURS"))
+        )
+        assertEquals(
+            "The pickup waiting period has not finished. The office decides any cancellation.",
+            MobileErrorClassifier.friendlyMessage(Exception("WAIT_PERIOD_NOT_FINISHED"))
+        )
+        assertEquals(
+            "This delivery has closed. Refresh its current status.",
+            MobileErrorClassifier.friendlyMessage(Exception("DELIVERY_CLOSED"))
+        )
+        assertEquals(
+            "Too many requests. Please wait before trying again.",
+            MobileErrorClassifier.friendlyMessage(Exception("rate limit exceeded (429)"))
+        )
     }
 
     @Test

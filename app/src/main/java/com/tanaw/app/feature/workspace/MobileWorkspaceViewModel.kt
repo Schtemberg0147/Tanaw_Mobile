@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -119,39 +120,73 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     private suspend fun backgroundRefresh() {
         if(mutable.value.busy || mutable.value.page!="workspace")return
+        val version = generation
         try {
+            if (client.auth.currentUserOrNull() == null && loadedUser != null) {
+                client.auth.loadFromStorage()
+                withTimeout(15.seconds) {
+                    client.auth.sessionStatus.first { it is SessionStatus.Authenticated || it is SessionStatus.NotAuthenticated }
+                }
+                if (client.auth.currentUserOrNull() == null) return
+            }
             load()
             mutable.value.details?.value("shipment_id")?.takeIf(String::isNotBlank)?.let { id ->
-                val version=generation
                 val detailRequest=detailVersion
                 val detail=readDetails(id)
                 if(version==generation && detailRequest==detailVersion && mutable.value.details?.value("shipment_id")==id)mutable.update {it.copy(details=detail)}
             }
-        } catch(cancelled:CancellationException){throw cancelled}
+        } catch(cancelled:CancellationException){
+            if (cancelled is kotlinx.coroutines.TimeoutCancellationException) {
+                mutable.update { it.copy(offline = true) }
+            } else {
+                throw cancelled
+            }
+        }
         catch(error:Exception){
-            when {
-                MobileErrorClassifier.isNetworkError(error) -> {
-                    mutable.update { it.copy(offline=true) }
+            when (val outcome = WorkspaceAutoRefreshRules.evaluateRefreshError(error)) {
+                is BackgroundRefreshOutcome.MarkOffline -> {
+                    mutable.update { it.copy(offline = true) }
                 }
-                MobileErrorClassifier.isAuthError(error) -> {
-                    if (error.message.orEmpty().contains("ACTIVE_")) {
+                is BackgroundRefreshOutcome.AccessRevoked -> {
+                    if (version == generation) {
                         loadedUser?.let { recoveryStore.clear(it) }
                         clearPasswordChallenge()
-                        mutable.update { it.copy(data=null,details=null,proof=null,page="access",passwordChangeOwner=null,passwordChangeCodeSent=false,error=MobileErrorClassifier.friendlyMessage(error)) }
-                    } else {
-                        mutable.update { it.copy(error=MobileErrorClassifier.friendlyMessage(error)) }
+                        mutable.update { it.copy(data=null,details=null,proof=null,page="access",passwordChangeOwner=null,passwordChangeCodeSent=false,error=outcome.message) }
                     }
                 }
-                else -> Unit
+                is BackgroundRefreshOutcome.SessionExpired -> {
+                    if (mutable.value.error != outcome.message) {
+                        mutable.update { it.copy(error = outcome.message) }
+                    }
+                }
+                is BackgroundRefreshOutcome.ServerUnavailable -> {
+                    if (mutable.value.error != outcome.message) {
+                        mutable.update { it.copy(error = outcome.message) }
+                    }
+                }
+                is BackgroundRefreshOutcome.Ignore -> Unit
             }
         }
     }
     init {
         viewModelScope.launch {
-            networkMonitor.isOnline.collect { online ->
+            networkMonitor.isOnline.collectLatest { online ->
                 if (online && mutable.value.page == "workspace" && mutable.value.offline) {
                     delay(1.seconds)
-                    backgroundRefresh()
+                    var attempts = 0
+                    while (mutable.value.busy && attempts < 5) {
+                        delay(500.milliseconds)
+                        attempts++
+                    }
+                    if (WorkspaceAutoRefreshRules.shouldAutoRefresh(
+                            isOnline = true,
+                            page = mutable.value.page,
+                            isOffline = mutable.value.offline,
+                            isBusy = mutable.value.busy
+                        )
+                    ) {
+                        backgroundRefresh()
+                    }
                 }
             }
         }
