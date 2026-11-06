@@ -28,7 +28,7 @@ Type: `client` = Android code only | `backend?` = may need backend change, check
 | C03 | Add Barangay and province to customer addresses | #7, #9 | backend? | Likely new fields in profile/booking RPCs |
 | C05 | Verify changes to login/SMS phone number | #3, #7 | backend? | OTP flow, TextBee gateway |
 | [x] C06 | Tracking freshness; separate scheduled arrival from live ETA | #11, #17 | client + backend? | Done (`feat/C06-tracking-freshness-live-eta`). Distinct Emerald Green vehicle marker with inner truck badge in `ShipmentMap.kt` (`shipment-pin-Vehicle`). Evaluated position freshness (`evaluatePositionFreshness`) and ETA presentation (`customerEtaSummary`) in `TrackingFreshnessRules.kt`. Resilient customer routing fetch in `MobileWorkspaceViewModel.kt` (`readDetails`). Dedicated Arrival & Tracking Freshness section in `MobileWorkspaceApp.kt` (`ShipmentDetails`) backed by 15s clock tick separating Scheduled Arrival (office plan) from Live ETA and GPS Freshness badge. |
-| D07 | Open recovery links directly in the app | #6 | client + config | Manifest `VIEW`/`BROWSABLE` filter + Supabase redirect URL settings |
+| [x] D07 | Open recovery links directly in the app | #6 | client + config | Done (`feat/D07-recovery-deeplink-callback`). Manifest `singleTask` with `VIEW`/`BROWSABLE` filter for `tanaw://auth/callback`. Pure-Kotlin `DeepLinkParser.kt` extracts OTP tokens (`token_hash`/`token`), implicit fragment sessions (`access_token`/`refresh_token`), and error responses with untrusted origin rejection. Handled in `MainActivity.kt` (`onNewIntent`) and `MobileWorkspaceViewModel.kt` (`handleDeepLink`), prefilling recoveryCode and auto-transitioning to password reset or signup verification. Documented Supabase Redirect URL in `README.md`. |
 | C12 | Small-screen layouts, keyboards, accessibility, field errors | cross-cutting | client | Do screen by screen, not in one pass |
 
 ## Wave 3: optional additions (need backend work first)
@@ -58,6 +58,14 @@ Bugs found here may change Wave 1/2 priorities.
 | D08 | Publish approved company policies and support contacts | Set in `system_settings`; app already shows "unpublished" notices |
 
 ## Working rules for backlog items
-- One item per branch, named by ID (e.g. `feat/D04-image-off-ui-thread`).
-- Plan first (files, acceptance criteria, tests), approve, then implement.
-- When an item is done, update `docs/FEATURES.md` and tick it off here.
+- **Single Active Working Branch (`JBranch`):** All active development takes place directly on `JBranch`. Do not create or switch to isolated feature branches (`feat/...`).
+- **Multi-Agent Concurrency:** Multiple agents can work simultaneously in parallel conversation threads by following the file partitioning matrix and concurrency protocol in `docs/WAVE2_IMPLEMENTATION_PLAN.md`:
+  - *Domain Isolation First:* Implement domain logic, policies, and pure-Kotlin unit tests in new, isolated files (e.g., `*Rules.kt`, `*Policy.kt`, `*Test.kt`) to prevent any file collision with concurrent agents.
+  - *Surgical Integration:* Read shared orchestrator files (`MobileWorkspaceViewModel.kt`, `MobileWorkspaceApp.kt`, `MainActivity.kt`, `AndroidManifest.xml`) immediately before editing, and apply small, non-contiguous replacements. Never overwrite entire shared files.
+- **Plan & Verification Gate:** Follow the approved plan (`docs/WAVE2_IMPLEMENTATION_PLAN.md`). Before committing, run:
+  - `./gradlew testDebugUnitTest`
+  - `./gradlew assembleDebug`
+  - `./gradlew lintDebug`
+- **Atomic Commits & Documentation Sync:**
+  - Commit changes directly to `JBranch` using conventional format: `git commit -m "feat(<ITEM_ID>): <summary>"`.
+  - When an item is done, tick it off here in `docs/BACKLOG.md`, update `docs/FEATURES.md`, and update `docs/WAVE2_IMPLEMENTATION_PLAN.md`.

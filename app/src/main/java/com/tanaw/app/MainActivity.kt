@@ -3,13 +3,16 @@ package com.tanaw.app
 import io.github.jan.supabase.SupabaseClient
 import javax.inject.Inject
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.tanaw.app.feature.workspace.MobileWorkspaceApp
+import com.tanaw.app.feature.workspace.MobileWorkspaceViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -80,10 +83,19 @@ object Routes {
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject lateinit var supabase: SupabaseClient
+    private val viewModel: MobileWorkspaceViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { TanawTheme { MobileWorkspaceApp(hiltViewModel()) } }
+        intent?.dataString?.let { uri -> viewModel.handleDeepLink(uri) }
+        setContent { TanawTheme { MobileWorkspaceApp(viewModel) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.dataString?.let { uri -> viewModel.handleDeepLink(uri) }
     }
 }
 

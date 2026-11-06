@@ -38,4 +38,20 @@ class PublicNavigationTest {
         compose.onNodeWithText("Back to sign in").performClick()
         compose.onAllNodesWithText("Create Account",substring=true).onFirst().assertExists()
     }
+    @Test fun deepLinkRecoveryOpensPasswordResetDirectlyWithToken() {
+        loginReady()
+        val token = "abcdef1234567890abcdef1234567890"
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("tanaw://auth/callback?token_hash=$token&type=recovery"))
+        compose.activityRule.scenario.onActivity { activity ->
+            activity.onNewIntent(intent)
+        }
+        compose.waitUntil(10000) {
+            compose.onAllNodesWithText("Recovery link opened", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Recovery link opened", substring = true).assertExists()
+        compose.onNodeWithText("Reset password").assertExists()
+        compose.onNodeWithText(token).assertExists()
+        compose.onNodeWithText("Back to sign in").performClick()
+        compose.onAllNodesWithText("Create Account", substring = true).onFirst().assertExists()
+    }
 }

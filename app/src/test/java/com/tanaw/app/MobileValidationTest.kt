@@ -8,7 +8,10 @@ class MobileValidationTest {
     @Test fun verificationLinksMustMatchProjectHostPathAndPurpose() {
         val host="test.supabase.co";val token="abcdefghijklmnopqrstuvwxyz12345"
         assertEquals(token,MobileValidation.linkToken("https://$host/auth/v1/verify?token=$token&type=recovery",host,"recovery"))
+        assertEquals(token,MobileValidation.linkToken("tanaw://auth/callback?token_hash=$token&type=recovery",host,"recovery"))
+        assertEquals("session_access_token_12345",MobileValidation.linkToken("tanaw://auth/callback#access_token=session_access_token_12345&refresh_token=refresh123&type=recovery",host,"recovery"))
         assertNull(MobileValidation.linkToken("https://evil.example/auth/v1/verify?token=$token&type=recovery",host,"recovery"))
+        assertNull(MobileValidation.linkToken("tanaw://evil/callback?token_hash=$token&type=recovery",host,"recovery"))
         assertNull(MobileValidation.linkToken("https://$host/auth/v1/verify?token=$token&type=signup",host,"recovery"))
         assertNull(MobileValidation.linkToken("http://$host/auth/v1/verify?token=$token&type=recovery",host,"recovery"))
         assertNull(MobileValidation.linkToken("https://$host/other?token=$token&type=recovery",host,"recovery"))

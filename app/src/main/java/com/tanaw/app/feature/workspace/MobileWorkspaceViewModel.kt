@@ -63,7 +63,16 @@ data class MobileState(val page: String = "loading", val busy: Boolean = false, 
     val proof: Bitmap? = null, val proofTitle: String = "", val offline:Boolean=false, val lastSync:String="",
     val history:JsonObject?=null,val historyLoading:Boolean=false,val historyError:String?=null,
     val conversationUnread:JsonArray?=null,val passwordChangeOwner:String?=null,val passwordChangeCodeSent:Boolean=false,
-    val restoredBookingConfirmation: RestoredBookingConfirmation? = null)
+    val restoredBookingConfirmation: RestoredBookingConfirmation? = null,
+    val recoveryCode: String? = null,
+    val customerShipments: List<JsonObject>? = null,
+    val customerShipmentsLoading: Boolean = false,
+    val customerShipmentsHasMore: Boolean = false,
+    val customerShipmentsError: String? = null,
+    val notificationsPage: List<JsonObject>? = null,
+    val notificationsLoading: Boolean = false,
+    val notificationsHasMore: Boolean = false,
+    val notificationsError: String? = null)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
@@ -478,12 +487,22 @@ class MobileWorkspaceViewModel @Inject constructor(
         verifyEmail(code,"signup",OtpType.Email.SIGNUP)
         load()
     }
-    fun canVerify(raw: String,type: String): Boolean = raw.matches(Regex("[0-9]{6,8}")) || MobileValidation.linkToken(raw,java.net.URI(BuildConfig.SUPABASE_URL).host,type)!=null
+    fun canVerify(raw: String,type: String): Boolean = raw == "session" || raw.matches(Regex("[0-9]{6,8}")) || raw.matches(Regex("[A-Za-z0-9_-]{20,500}")) || MobileValidation.linkToken(raw,java.net.URI(BuildConfig.SUPABASE_URL).host,type)!=null
     private suspend fun verifyEmail(raw: String,type: String,otpType: OtpType.Email) {
-        val hash=MobileValidation.linkToken(raw,java.net.URI(BuildConfig.SUPABASE_URL).host,type)
-        if(hash!=null) client.auth.verifyEmailOtp(type=otpType,tokenHash=hash)
-        else { require(raw.matches(Regex("[0-9]{6,8}")));client.auth.verifyEmailOtp(otpType,mutable.value.email,raw) }
-        require(client.auth.currentUserOrNull()?.email.equals(mutable.value.email,true))
+        val hash = MobileValidation.linkToken(raw, java.net.URI(BuildConfig.SUPABASE_URL).host, type)
+            ?: raw.takeIf { it.matches(Regex("[A-Za-z0-9_-]{20,500}")) }
+        if (hash != null) client.auth.verifyEmailOtp(type = otpType, tokenHash = hash)
+        else {
+            require(raw.matches(Regex("[0-9]{6,8}")))
+            client.auth.verifyEmailOtp(otpType, mutable.value.email, raw)
+        }
+        val currentUserEmail = client.auth.currentUserOrNull()?.email.orEmpty()
+        if (mutable.value.email.isBlank() && currentUserEmail.isNotBlank()) {
+            mutable.update { it.copy(email = currentUserEmail) }
+        }
+        if (mutable.value.email.isNotBlank()) {
+            require(currentUserEmail.equals(mutable.value.email, true))
+        }
     }
     private fun countdown(seconds:Int=60) {
         timer?.cancel()
@@ -520,12 +539,77 @@ class MobileWorkspaceViewModel @Inject constructor(
         if(changeOwner!=null)check(mutable.value.passwordChangeCodeSent && PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         val phone=recoveryPhone
         if(phone!=null) {require(code.matches(Regex("[0-9]{6,8}")));client.auth.verifyPhoneOtp(OtpType.Phone.SMS,phone,code)}
-        else verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
+        else if(code!="session") verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
         if(changeOwner!=null)check(PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         client.auth.updateUser { this.password=password }
         clearPasswordChallenge()
         client.auth.signOut()
         mutable.update { MobileState(page="login",message="Password updated. Sign in with your new password.") }
+    }
+    fun handleDeepLink(rawUri: String) {
+        val host = runCatching { java.net.URI(BuildConfig.SUPABASE_URL).host }.getOrNull().orEmpty()
+        when (val result = DeepLinkParser.parse(rawUri, host)) {
+            is DeepLinkResult.Otp -> {
+                if (result.type.equals("recovery", ignoreCase = true)) {
+                    val changeOwner = mutable.value.passwordChangeOwner
+                    val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, client.auth.currentUserOrNull()?.id)
+                    recoveryPhone = null
+                    val email = result.email ?: mutable.value.email
+                    saveChallenge("recover_code", email)
+                    mutable.update {
+                        it.copy(
+                            page = if (isOwnerChanging) "workspace" else "recover_code",
+                            passwordChangeCodeSent = isOwnerChanging,
+                            email = if (email.isNotBlank()) email else it.email,
+                            recoveryCode = result.tokenHash,
+                            message = "Recovery link opened. Enter and confirm your new password."
+                        )
+                    }
+                } else if (result.type.equals("signup", ignoreCase = true)) {
+                    if (!result.email.isNullOrBlank()) {
+                        mutable.update { it.copy(email = result.email) }
+                    }
+                    verifySignup(rawUri)
+                }
+            }
+            is DeepLinkResult.Session -> {
+                if (result.type.equals("recovery", ignoreCase = true)) {
+                    val changeOwner = mutable.value.passwordChangeOwner
+                    val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, client.auth.currentUserOrNull()?.id)
+                    recoveryPhone = null
+                    viewModelScope.launch {
+                        try {
+                            client.auth.importAuthToken(result.accessToken, result.refreshToken, retrieveUser = true)
+                            val email = client.auth.currentUserOrNull()?.email.orEmpty()
+                            mutable.update {
+                                it.copy(
+                                    page = if (isOwnerChanging) "workspace" else "recover_code",
+                                    passwordChangeCodeSent = isOwnerChanging,
+                                    email = if (email.isNotBlank()) email else it.email,
+                                    recoveryCode = "session",
+                                    message = "Recovery link opened. Enter and confirm your new password."
+                                )
+                            }
+                        } catch (e: Exception) {
+                            mutable.update { it.copy(error = MobileErrorClassifier.friendlyMessage(e)) }
+                        }
+                    }
+                } else if (result.type.equals("signup", ignoreCase = true)) {
+                    viewModelScope.launch {
+                        try {
+                            client.auth.importAuthToken(result.accessToken, result.refreshToken, retrieveUser = true)
+                            load()
+                        } catch (e: Exception) {
+                            mutable.update { it.copy(error = MobileErrorClassifier.friendlyMessage(e)) }
+                        }
+                    }
+                }
+            }
+            is DeepLinkResult.Error -> {
+                mutable.update { it.copy(error = result.description ?: result.error) }
+            }
+            DeepLinkResult.Invalid -> {}
+        }
     }
     fun logout() = operation(allowOffline=true) {
         recoveryStore.clear("challenge")

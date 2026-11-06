@@ -13,7 +13,7 @@
 > ### Architectural & Codebase Rules
 > 1. **Active Path Only:** All executable app code is located under `app/src/main/java/com/tanaw/app/feature/workspace/` and its shared dependencies (`MainActivity.kt`, `feature/auth/{LoginScreen,CreateAccountScreen,GoogleSignIn,GoogleSignInButton}.kt`, `feature/driver/components/AddTripExpenseSheet.kt`, `di/`, `ui/theme/`).
 > 2. **Strict Legacy Screen Quarantine:** Legacy screens (`TanawNavHost`, `feature/booking/*`, `feature/history/*`, `feature/notifications/*`, `feature/profile/*`, `feature/tracking/*`, `feature/driver/*Screen`) are compiled but unreachable. **Never edit, extend, or cite legacy screens.**
-> 3. **Single Responsibility Branches:** Each Wave 2 backlog item (or sub-pass for `C12`) is developed on an isolated feature branch named by its ID (e.g., `feat/C01-paginate-history-alerts`), verified, and merged into `JBranch`.
+> 3. **Single Working Branch (`JBranch`) & Multi-Agent Concurrency Protocol:** All Wave 2 items are developed directly on `JBranch` without creating isolated feature branches. When running multiple agents across separate conversation sessions simultaneously, agents must strictly follow the file partitioning and safe shared-file integration protocol defined in Section 4 to avoid race conditions, clobbering, and merge conflicts.
 > 4. **Backend Rules & `docs/BACKEND-REQUESTS.md`:** Canonical Supabase migrations, RPCs, and Edge Functions live in the external `mabutol-trucking-react` repository. Never invent RPC names on the client. Where an optional or future backend enhancement would improve a Wave 2 module, document the exact SQL / RPC / Edge Function specification in `docs/BACKEND-REQUESTS.md` while keeping the Android client resilient using existing Postgrest RLS queries and graceful fallbacks.
 > 5. **Quality Gate:** Before declaring any item complete:
 >    - Unit tests must pass: `./gradlew testDebugUnitTest`
@@ -41,8 +41,8 @@
 ---
 
 ### Module C06: Tracking Freshness, Separate Scheduled Arrival vs. Live ETA & Distinct Vehicle Pin
-* **Status:** Complete (`feat/C06-tracking-freshness-live-eta`)
-* **Branch:** `feat/C06-tracking-freshness-live-eta`
+* **Status:** Complete (merged directly on `JBranch`)
+* **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C06), `docs/FEATURES.md` (#11, #17), `MISSING_FEATURES_AUDIT.md` (F01, F02)
 
 #### Problem Analysis
@@ -99,7 +99,8 @@
 ---
 
 ### Module D07: Open Recovery Links Directly in the App
-* **Branch:** `feat/D07-recovery-deep-links`
+* **Status:** Complete (merged directly on `JBranch`)
+* **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (D07), `docs/FEATURES.md` (#6), `MISSING_FEATURES_AUDIT.md` (S10)
 
 #### Problem Analysis
@@ -149,7 +150,8 @@
 ---
 
 ### Module C03: Add Barangay and Province to Customer Addresses
-* **Branch:** `feat/C03-customer-barangay-province`
+* **Status:** Ready for Implementation
+* **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C03), `docs/FEATURES.md` (#7, #9)
 
 #### Problem Analysis
@@ -205,7 +207,8 @@
 ---
 
 ### Module C01: Paginate History and Alerts; Search Beyond Latest 200 Shipments
-* **Branch:** `feat/C01-paginate-history-alerts`
+* **Status:** Ready for Implementation
+* **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C01), `docs/FEATURES.md` (#11, #13)
 
 #### Problem Analysis
@@ -263,7 +266,8 @@
 ---
 
 ### Module C05: Verify Changes to Login/SMS Phone Number
-* **Branch:** `feat/C05-verify-phone-change`
+* **Status:** Ready for Implementation
+* **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C05), `docs/FEATURES.md` (#3, #7), `TEXTBEE_SETUP.md`
 
 #### Problem Analysis
@@ -318,7 +322,9 @@
 ---
 
 ### Module C12: Small-Screen Layouts, Keyboards, Accessibility & Field Errors
-* **Branch Strategy:** Execute screen-by-screen in 4 focused sub-branches (`feat/C12a-auth-ux-a11y`, `feat/C12b-customer-booking-ux-a11y`, `feat/C12c-customer-profile-history-ux-a11y`, `feat/C12d-driver-workspace-ux-a11y`) as required by `docs/BACKLOG.md` (*"Do screen by screen, not in one pass"*).
+* **Status:** Ready for Implementation
+* **Target Branch:** `JBranch`
+* **Execution Strategy:** Execute screen-by-screen in 4 focused passes directly on `JBranch` (C12a Auth & Recovery, C12b Booking & Tracking, C12c Profile & History/Alerts, C12d Driver Workspace) as required by `docs/BACKLOG.md` (*"Do screen by screen, not in one pass"*).
 * **Reference Docs:** `docs/BACKLOG.md` (C12)
 
 #### Screen-by-Screen Implementation Breakdown
@@ -370,24 +376,95 @@
 
 ---
 
-## 4. Execution Workflow for Wave 2 Sessions
+## 4. Execution Workflow for Simultaneous Multi-Agent Sessions on `JBranch`
 
-When implementing any Wave 2 item from this plan:
-1. Checkout `JBranch` and create the item's dedicated branch:
+To maximize delivery velocity without branch-switching friction, all work across Wave 2 proceeds directly on **a single branch (`JBranch`)**. Multiple agents operating concurrently in separate conversations with different context windows can work simultaneously without stepping on each other by following this multi-agent concurrency protocol.
+
+---
+
+### 4.1 File Ownership & Concurrency Matrix
+
+Before launching an agent on a specific module, check its file footprint. Modules with **disjoint file footprints** can be executed simultaneously in parallel agent conversations with zero risk of collision.
+
+| Module | Exclusively Owned Files (Zero Collision Risk) | Shared Integration Files (Surgical Touchpoints) | Safe Parallel Pairings |
+|:---|:---|:---|:---|
+| **D07** | `feature/workspace/DeepLinkParser.kt`<br>`test/.../DeepLinkParserTest.kt` | `app/src/main/AndroidManifest.xml`<br>`MainActivity.kt`<br>`MobileValidation.kt`<br>`MobileWorkspaceViewModel.kt` (`handleDeepLink` only) | Can run concurrently with **C03**, **C01**, or **C12d** |
+| **C03** | `feature/workspace/CustomerAddressRules.kt`<br>`test/.../CustomerAddressRulesTest.kt`<br>`docs/BACKEND-REQUESTS.md` | `CustomerProfile.kt`<br>`CustomerBookingFlow.kt`<br>`BookingDraftStore.kt`<br>`CreateAccountScreen.kt`<br>`MobileWorkspaceApp.kt` (`ProfileForm` only) | Can run concurrently with **D07**, **C01**, or **C12d** |
+| **C01** | `feature/workspace/CustomerPaginationRules.kt`<br>`test/.../CustomerPaginationRulesTest.kt` | `MobileState.kt`<br>`MobileWorkspaceViewModel.kt` (`loadCustomerShipments`, `loadNotifications`)<br>`MobileWorkspaceApp.kt` (`Active`/`History`/`Alerts` lists) | Can run concurrently with **D07**, **C03**, or **C12a** |
+| **C05** | `feature/workspace/PhoneChangePolicy.kt`<br>`test/.../PhoneChangePolicyTest.kt`<br>`feature/workspace/PhoneChangeDialog.kt` | `MobileState.kt`<br>`MobileWorkspaceViewModel.kt` (`profile`, `requestPhoneChange`, `verifyPhoneChange`)<br>`CustomerProfile.kt` | Can run concurrently with **D07**, **C12b**, or **C12d** |
+| **C12a** (Auth UX) | `feature/auth/LoginScreen.kt`<br>`feature/auth/CreateAccountScreen.kt`<br>`feature/workspace/PasswordChangeDialog.kt` | `MobileWorkspaceApp.kt` (auth sub-pages: `verify_phone`, `recover`, `recover_code`) | Can run concurrently with **C01**, **C06**, or **C12d** |
+| **C12b** (Booking UX) | `feature/workspace/CustomerBookingFlow.kt` | `feature/workspace/ShipmentMap.kt` | Can run concurrently with **D07**, **C05**, or **C12d** |
+| **C12c** (Profile UX) | `feature/workspace/CustomerProfile.kt` | `MobileWorkspaceApp.kt` (Customer bottom nav & filter chips) | Can run concurrently with **D07** or **C12d** |
+| **C12d** (Driver UX) | `feature/driver/DriverWorkspace.kt`<br>`feature/driver/DriverFlowDialogs.kt`<br>`feature/driver/DriverFuelForm.kt`<br>`feature/driver/DriverConversation.kt`<br>`feature/driver/components/AddTripExpenseSheet.kt` | None (Driver workspace files are independent of customer workspace files) | Can run concurrently with **D07**, **C03**, **C01**, **C05**, **C12a**, or **C12b** |
+
+---
+
+### 4.2 Recommended Simultaneous Agent Pairings
+
+When running 2 or more agent conversations at the same time:
+* **Pairing Option 1 (System / Auth + Domain Logic):**
+  - **Agent 1:** Module **D07** (Deep-link intent filter, URI parser, recovery tokens).
+  - **Agent 2:** Module **C03** (Structured address rules, profile form, and booking prefill).
+* **Pairing Option 2 (Data / Postgrest + Driver UX):**
+  - **Agent 1:** Module **C01** (Postgrest pagination & query limits for Customer History/Alerts).
+  - **Agent 2:** Module **C12d** (Driver Workspace small-screen layouts, forms, and accessibility).
+* **Pairing Option 3 (Auth Verification + Customer Booking UX):**
+  - **Agent 1:** Module **C05** (Phone change OTP flow and recovery challenge).
+  - **Agent 2:** Module **C12b** (Customer Booking wizard responsiveness & weight validation).
+
+---
+
+### 4.3 Standard 5-Phase Agent Execution Protocol on `JBranch`
+
+Every agent in each conversation thread must execute its assigned module using the following 5 phases:
+
+#### Phase 1: Workspace Ingestion & Branch Validation
+1. Verify the current active branch is `JBranch`:
+   - Never run `git checkout -b` or create new branches.
+   - All commits and edits belong directly on `JBranch`.
+2. Inspect the latest git status to ensure working directory is clean or only has uncommitted changes from complementary work.
+
+#### Phase 2: Domain Isolation First (Exclusive Files)
+1. Implement the feature's core logic inside its **dedicated, isolated helper/rules/policy file** (e.g., `DeepLinkParser.kt`, `CustomerAddressRules.kt`, `CustomerPaginationRules.kt`, `PhoneChangePolicy.kt`).
+2. Implement corresponding pure-Kotlin unit tests (e.g., `DeepLinkParserTest.kt`, `CustomerAddressRulesTest.kt`, etc.).
+3. Verify the isolated logic immediately using fast targeted unit tests:
    ```bash
-   git checkout JBranch
-   git checkout -b feat/<ITEM_ID>-<slug>
+   ./gradlew testDebugUnitTest --tests "com.tanaw.app.feature.workspace.<RuleOrPolicyTest>"
    ```
-2. Implement the module following the exact file scope and instructions in Section 3.
-3. Run the verification suite:
+   *Benefit:* Because these files are brand new and exclusive to the item, concurrent agents can write and test their domain rules without any possibility of file collisions.
+
+#### Phase 3: Safe Surgical Shared-File Integration (Anti-Collision Protocol)
+When wiring the isolated rules into shared orchestrator files (`MobileWorkspaceViewModel.kt`, `MobileWorkspaceApp.kt`, `MainActivity.kt`, or `AndroidManifest.xml`):
+1. **Fresh Read Before Write:** Always invoke `studio_read_file` immediately before applying changes. Do not rely on stale line numbers from earlier in the conversation, as another concurrent agent might have inserted lines in a different section of the file.
+2. **Surgical, Non-Contiguous Chunks:** Use `studio_replace_file_content` (or `studio_multi_replace_file_content`) with precise, minimal target lines and line bounds (`startLine`/`endLine`). **NEVER** use `write_file` to replace the entirety of `MobileWorkspaceViewModel.kt` or `MobileWorkspaceApp.kt`.
+3. **Dedicated Extension Functions or Methods:** Where practical, place large blocks of feature-specific ViewModel logic into dedicated functions or private helpers within the ViewModel rather than inlining large blocks inside existing shared routines.
+
+#### Phase 4: Unified Verification Gate
+Before declaring the item done, run the full verification suite from the terminal or Gradle tool:
+```bash
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+./gradlew lintDebug
+```
+*Note:* If another agent just touched a file and broke a test, the compiler or test runner will catch it immediately before any commit is finalized.
+
+#### Phase 5: Atomic Commit & Status Sync on `JBranch`
+1. Commit the item's changes directly to `JBranch` using conventional commits:
    ```bash
-   ./gradlew testDebugUnitTest
-   ./gradlew assembleDebug
-   ./gradlew lintDebug
+   git add <modified-files>
+   git commit -m "feat(<ITEM_ID>): <concise summary of changes>"
    ```
-4. Update `docs/BACKLOG.md` (mark item `[x]`), `docs/FEATURES.md`, and this plan (`docs/WAVE2_IMPLEMENTATION_PLAN.md`).
-5. Merge into `JBranch`:
-   ```bash
-   git checkout JBranch
-   git merge feat/<ITEM_ID>-<slug> --no-edit
-   ```
+2. Update the tracking documentation:
+   - In `docs/BACKLOG.md`: mark the item `[x]` with completion notes.
+   - In `docs/FEATURES.md`: update status row.
+   - In `docs/WAVE2_IMPLEMENTATION_PLAN.md`: update the module status to `Complete`.
+
+---
+
+### 4.4 Conflict Resolution & Concurrency Guardrails
+
+1. **IDE Safety Feature Rejections:**
+   - If `studio_replace_file_content` reports an optimistic lock error (e.g., file was modified outside or by another agent since last read), treat it as a standard safety signal: call `studio_read_file` to inspect the updated content, recalculate line offsets, and re-apply.
+   - **STRICT PROHIBITION:** Never bypass this check by using shell commands (`sed`, `cat << EOF`, `echo >`, `python`) to overwrite files.
+2. **Sequential Queue for Shared Files:**
+   - If two agents are scheduled to make modifications to `MobileWorkspaceViewModel.kt` (e.g. C01 and C05), complete Phase 3 integration for the first agent before beginning Phase 3 integration for the second agent, while keeping their Phase 2 domain rules running in parallel.

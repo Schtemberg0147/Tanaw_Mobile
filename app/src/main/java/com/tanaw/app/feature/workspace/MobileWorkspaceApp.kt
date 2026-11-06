@@ -21,8 +21,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.feature.auth.LoginScreen
@@ -67,6 +73,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         BackHandler(state.page in listOf("verify","verify_phone","recover","recover_code")) {
             if(!state.busy) vm.page("login")
         }
+        val focusManager = LocalFocusManager.current
         FormPage("Tanaw") {
             Notices(state)
             if(state.offline) SupportingText("Offline or reconnecting · showing the last loaded records. Tap Refresh to retry.")
@@ -75,34 +82,102 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                 "verify" -> {
                     Text("Verify your email",style=MaterialTheme.typography.headlineSmall)
                     Text("Check ${state.email}. Enter the email verification code or paste its original confirmation link. Phone verification is not required.")
-                    var code by remember { mutableStateOf("") }
-                    Field("Email code or confirmation link",code,{code=it.trim()})
-                    Action("Verify email",!state.busy && vm.canVerify(code,"signup")) { vm.verifySignup(code) }
+                    var code by remember(state.recoveryCode) { mutableStateOf(state.recoveryCode.orEmpty()) }
+                    val canVerify = vm.canVerify(code,"signup")
+                    val isCodeError = code.isNotBlank() && !canVerify
+                    Field(
+                        label = "Email code or confirmation link",
+                        value = code,
+                        change = { code = it.trim() },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { if (!state.busy && canVerify) vm.verifySignup(code) }),
+                        isError = isCodeError,
+                        supportingText = if (isCodeError) { { Text("Enter a valid verification code or link.") } } else null
+                    )
+                    Action("Verify email",!state.busy && canVerify) { vm.verifySignup(code) }
                     Action(if(state.resendSeconds>0) "Resend in ${state.resendSeconds}s" else "Resend email",!state.busy && state.resendSeconds==0,vm::resend)
                 }
                 "verify_phone" -> {
                     Text("Verify your phone",style=MaterialTheme.typography.headlineSmall)
                     Text("Enter the code sent by SMS to the number you registered. Codes expire; request a new one if needed.")
                     var code by remember {mutableStateOf("")}
-                    Field("SMS verification code",code,{code=it.trim()})
-                    Action("Verify phone",!state.busy && code.matches(Regex("[0-9]{6,8}"))) {vm.verifyPhoneSignup(code)}
+                    val codeValid = code.matches(Regex("[0-9]{6,8}"))
+                    val isCodeError = code.isNotBlank() && !codeValid
+                    Field(
+                        label = "SMS verification code",
+                        value = code,
+                        change = { code = it.trim() },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { if (!state.busy && codeValid) vm.verifyPhoneSignup(code) }),
+                        isError = isCodeError,
+                        supportingText = if (isCodeError) { { Text("Enter a 6-digit verification code.") } } else null
+                    )
+                    Action("Verify phone",!state.busy && codeValid) {vm.verifyPhoneSignup(code)}
                     Action(if(state.resendSeconds>0) "Resend in ${state.resendSeconds}s" else "Resend SMS",!state.busy && state.resendSeconds==0,vm::resendPhoneSignup)
                 }
                 "recover","recover_code" -> {
                     Text("Reset password",style=MaterialTheme.typography.headlineSmall)
                     var email by remember { mutableStateOf(state.email) }
-                    Field("Account phone number or email",email,{email=it})
-                    Action("Request recovery code",!state.busy && state.resendSeconds==0 && (MobileValidation.email(email) || MobileValidation.phone(email)!=null)) { vm.resetEmail(email) }
+                    val recoveryValid = MobileValidation.email(email) || MobileValidation.phone(email) != null
+                    val isRecoveryError = email.isNotBlank() && !recoveryValid
+                    Field(
+                        label = "Account phone number or email",
+                        value = email,
+                        change = { email = it },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = if (state.page == "recover_code") ImeAction.Next else ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Down) },
+                            onDone = { if (!state.busy && state.resendSeconds == 0 && recoveryValid) vm.resetEmail(email) }
+                        ),
+                        isError = isRecoveryError,
+                        supportingText = if (isRecoveryError) { { Text("Enter a valid email address or Philippine mobile number.") } } else null
+                    )
+                    Action("Request recovery code",!state.busy && state.resendSeconds==0 && recoveryValid) { vm.resetEmail(email) }
                     if(state.resendSeconds>0)Text("Request another code in ${state.resendSeconds}s")
                     if(state.page=="recover_code") {
                         Text("Recovery requested for ${state.email}")
-                        var code by remember { mutableStateOf("") }
+                        var code by remember(state.recoveryCode) { mutableStateOf(state.recoveryCode.orEmpty()) }
                         var password by remember { mutableStateOf("") }
                         var confirm by remember { mutableStateOf("") }
-                        Field("Recovery code (or original email link)",code,{code=it.trim()})
-                        Field("New password (8+ characters)",password,{password=it},true)
-                        Field("Confirm new password",confirm,{confirm=it},true)
-                        Action("Update password",!state.busy && vm.canVerify(code,"recovery") && MobileValidation.password(password,confirm)) { vm.recover(code,password,confirm) }
+                        val codeValid = vm.canVerify(code, "recovery")
+                        val isCodeError = code.isNotBlank() && !codeValid
+                        val passwordTooShort = password.isNotEmpty() && password.length < 8
+                        val passwordMismatch = confirm.isNotEmpty() && password != confirm
+                        val canUpdatePassword = !state.busy && codeValid && MobileValidation.password(password, confirm)
+
+                        Field(
+                            label = "Recovery code (or original email link)",
+                            value = code,
+                            change = { code = it.trim() },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                            isError = isCodeError,
+                            supportingText = if (isCodeError) { { Text("Enter a valid recovery code or confirmation link.") } } else null
+                        )
+                        Field(
+                            label = "New password (8+ characters)",
+                            value = password,
+                            change = { password = it },
+                            secret = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                            isError = passwordTooShort,
+                            supportingText = if (passwordTooShort) { { Text("Password must be at least 8 characters.") } } else null
+                        )
+                        Field(
+                            label = "Confirm new password",
+                            value = confirm,
+                            change = { confirm = it },
+                            secret = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { if (canUpdatePassword) vm.recover(code, password, confirm) }),
+                            isError = passwordMismatch,
+                            supportingText = if (passwordMismatch) { { Text("Passwords do not match.") } } else null
+                        )
+                        Action("Update password", canUpdatePassword) { vm.recover(code, password, confirm) }
                     }
                 }
                 else -> { Text("Account access needs attention.");Action("Retry",!state.busy,vm::refresh);Action("Sign out",!state.busy,vm::logout) }
@@ -371,16 +446,39 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
 
 @Composable private fun ProfileForm(vm:MobileWorkspaceViewModel,state:MobileState,data:JsonObject) {
     val p=data.obj("profile");val c=data.obj("customer")
+    val initialAddr = remember(c) {
+        CustomerAddressRules.parseFromSaved(
+            rawAddress = c.value("address"),
+            rawCity = c.value("city"),
+            explicitBarangay = c.value("barangay"),
+            explicitProvince = c.value("province")
+        )
+    }
     var name by rememberSaveable(p.value("full_name")){mutableStateOf(p.value("full_name"))}
     var phone by rememberSaveable(p.value("phone")){mutableStateOf(p.value("phone"))}
-    var address by rememberSaveable(c.value("address")){mutableStateOf(c.value("address"))}
-    var city by rememberSaveable(c.value("city")){mutableStateOf(c.value("city"))}
+    var street by rememberSaveable(initialAddr.streetAddress){mutableStateOf(initialAddr.streetAddress)}
+    var barangay by rememberSaveable(initialAddr.barangay){mutableStateOf(initialAddr.barangay)}
+    var city by rememberSaveable(initialAddr.city){mutableStateOf(initialAddr.city)}
+    var province by rememberSaveable(initialAddr.province){mutableStateOf(initialAddr.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION })}
     Text("Your profile",style=MaterialTheme.typography.headlineSmall)
     Text(if(p.value("email").isNotBlank()) "Sign-in email: ${p.value("email")}" else "Phone-number account")
     Field("Full name",name,{name=it})
     Field("Phone",phone,{phone=it})
-    if(p.value("role")=="customer") { Field("Address",address,{address=it});Field("City",city,{city=it}) }
-    Action("Save profile",!state.busy && name.trim().length in 2..200 && MobileValidation.phone(phone)!=null && address.length<=500 && city.length<=100){vm.profile(name,phone,address,city)}
+    if(p.value("role")=="customer") {
+        Field("House / Street address",street,{street=it})
+        Field("Barangay",barangay,{barangay=it})
+        Field("City / Municipality",city,{city=it})
+        Field("Province",province,{province=it})
+    }
+    val addressValid = p.value("role") != "customer" || CustomerAddressRules.isValidAddress(street, barangay, city, province)
+    Action("Save profile",!state.busy && name.trim().length in 2..200 && MobileValidation.phone(phone)!=null && addressValid){
+        val (formattedAddress, formattedCity) = if (p.value("role") == "customer") {
+            CustomerAddressRules.formatForRpc(street, barangay, city, province)
+        } else {
+            Pair("", "")
+        }
+        vm.profile(name,phone,formattedAddress,formattedCity)
+    }
     if(state.offline)Text("Saved SMS status may be out of date. Reconnect and refresh.")
     Text("Shipment SMS: ${RecoveryPolicy.sms(data, "shipment_status")}")
     Text("Delay SMS: ${RecoveryPolicy.sms(data, "delay")}")
@@ -394,9 +492,29 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     state.error?.let { Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(10.dp)) { Text(it,Modifier.padding(14.dp),color=MaterialTheme.colorScheme.onErrorContainer) } }
     state.message?.let { Surface(color=MaterialTheme.colorScheme.primary.copy(alpha=.08f),shape=RoundedCornerShape(10.dp)) { Text(it,Modifier.padding(14.dp),color=MaterialTheme.colorScheme.primary) } }
 }
-@Composable private fun Field(label:String,value:String,change:(String)->Unit,secret:Boolean=false) {
-    OutlinedTextField(value=value,onValueChange=change,label={Text(label)},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),singleLine=true,shape=RoundedCornerShape(8.dp),
-        visualTransformation=if(secret)PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None)
+@Composable private fun Field(
+    label: String,
+    value: String,
+    change: (String) -> Unit,
+    secret: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    isError: Boolean = false,
+    supportingText: @Composable (() -> Unit)? = null
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = change,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        singleLine = true,
+        shape = RoundedCornerShape(8.dp),
+        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        isError = isError,
+        supportingText = supportingText
+    )
 }
 @Composable private fun Action(label:String,enabled:Boolean,onClick:()->Unit) { Button(onClick=onClick,enabled=enabled,shape=RoundedCornerShape(8.dp),modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(label)} }
 @Composable private fun FormPage(title:String,content:@Composable ColumnScope.()->Unit) {

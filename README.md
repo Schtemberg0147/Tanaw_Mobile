@@ -65,3 +65,11 @@ commands, Gradle properties or version control. Verify phone recovery across
 separate app processes, then password login, driver profile routing and session
 restoration. Google acceptance additionally needs an owned Google account and
 the configuration in GOOGLE_AUTH_SETUP.md.
+
+### Deep-link recovery and redirect URLs
+
+The app registers a `VIEW` / `BROWSABLE` intent filter for `tanaw://auth/callback` on `MainActivity` (`singleTask`). When a recovery link is opened on the device, the app captures the tokens or verification hash directly, transitions to the password update screen, and prefills the code without requiring the user to copy/paste from their email.
+
+To configure this in the Supabase Dashboard:
+1. Navigate to **Authentication → URL Configuration → Redirect URLs**.
+2. Add `tanaw://auth/callback` to the permitted redirect URLs list.
