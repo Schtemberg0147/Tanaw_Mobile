@@ -75,7 +75,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                     {request,body->vm.sendConversation(d.value("id"),request,body,d.value("driver_id"))},
                     {ids->vm.readConversation(d.value("id"),ids)},vm::refresh,d.value("driver_id"),d.value("inbox_open")=="true",
                     d.value("tracking_number").ifBlank {DriverRecordPresentation.shipments(data,state.history).firstOrNull {it.value("id")==d.value("shipment_id")}?.value("tracking_number").orEmpty()})
-            }},vm::previewDriverRoute)
+            }},vm::previewDriverRoute,
+            onLoadNotifications = { more -> vm.loadNotifications(more) })
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(4.dp)) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium)
@@ -97,7 +98,8 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     onClearOffline:(()->Unit)?=null,
     onEvidence:((String,String,String)->Unit)?=null,
     conversation:(@Composable (JsonObject)->Unit)?=null,
-    routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null
+    routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null,
+    onLoadNotifications:((Boolean)->Unit)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf(if(state.passwordChangeOwner!=null)"Profile" else "Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
@@ -233,15 +235,36 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
                 }
                 tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Notifications") {tab="Home"}
-                    if(DriverRecordPresentation.section(data,"notifications") in listOf("error","unavailable")) {
+                    LaunchedEffect(Unit) {
+                        if (state.notificationsPage == null && onLoadNotifications != null) {
+                            onLoadNotifications(false)
+                        }
+                    }
+                    val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
+                    if(state.notificationsLoading && state.notificationsPage == null) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    if(state.notificationsError != null) {
+                        DriverNotice(state.notificationsError!!, true)
+                    }
+                    if(DriverRecordPresentation.section(data,"notifications") in listOf("error","unavailable") && displayedNotifications.isEmpty()) {
                         DriverNotice("Notifications unavailable. Refresh to retry.",true)
                         TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry notifications")}
-                    } else if(data.rows("notifications").isEmpty())Text("No notifications yet.")
-                    data.rows("notifications").forEach {n->DriverCard {
+                    } else if(displayedNotifications.isEmpty() && !state.notificationsLoading)Text("No notifications yet.")
+                    displayedNotifications.forEach {n->DriverCard {
                         Text(n.value("title"),fontWeight=FontWeight.Bold);SupportingText(n.value("body"));SupportingText(MobilePresentation.time(n.value("created_at")))
                         if(n.value("read_at").isBlank())TextButton(onClick={onRead(n.value("id"))},enabled=!state.busy){Text("Mark read")}
                         if(shipments.any {it.value("id")==n.value("shipment_id")})TextButton(onClick={selected=n.value("shipment_id");tab="Trips"}){Text("Open trip")}
                     }}
+                    if(state.notificationsHasMore && onLoadNotifications != null) {
+                        OutlinedButton(
+                            onClick = { onLoadNotifications(true) },
+                            enabled = !state.notificationsLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if(state.notificationsLoading) "Loading more notifications..." else "Load more notifications")
+                        }
+                    }
                 }
             }
         }

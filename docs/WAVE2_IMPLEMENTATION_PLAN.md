@@ -207,7 +207,7 @@
 ---
 
 ### Module C01: Paginate History and Alerts; Search Beyond Latest 200 Shipments
-* **Status:** Ready for Implementation
+* **Status:** Complete (merged directly on `JBranch`)
 * **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C01), `docs/FEATURES.md` (#11, #13)
 

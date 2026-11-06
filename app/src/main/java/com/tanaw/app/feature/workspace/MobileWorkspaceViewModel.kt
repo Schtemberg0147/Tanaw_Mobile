@@ -105,7 +105,11 @@ class MobileWorkspaceViewModel @Inject constructor(
     private var liveJob:Job?=null
     private var pollJob:Job?=null
     private var historyVersion=0
-    private fun stopLive() {liveJob?.cancel();pollJob?.cancel();TripTrackingService.stop(context)}
+    private var customerShipmentsJob: Job? = null
+    private var customerShipmentsVersion = 0
+    private var notificationsJob: Job? = null
+    private var notificationsVersion = 0
+    private fun stopLive() {liveJob?.cancel();pollJob?.cancel();customerShipmentsJob?.cancel();notificationsJob?.cancel();TripTrackingService.stop(context)}
     private fun startLive(uid:String) {
         liveJob?.cancel();pollJob?.cancel()
         pollJob=viewModelScope.launch {while(true){delay(30.seconds);backgroundRefresh()}}
@@ -378,6 +382,173 @@ class MobileWorkspaceViewModel @Inject constructor(
                         historyError=if(changed)"Trip records changed. History restarted with current totals; load more to continue." else null)}
             }catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){if(version==historyVersion && accountVersion==generation)mutable.update {it.copy(historyLoading=false,historyError="Could not load complete trip history. Reconnect and retry.")}}
+        }
+    }
+    fun loadCustomerShipments(tab: String, statusFilter: String, query: String, loadMore: Boolean = false) {
+        val uid = client.auth.currentUserOrNull()?.id ?: return
+        val version = ++customerShipmentsVersion
+        val accountVersion = generation
+        customerShipmentsJob?.cancel()
+
+        val previousList = if (loadMore) mutable.value.customerShipments.orEmpty() else emptyList()
+        val offset = previousList.size
+
+        mutable.update {
+            it.copy(
+                customerShipments = if (loadMore) previousList else null,
+                customerShipmentsLoading = true,
+                customerShipmentsError = null
+            )
+        }
+
+        if (mutable.value.offline) {
+            val cached = mutable.value.data?.rows("shipments").orEmpty()
+            val filtered = CustomerPaginationRules.filterOfflineShipments(cached, tab, statusFilter, query)
+            mutable.update {
+                it.copy(
+                    customerShipments = filtered,
+                    customerShipmentsLoading = false,
+                    customerShipmentsHasMore = false,
+                    customerShipmentsError = null
+                )
+            }
+            return
+        }
+
+        customerShipmentsJob = viewModelScope.launch {
+            try {
+                val sanitizedQuery = CustomerPaginationRules.sanitizeSearchQuery(query)
+                val pageSize = CustomerPaginationRules.SHIPMENTS_PAGE_SIZE
+
+                val rows = client.from("shipments").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw(CustomerPaginationRules.SHIPMENT_COLUMNS)
+                ) {
+                    filter {
+                        if (tab == "Active") {
+                            notIn("status", listOf("completed", "cancelled"))
+                        } else if (tab == "History") {
+                            if (statusFilter == "All") {
+                                isIn("status", listOf("completed", "cancelled"))
+                            } else if (statusFilter.equals("Completed", ignoreCase = true) || statusFilter.equals("Cancelled", ignoreCase = true)) {
+                                eq("status", statusFilter.lowercase())
+                            } else {
+                                isIn("status", listOf("completed", "cancelled"))
+                            }
+                        }
+                        if (sanitizedQuery.isNotBlank()) {
+                            or {
+                                ilike("tracking_number", "%$sanitizedQuery%")
+                                ilike("pickup_address", "%$sanitizedQuery%")
+                                ilike("dropoff_address", "%$sanitizedQuery%")
+                            }
+                        }
+                    }
+                    order("created_at", Order.DESCENDING)
+                    range(offset.toLong(), (offset + pageSize - 1).toLong())
+                }.decodeAs<JsonArray>().filterIsInstance<JsonObject>()
+
+                if (version == customerShipmentsVersion && accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
+                    val merged = CustomerPaginationRules.mergePage(previousList, rows, reset = !loadMore)
+                    val hasMore = CustomerPaginationRules.hasMore(rows.size, pageSize)
+                    mutable.update {
+                        it.copy(
+                            customerShipments = merged,
+                            customerShipmentsLoading = false,
+                            customerShipmentsHasMore = hasMore,
+                            customerShipmentsError = null
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (version == customerShipmentsVersion && accountVersion == generation) {
+                    val cached = mutable.value.data?.rows("shipments").orEmpty()
+                    val filtered = CustomerPaginationRules.filterOfflineShipments(cached, tab, statusFilter, query)
+                    mutable.update {
+                        it.copy(
+                            customerShipments = if (loadMore) previousList else filtered,
+                            customerShipmentsLoading = false,
+                            customerShipmentsHasMore = false,
+                            customerShipmentsError = if (loadMore) "Could not load more shipments. Check your connection and retry." else null
+                        )
+                    }
+                }
+            }
+        }
+    }
+    fun loadNotifications(loadMore: Boolean = false) {
+        val uid = client.auth.currentUserOrNull()?.id ?: return
+        val version = ++notificationsVersion
+        val accountVersion = generation
+        notificationsJob?.cancel()
+
+        val previousList = if (loadMore) mutable.value.notificationsPage.orEmpty() else emptyList()
+        val offset = previousList.size
+
+        mutable.update {
+            it.copy(
+                notificationsPage = if (loadMore) previousList else null,
+                notificationsLoading = true,
+                notificationsError = null
+            )
+        }
+
+        if (mutable.value.offline) {
+            val cached = mutable.value.data?.rows("notifications").orEmpty()
+            val filtered = CustomerPaginationRules.filterOfflineNotifications(cached)
+            mutable.update {
+                it.copy(
+                    notificationsPage = filtered,
+                    notificationsLoading = false,
+                    notificationsHasMore = false,
+                    notificationsError = null
+                )
+            }
+            return
+        }
+
+        notificationsJob = viewModelScope.launch {
+            try {
+                val pageSize = CustomerPaginationRules.NOTIFICATIONS_PAGE_SIZE
+                val rows = client.from("notifications").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw(CustomerPaginationRules.NOTIFICATION_COLUMNS)
+                ) {
+                    filter {
+                        eq("user_id", uid)
+                    }
+                    order("created_at", Order.DESCENDING)
+                    range(offset.toLong(), (offset + pageSize - 1).toLong())
+                }.decodeAs<JsonArray>().filterIsInstance<JsonObject>()
+
+                if (version == notificationsVersion && accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
+                    val merged = CustomerPaginationRules.mergePage(previousList, rows, reset = !loadMore)
+                    val hasMore = CustomerPaginationRules.hasMore(rows.size, pageSize)
+                    mutable.update {
+                        it.copy(
+                            notificationsPage = merged,
+                            notificationsLoading = false,
+                            notificationsHasMore = hasMore,
+                            notificationsError = null
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (version == notificationsVersion && accountVersion == generation) {
+                    val cached = mutable.value.data?.rows("notifications").orEmpty()
+                    val filtered = CustomerPaginationRules.filterOfflineNotifications(cached)
+                    mutable.update {
+                        it.copy(
+                            notificationsPage = if (loadMore) previousList else filtered,
+                            notificationsLoading = false,
+                            notificationsHasMore = false,
+                            notificationsError = if (loadMore) "Could not load more notifications. Check your connection and retry." else null
+                        )
+                    }
+                }
+            }
         }
     }
     internal fun logFuel(delivery:String,request:String,entry:FuelEntry,onSaved:()->Unit)=operation {
@@ -860,6 +1031,13 @@ class MobileWorkspaceViewModel @Inject constructor(
     fun markRead(id: String) = operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
         client.from("notifications").update(buildJsonObject { put("read_at",java.time.Instant.now().toString()) }) { filter { eq("id",id);eq("user_id",uid) } }
+        mutable.update { state ->
+            val updatedList = state.notificationsPage?.map { n ->
+                if (n.value("id") == id) JsonObject(n + ("read_at" to JsonPrimitive(java.time.Instant.now().toString())))
+                else n
+            }
+            state.copy(notificationsPage = updatedList)
+        }
         load()
     }
     private suspend fun readDetails(id:String):JsonObject {

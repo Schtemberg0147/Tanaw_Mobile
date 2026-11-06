@@ -265,7 +265,8 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
             Notices(state)
             if(detail!=null) {
                 TextButton(onClick={detail=null}) { Text("← Back") }
-                val shipment=data.rows("shipments").firstOrNull{it.value("id")==detail}
+                val allShipments = state.customerShipments.orEmpty() + data.rows("shipments")
+                val shipment=allShipments.firstOrNull{it.value("id")==detail}
                 if(shipment==null) Text("Shipment not found in the current list. Refresh or contact the office.")
                 else WorkspaceCard { ShipmentDetails(shipment,data,role,state,vm) }
             } else when(tab) {
@@ -282,27 +283,68 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     ShipmentList(data.rows("shipments").filter{it.value("status") !in listOf("completed","cancelled")}) {detail=it}
                 }
                 "Active","History" -> {
+                    LaunchedEffect(tab, historyFilter, query) {
+                        kotlinx.coroutines.delay(350)
+                        vm.loadCustomerShipments(tab, historyFilter, query, loadMore = false)
+                    }
                     Text(if(tab=="History") "Shipment history" else "Active shipments",style=MaterialTheme.typography.headlineSmall)
-                    SupportingText("Your latest 200 permitted shipments. Updates appear automatically while connected.")
+                    SupportingText("Search all your shipments by tracking reference or address.")
                     Field("Search reference or address",query,{query=it})
                     if(tab=="History") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("All","Completed","Cancelled").forEach { f -> FilterChip(selected=historyFilter==f,onClick={historyFilter=f},label={Text(f)}) }
                     }
-                    ShipmentList(data.rows("shipments").filter{
-                        (it.value("status") in listOf("completed","cancelled")) == (tab=="History") &&
-                        (tab!="History" || historyFilter=="All" || it.value("status").equals(historyFilter,true)) &&
-                        listOf("tracking_number","pickup_address","dropoff_address").any {key->it.value(key).contains(query,true)}
-                    }) {detail=it}
+                    val displayedShipments = state.customerShipments ?: CustomerPaginationRules.filterOfflineShipments(
+                        data.rows("shipments"),
+                        tab,
+                        historyFilter,
+                        query
+                    )
+                    if(state.customerShipmentsLoading && state.customerShipments == null) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    if(state.customerShipmentsError != null) {
+                        Text(state.customerShipmentsError!!, color = MaterialTheme.colorScheme.error)
+                    }
+                    ShipmentList(displayedShipments) {detail=it}
+                    if(state.customerShipmentsHasMore) {
+                        OutlinedButton(
+                            onClick = { vm.loadCustomerShipments(tab, historyFilter, query, loadMore = true) },
+                            enabled = !state.customerShipmentsLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if(state.customerShipmentsLoading) "Loading more shipments..." else "Load more shipments")
+                        }
+                    }
                 }
                 "Alerts" -> {
+                    LaunchedEffect(Unit) {
+                        if (state.notificationsPage == null) vm.loadNotifications(loadMore = false)
+                    }
                     Text("Notifications",style=MaterialTheme.typography.headlineSmall)
-                    if(data.rows("notifications").isEmpty()) Text("No notifications.")
-                    data.rows("notifications").forEach { n ->
+                    val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
+                    if(state.notificationsLoading && state.notificationsPage == null) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    if(state.notificationsError != null) {
+                        Text(state.notificationsError!!, color = MaterialTheme.colorScheme.error)
+                    }
+                    if(displayedNotifications.isEmpty() && !state.notificationsLoading) Text("No notifications.")
+                    val allShipments = state.customerShipments.orEmpty() + data.rows("shipments")
+                    displayedNotifications.forEach { n ->
                         WorkspaceCard {
                             if(n.value("read_at").isBlank()) StatusBadge("unread")
                             Text(n.value("title"),fontWeight=FontWeight.SemiBold);SupportingText(n.value("body"));SupportingText(MobilePresentation.time(n.value("created_at")))
                             if(n.value("read_at").isBlank()) TextButton(onClick={vm.markRead(n.value("id"))},enabled=!state.busy) {Text("Mark read")}
-                            if(data.rows("shipments").any{it.value("id")==n.value("shipment_id")}) TextButton(onClick={detail=n.value("shipment_id")}) {Text("Open shipment")}
+                            if(allShipments.any{it.value("id")==n.value("shipment_id")}) TextButton(onClick={detail=n.value("shipment_id")}) {Text("Open shipment")}
+                        }
+                    }
+                    if(state.notificationsHasMore) {
+                        OutlinedButton(
+                            onClick = { vm.loadNotifications(loadMore = true) },
+                            enabled = !state.notificationsLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if(state.notificationsLoading) "Loading more notifications..." else "Load more notifications")
                         }
                     }
                 }
