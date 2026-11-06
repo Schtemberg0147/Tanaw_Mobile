@@ -23,11 +23,17 @@ internal data class BookingDraft(
     val handling: String = "None",
     val notes: String = "",
     val submitted: Boolean = false,
+    val owner: String = "",
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun hasMeaningfulContent(): Boolean =
         pickup.isNotBlank() || dropoff.isNotBlank() || cargo.isNotBlank() ||
         notes.isNotBlank() || weight.isNotBlank() ||
+        (!isPickupNow && scheduledDeparture.isNotBlank()) ||
+        (handling.isNotBlank() && handling != "None") ||
+        selectedVehicleId.isNotBlank() ||
+        (pickupLat != null && pickupLng != null) ||
+        (dropoffLat != null && dropoffLng != null) ||
         (stepName != "HOME" && stepName != "SUBMITTED") || submitted
 
     fun isEmpty(): Boolean = !hasMeaningfulContent()
@@ -51,6 +57,7 @@ internal data class BookingDraft(
         put("handling", handling)
         put("notes", notes)
         put("submitted", submitted)
+        if (owner.isNotBlank()) put("owner", owner)
     }
 
     companion object {
@@ -73,6 +80,7 @@ internal data class BookingDraft(
             val handling = json.value("handling").ifBlank { "None" }
             val notes = json.value("notes")
             val submitted = json.value("submitted") == "true"
+            val owner = json.value("owner")
             return BookingDraft(
                 requestId = requestId,
                 stepName = stepName,
@@ -91,6 +99,7 @@ internal data class BookingDraft(
                 handling = handling,
                 notes = notes,
                 submitted = submitted,
+                owner = owner,
                 createdAt = created
             )
         }
@@ -108,8 +117,8 @@ internal object BookingRecoveryRules {
     fun reconcile(draft: BookingDraft?, matchingShipment: JsonObject?): BookingReconciliationResult {
         if (draft == null) return BookingReconciliationResult.NoDraft
         if (!draft.submitted) return BookingReconciliationResult.NotSubmitted
-        val id = matchingShipment?.value("id").orEmpty()
-        val tracking = matchingShipment?.value("tracking_number").orEmpty()
+        val id = matchingShipment?.value("id").orEmpty().trim()
+        val tracking = matchingShipment?.value("tracking_number").orEmpty().trim()
         return if (id.isNotBlank() && tracking.isNotBlank()) {
             BookingReconciliationResult.Confirmed(id, tracking, draft)
         } else {
@@ -127,7 +136,7 @@ internal class BookingDraftStore(context: Context, project: String = BuildConfig
         customerId.isNotBlank() && store.contains(scope(customerId))
 
     fun save(customerId: String, draft: BookingDraft): Boolean {
-        require(customerId.isNotBlank())
+        if (customerId.isBlank()) return false
         if (!draft.hasMeaningfulContent()) {
             clear(customerId)
             return true
@@ -159,15 +168,30 @@ internal class BookingDraftStore(context: Context, project: String = BuildConfig
     fun clear(customerId: String): Boolean {
         if (customerId.isBlank()) return false
         store.clear(scope(customerId))
+        val remaining = store.read("index/customers", Long.MAX_VALUE)?.get("customers")?.jsonArray.orEmpty()
+            .map { it.jsonPrimitive.content }
+            .filter { it != customerId }
+        if (remaining.isEmpty()) {
+            store.clear("index/customers")
+        } else {
+            store.write("index/customers", buildJsonObject {
+                put("created", System.currentTimeMillis())
+                put("customers", JsonArray(remaining.map(::JsonPrimitive)))
+            })
+        }
         return true
     }
 
     fun clearOwner(owner: String) {
         if (owner.isBlank()) return
         clear(owner)
-        store.read("index/customers", Long.MAX_VALUE)?.get("customers")?.jsonArray?.forEach {
-            val cid = it.jsonPrimitive.content
-            if (cid == owner) clear(cid)
+        val customers = store.read("index/customers", Long.MAX_VALUE)?.get("customers")?.jsonArray.orEmpty()
+            .map { it.jsonPrimitive.content }
+        customers.forEach { cid ->
+            val draft = read(cid)
+            if (cid == owner || draft?.owner == owner) {
+                clear(cid)
+            }
         }
     }
 }

@@ -41,14 +41,14 @@ internal class IncidentDraftStore(context: Context, project: String = BuildConfi
     fun exists(owner: String, delivery: String): Boolean =
         owner.isNotBlank() && delivery.isNotBlank() && store.contains(scope(owner, delivery))
 
+    internal fun indexedDeliveries(owner: String): Set<String> =
+        if (owner.isBlank()) emptySet()
+        else store.read("index/$owner", Long.MAX_VALUE)?.get("deliveries")?.jsonArray.orEmpty()
+            .map { it.jsonPrimitive.content }.toSet()
+
     fun save(owner: String, delivery: String, draft: IncidentDraft): Boolean {
         require(owner.isNotBlank() && delivery.isNotBlank())
-        val deliveries = store.read("index/$owner", Long.MAX_VALUE)?.get("deliveries")?.jsonArray.orEmpty()
-            .map { it.jsonPrimitive.content }.toSet() + delivery
-        return store.write("index/$owner", buildJsonObject {
-            put("created", System.currentTimeMillis())
-            put("deliveries", JsonArray(deliveries.map(::JsonPrimitive)))
-        }) && store.write(scope(owner, delivery), buildJsonObject {
+        val written = store.write(scope(owner, delivery), buildJsonObject {
             put("created", System.currentTimeMillis())
             put("owner", owner)
             put("delivery", delivery)
@@ -62,6 +62,17 @@ internal class IncidentDraftStore(context: Context, project: String = BuildConfi
                 }
             })
         })
+        if (!written) return false
+        val deliveries = indexedDeliveries(owner) + delivery
+        val indexWritten = store.write("index/$owner", buildJsonObject {
+            put("created", System.currentTimeMillis())
+            put("deliveries", JsonArray(deliveries.map(::JsonPrimitive)))
+        })
+        if (!indexWritten) {
+            store.clear(scope(owner, delivery))
+            return false
+        }
+        return true
     }
 
     fun read(owner: String, delivery: String): IncidentDraft? {
@@ -97,13 +108,25 @@ internal class IncidentDraftStore(context: Context, project: String = BuildConfi
     fun clear(owner: String, delivery: String): Boolean {
         if (owner.isBlank() || delivery.isBlank()) return false
         store.clear(scope(owner, delivery))
+        val existing = indexedDeliveries(owner)
+        if (delivery in existing) {
+            val remaining = existing - delivery
+            if (remaining.isEmpty()) {
+                store.clear("index/$owner")
+            } else {
+                store.write("index/$owner", buildJsonObject {
+                    put("created", System.currentTimeMillis())
+                    put("deliveries", JsonArray(remaining.map(::JsonPrimitive)))
+                })
+            }
+        }
         return true
     }
 
     fun clearOwner(owner: String) {
         if (owner.isBlank()) return
-        store.read("index/$owner", Long.MAX_VALUE)?.get("deliveries")?.jsonArray?.forEach {
-            clear(owner, it.jsonPrimitive.content)
+        indexedDeliveries(owner).forEach {
+            store.clear(scope(owner, it))
         }
         store.clear("index/$owner")
     }
@@ -135,14 +158,14 @@ internal class ExpenseDraftStore(context: Context, project: String = BuildConfig
     fun exists(owner: String, delivery: String): Boolean =
         owner.isNotBlank() && delivery.isNotBlank() && store.contains(scope(owner, delivery))
 
+    internal fun indexedDeliveries(owner: String): Set<String> =
+        if (owner.isBlank()) emptySet()
+        else store.read("index/$owner", Long.MAX_VALUE)?.get("deliveries")?.jsonArray.orEmpty()
+            .map { it.jsonPrimitive.content }.toSet()
+
     fun save(owner: String, delivery: String, draft: ExpenseDraft): Boolean {
         require(owner.isNotBlank() && delivery.isNotBlank())
-        val deliveries = store.read("index/$owner", Long.MAX_VALUE)?.get("deliveries")?.jsonArray.orEmpty()
-            .map { it.jsonPrimitive.content }.toSet() + delivery
-        return store.write("index/$owner", buildJsonObject {
-            put("created", System.currentTimeMillis())
-            put("deliveries", JsonArray(deliveries.map(::JsonPrimitive)))
-        }) && store.write(scope(owner, delivery), buildJsonObject {
+        val written = store.write(scope(owner, delivery), buildJsonObject {
             put("created", System.currentTimeMillis())
             put("owner", owner)
             put("delivery", delivery)
@@ -150,6 +173,17 @@ internal class ExpenseDraftStore(context: Context, project: String = BuildConfig
             put("amount", draft.amount)
             draft.receipt?.let { put("receipt", Base64.encodeToString(it, Base64.NO_WRAP)) }
         })
+        if (!written) return false
+        val deliveries = indexedDeliveries(owner) + delivery
+        val indexWritten = store.write("index/$owner", buildJsonObject {
+            put("created", System.currentTimeMillis())
+            put("deliveries", JsonArray(deliveries.map(::JsonPrimitive)))
+        })
+        if (!indexWritten) {
+            store.clear(scope(owner, delivery))
+            return false
+        }
+        return true
     }
 
     fun read(owner: String, delivery: String): ExpenseDraft? {
@@ -176,13 +210,25 @@ internal class ExpenseDraftStore(context: Context, project: String = BuildConfig
     fun clear(owner: String, delivery: String): Boolean {
         if (owner.isBlank() || delivery.isBlank()) return false
         store.clear(scope(owner, delivery))
+        val existing = indexedDeliveries(owner)
+        if (delivery in existing) {
+            val remaining = existing - delivery
+            if (remaining.isEmpty()) {
+                store.clear("index/$owner")
+            } else {
+                store.write("index/$owner", buildJsonObject {
+                    put("created", System.currentTimeMillis())
+                    put("deliveries", JsonArray(remaining.map(::JsonPrimitive)))
+                })
+            }
+        }
         return true
     }
 
     fun clearOwner(owner: String) {
         if (owner.isBlank()) return
-        store.read("index/$owner", Long.MAX_VALUE)?.get("deliveries")?.jsonArray?.forEach {
-            clear(owner, it.jsonPrimitive.content)
+        indexedDeliveries(owner).forEach {
+            store.clear(scope(owner, it))
         }
         store.clear("index/$owner")
     }

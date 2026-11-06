@@ -53,10 +53,12 @@ import com.tanaw.app.BuildConfig
 import com.tanaw.app.R
 import com.tanaw.app.ui.theme.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -215,6 +217,7 @@ fun CustomerBookingFlow(
     val vehicles = data.rows("vehicles")
     val unreadCount = data.rows("notifications").count { it.value("read_at").isBlank() }
     val customerId = customer.value("id").ifBlank { profile.value("id") }
+    val coroutineScope = rememberCoroutineScope()
 
     var stepName by rememberSaveable { mutableStateOf(CustomerBookingStep.HOME.name) }
     val step = runCatching { CustomerBookingStep.valueOf(stepName) }.getOrDefault(CustomerBookingStep.HOME)
@@ -274,9 +277,9 @@ fun CustomerBookingFlow(
 
     LaunchedEffect(customerId) {
         if (customerId.isNotBlank() && !draftOfferDismissed && pickup.isBlank() && dropoff.isBlank() && cargo.isBlank() && step == CustomerBookingStep.HOME) {
-            val saved = vm.bookingDraftStore.read(customerId)
-            if (saved != null && saved.hasMeaningfulContent() && !saved.submitted) {
-                availableDraft = saved
+            val saved = withContext(Dispatchers.IO) { vm.bookingDraftStore.read(customerId) }
+            if (saved != null && saved.hasMeaningfulContent()) {
+                availableDraft = if (saved.submitted) saved.copy(submitted = false) else saved
             }
         }
     }
@@ -307,7 +310,9 @@ fun CustomerBookingFlow(
     }
     val onDiscardDraft: () -> Unit = {
         if (customerId.isNotBlank()) {
-            vm.bookingDraftStore.clear(customerId)
+            coroutineScope.launch(Dispatchers.IO) {
+                vm.bookingDraftStore.clear(customerId)
+            }
         }
         availableDraft = null
         draftOfferDismissed = true
@@ -347,7 +352,9 @@ fun CustomerBookingFlow(
 
     fun resetForm() {
         if (customerId.isNotBlank()) {
-            vm.bookingDraftStore.clear(customerId)
+            coroutineScope.launch(Dispatchers.IO) {
+                vm.bookingDraftStore.clear(customerId)
+            }
         }
         availableDraft = null
         requestId = UUID.randomUUID().toString()
@@ -371,9 +378,11 @@ fun CustomerBookingFlow(
     LaunchedEffect(
         customerId, requestId, step, pickup, pickupLat, pickupLng,
         dropoff, dropoffLat, dropoffLng, isPickupNow, scheduledDeparture,
-        selectedVehicleId, contact, cargo, weight, handling, notes
+        selectedVehicleId, contact, cargo, weight, handling, notes,
+        state.busy
     ) {
-        if (customerId.isNotBlank() && step != CustomerBookingStep.SUBMITTED && availableDraft == null) {
+        if (customerId.isNotBlank() && step != CustomerBookingStep.SUBMITTED && availableDraft == null && !state.busy) {
+            delay(300.milliseconds)
             val currentDraft = BookingDraft(
                 requestId = requestId,
                 stepName = step.name,
@@ -391,10 +400,13 @@ fun CustomerBookingFlow(
                 weight = weight,
                 handling = handling,
                 notes = notes,
-                submitted = false
+                submitted = false,
+                owner = profile.value("id")
             )
             if (currentDraft.hasMeaningfulContent()) {
-                vm.bookingDraftStore.save(customerId, currentDraft)
+                withContext(Dispatchers.IO) {
+                    vm.bookingDraftStore.save(customerId, currentDraft)
+                }
             }
         }
     }

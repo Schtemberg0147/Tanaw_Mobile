@@ -35,7 +35,28 @@ class BookingRecoveryRulesTest {
         assertFalse(BookingDraft(notes = "Fragile boxes").isEmpty())
         assertFalse(BookingDraft(stepName = "ADD_DETAILS").isEmpty())
         assertFalse(BookingDraft(stepName = "SUMMARY").isEmpty())
+        assertFalse(BookingDraft(stepName = "PICKUP_MAP").isEmpty())
+        assertFalse(BookingDraft(stepName = "DESTINATION_MAP").isEmpty())
         assertFalse(BookingDraft(submitted = true).isEmpty())
+        assertFalse(BookingDraft(isPickupNow = false, scheduledDeparture = "2026-11-10 08:00 AM").isEmpty())
+        assertFalse(BookingDraft(handling = "Tailgate Required").isEmpty())
+        assertFalse(BookingDraft(selectedVehicleId = "v-6w").isEmpty())
+        assertFalse(BookingDraft(pickupLat = 15.48, pickupLng = 120.96).isEmpty())
+        assertFalse(BookingDraft(dropoffLat = 14.61, dropoffLng = 120.95).isEmpty())
+    }
+
+    @Test
+    fun bookingDraftWhitespaceAndDefaultsRemainEmpty() {
+        assertTrue(BookingDraft(pickup = "   ").isEmpty())
+        assertTrue(BookingDraft(dropoff = "\t\n").isEmpty())
+        assertTrue(BookingDraft(cargo = "  ").isEmpty())
+        assertTrue(BookingDraft(notes = " ").isEmpty())
+        assertTrue(BookingDraft(weight = "").isEmpty())
+        assertTrue(BookingDraft(stepName = "HOME").isEmpty())
+        assertTrue(BookingDraft(handling = "None").isEmpty())
+        assertTrue(BookingDraft(handling = "  ").isEmpty())
+        assertTrue(BookingDraft(isPickupNow = true, scheduledDeparture = "").isEmpty())
+        assertTrue(BookingDraft(pickupLat = 15.0, pickupLng = null).isEmpty())
     }
 
     @Test
@@ -59,6 +80,7 @@ class BookingRecoveryRulesTest {
             handling = "Tailgate Required",
             notes = "Call upon arrival at Gate 2",
             submitted = true,
+            owner = "user-uuid-1234",
             createdAt = 1730850000000L
         )
 
@@ -82,7 +104,30 @@ class BookingRecoveryRulesTest {
         assertEquals(original.handling, restored.handling)
         assertEquals(original.notes, restored.notes)
         assertEquals(original.submitted, restored.submitted)
+        assertEquals(original.owner, restored.owner)
         assertEquals(original.createdAt, restored.createdAt)
+    }
+
+    @Test
+    fun bookingDraftFromJsonHandlesMissingAndCorruptedFieldsGracefully() {
+        val partialJson = buildJsonObject {
+            put("pickup", "Warehouse Cabanatuan")
+            put("is_pickup_now", false)
+            put("pickup_lat", "15.4865")
+            put("pickup_lng", 120.9679)
+        }
+        val restored = BookingDraft.fromJson(partialJson)
+
+        assertEquals("Warehouse Cabanatuan", restored.pickup)
+        assertFalse(restored.isPickupNow)
+        assertEquals("HOME", restored.stepName)
+        assertEquals("None", restored.handling)
+        assertEquals("", restored.owner)
+        assertFalse(restored.submitted)
+        assertNotNull(restored.pickupLat)
+        assertEquals(15.4865, restored.pickupLat!!, 0.0001)
+        assertEquals(120.9679, restored.pickupLng!!, 0.0001)
+        assertTrue(restored.createdAt > 0)
     }
 
     @Test
@@ -132,6 +177,13 @@ class BookingRecoveryRulesTest {
             dropoff = "Warehouse B",
             cargo = "Dry Goods",
             weight = "1200",
+            notes = "Handle with care",
+            handling = "Tailgate Required",
+            contact = "+639171234567",
+            selectedVehicleId = "v-6w",
+            isPickupNow = false,
+            scheduledDeparture = "2026-11-12 10:00 AM",
+            owner = "user-999",
             submitted = true
         )
 
@@ -144,6 +196,13 @@ class BookingRecoveryRulesTest {
         assertEquals("Warehouse B", restored.dropoff)
         assertEquals("Dry Goods", restored.cargo)
         assertEquals("1200", restored.weight)
+        assertEquals("Handle with care", restored.notes)
+        assertEquals("Tailgate Required", restored.handling)
+        assertEquals("+639171234567", restored.contact)
+        assertEquals("v-6w", restored.selectedVehicleId)
+        assertFalse(restored.isPickupNow)
+        assertEquals("2026-11-12 10:00 AM", restored.scheduledDeparture)
+        assertEquals("user-999", restored.owner)
         assertEquals("SUMMARY", restored.stepName)
     }
 
@@ -158,5 +217,19 @@ class BookingRecoveryRulesTest {
         val result = BookingRecoveryRules.reconcile(draft, blankShipment)
         assertTrue(result is BookingReconciliationResult.RestoredForRetry)
         assertFalse((result as BookingReconciliationResult.RestoredForRetry).draft.submitted)
+
+        val whitespaceShipment = buildJsonObject {
+            put("id", "   ")
+            put("tracking_number", " \t ")
+        }
+        val resultWhitespace = BookingRecoveryRules.reconcile(draft, whitespaceShipment)
+        assertTrue(resultWhitespace is BookingReconciliationResult.RestoredForRetry)
+
+        val missingTracking = buildJsonObject {
+            put("id", "shp-123")
+            put("tracking_number", "")
+        }
+        val resultMissingTracking = BookingRecoveryRules.reconcile(draft, missingTracking)
+        assertTrue(resultMissingTracking is BookingReconciliationResult.RestoredForRetry)
     }
 }
