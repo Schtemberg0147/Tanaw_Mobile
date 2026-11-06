@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -11,9 +12,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 /** Kept above the mounted workspace so cancel returns to the exact Profile entry screen. */
 @Composable internal fun PasswordChangeDialog(state:MobileState,cancel:()->Unit,request:()->Unit,
     canVerify:(String)->Boolean,update:(String,String,String)->Unit) {
-    var code by remember(state.passwordChangeOwner){mutableStateOf("")}
-    var password by remember(state.passwordChangeOwner){mutableStateOf("")}
-    var confirm by remember(state.passwordChangeOwner){mutableStateOf("")}
+    var code by rememberSaveable(state.passwordChangeOwner){mutableStateOf("")}
+    var password by rememberSaveable(state.passwordChangeOwner){mutableStateOf("")}
+    var confirm by rememberSaveable(state.passwordChangeOwner){mutableStateOf("")}
     val sent=state.passwordChangeCodeSent
     DriverTransaction("Change password",state.busy,cancel,
         if(sent)"UPDATE PASSWORD" else "REQUEST VERIFICATION CODE",
