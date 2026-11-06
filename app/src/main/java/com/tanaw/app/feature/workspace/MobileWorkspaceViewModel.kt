@@ -780,7 +780,23 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     private suspend fun readDetails(id:String):JsonObject {
         val details=client.postgrest.rpc("mobile_shipment_details",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()
-        if(mutable.value.data?.obj("profile")?.value("role")!="driver")return details
+        if(mutable.value.data?.obj("profile")?.value("role")!="driver") {
+            val activeDelivery=mutable.value.data?.rows("deliveries")?.firstOrNull {
+                it.value("shipment_id")==id && it.value("status") in listOf("assigned","loading","in_transit")
+            }
+            val routing=if(activeDelivery!=null) {
+                try {
+                    val deliveryId=activeDelivery.value("id")
+                    if(deliveryId.isNotBlank()) readRouteStatus(deliveryId)
+                    else buildJsonObject { put("reason","Assigned delivery unavailable") }
+                } catch(cancelled:CancellationException) {
+                    throw cancelled
+                } catch(_:Exception) {
+                    buildJsonObject { put("reason","Live route calculation unavailable") }
+                }
+            } else null
+            return if(routing!=null) JsonObject(details+mapOf("routing" to routing)) else details
+        }
         val extra=try {
             buildJsonObject {put("fuel_logs",client.postgrest.rpc("mobile_driver_fuel_history",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonArray>())}
         }catch(cancelled:CancellationException){throw cancelled}

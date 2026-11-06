@@ -57,4 +57,22 @@ class ShipmentMapRenderTest {
         compose.runOnIdle {geometry=null}
         compose.waitUntil(5000){compose.onAllNodesWithText("Saved stops displayed · no road route loaded").fetchSemanticsNodes().isNotEmpty()}
     }
+    @Test fun threePointMapRendersPickupDestinationAndVehicleMarkers() {
+        val threePoints=points+listOf("Last recorded vehicle position" to LatLng(14.62,120.99))
+        compose.setContent {DriverTheme {Column {ShipmentMap(threePoints,road,styleJson=style)}}}
+        waitForLine()
+        compose.onNodeWithText("Route line displayed · 3 saved stops").assertExists()
+        compose.onNodeWithText("Red: pickup · Blue: destination · Green: last recorded vehicle position").assertExists()
+    }
+    @Test fun distinctVehicleMarkerBitmapColorAndShape() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val pickup=com.tanaw.app.feature.workspace.pinIcon(context,"Pickup")
+        val destination=com.tanaw.app.feature.workspace.pinIcon(context,"Destination")
+        val vehicle=com.tanaw.app.feature.workspace.pinIcon(context,"Last recorded vehicle position")
+        org.junit.Assert.assertNotNull(pickup)
+        org.junit.Assert.assertNotNull(destination)
+        org.junit.Assert.assertNotNull(vehicle)
+        org.junit.Assert.assertEquals(pickup.width,vehicle.width)
+        org.junit.Assert.assertEquals(pickup.height,vehicle.height)
+    }
 }

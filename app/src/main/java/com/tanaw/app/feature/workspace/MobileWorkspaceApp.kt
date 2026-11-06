@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.window.Dialog
@@ -274,9 +275,26 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
 
 @Composable private fun ShipmentDetails(s:JsonObject,data:JsonObject,role:String,state:MobileState,vm:MobileWorkspaceViewModel) {
     val busy=state.busy
+    var now by remember { mutableStateOf(java.time.Instant.now()) }
+    LaunchedEffect(Unit) {
+        while(true) {
+            kotlinx.coroutines.delay(15.seconds)
+            now = java.time.Instant.now()
+        }
+    }
     LaunchedEffect(s.value("id")) { vm.loadDetails(s.value("id")) }
     Text(s.value("tracking_number"),style=MaterialTheme.typography.headlineSmall)
-    listOf("status" to "Status","pickup_address" to "Pickup","dropoff_address" to "Destination","cargo_description" to "Cargo","weight_kg" to "Weight (kg)","scheduled_departure" to "Scheduled departure","estimated_arrival" to "Estimated arrival","driver_notes" to "Notes","cancelled_reason" to "Cancellation reason").forEach { (key,label) ->
+    listOf(
+        "status" to "Status",
+        "pickup_address" to "Pickup",
+        "dropoff_address" to "Destination",
+        "cargo_description" to "Cargo",
+        "weight_kg" to "Weight (kg)",
+        "scheduled_departure" to "Scheduled departure",
+        "estimated_arrival" to "Scheduled arrival (office plan)",
+        "driver_notes" to "Notes",
+        "cancelled_reason" to "Cancellation reason"
+    ).forEach { (key,label) ->
         if(s.value(key).isNotBlank()) Text("$label: ${when(key){"scheduled_departure","estimated_arrival"->MobilePresentation.time(s.value(key));"weight_kg"->MobilePresentation.number(s.value(key),"kg");"status"->MobilePresentation.status(s.value(key));else->s.value(key)}}")
     }
     StatusBadge(s.value("status"))
@@ -294,18 +312,53 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     val detail=state.details?.takeIf { it.value("shipment_id")==s.value("id") }
     if(state.detailLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
     if(detail!=null) {
+        val position=detail.obj("position")
+        val activeDelivery=deliveries.firstOrNull { it.value("status") in listOf("assigned","loading","in_transit") } ?: deliveries.firstOrNull()
+        val routing=detail.obj("routing").takeIf { it.isNotEmpty() }
+        val freshness=TrackingFreshnessRules.evaluatePositionFreshness(position.value("recorded_at"),position.value("accuracy_m"),now)
+        val eta=TrackingFreshnessRules.customerEtaSummary(s,activeDelivery,routing,freshness,state.offline,now)
+
+        Text("Arrival & Tracking Freshness",style=MaterialTheme.typography.titleMedium)
+        WorkspaceCard {
+            Text("Scheduled arrival (office plan): ${eta.scheduledArrival}",fontWeight=FontWeight.SemiBold)
+            if(s.value("scheduled_departure").isNotBlank()) {
+                SupportingText("Scheduled departure: ${eta.scheduledDeparture}")
+            }
+            HorizontalDivider()
+            Text("Live ETA: ${eta.liveEta}",fontWeight=FontWeight.Bold,color=if(eta.isLive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            SupportingText(eta.liveEtaDetail)
+            HorizontalDivider()
+            Row(
+                modifier=Modifier.fillMaxWidth(),
+                horizontalArrangement=Arrangement.SpaceBetween,
+                verticalAlignment=Alignment.CenterVertically
+            ) {
+                Text("Vehicle GPS",fontWeight=FontWeight.SemiBold)
+                GpsFreshnessBadge(freshness)
+            }
+            if(position.value("recorded_at").isNotBlank()) {
+                Text("Position: ${position.value("latitude")}, ${position.value("longitude")}\n${MobilePresentation.time(position.value("recorded_at"))} · ${freshness.accuracyText}")
+            } else {
+                SupportingText("No GPS location has been recorded for this delivery.")
+            }
+        }
+
+        val points=mutableListOf<Pair<String,org.maplibre.android.geometry.LatLng>>()
+        fun point(label:String,lat:String,lng:String) {val a=lat.toDoubleOrNull();val b=lng.toDoubleOrNull();if(a!=null && b!=null)points.add(label to org.maplibre.android.geometry.LatLng(a,b))}
+        point("Pickup",s.value("pickup_lat"),s.value("pickup_lng"))
+        point("Destination",s.value("dropoff_lat"),s.value("dropoff_lng"))
+        point("Last recorded vehicle position",position.value("latitude"),position.value("longitude"))
+        if(points.isNotEmpty()) {
+            ShipmentMap(points,s["route_geometry"]?.toString())
+            SupportingText("Red: pickup · Blue: destination · Green: last recorded vehicle position")
+        }
+
         Text("Recorded timeline",style=MaterialTheme.typography.titleMedium)
         val timeline=(detail.rows("events").map {it.value("occurred_at") to it.value("event_type").replace('_',' ')}+
             detail.rows("history").map {it.value("created_at") to (it.value("to_status").replace('_',' ')+it.value("note").takeIf(String::isNotBlank)?.let {note->" · $note"}.orEmpty())}).sortedBy {it.first}
         if(timeline.isEmpty()) Text("No status events have been recorded.")
         timeline.forEach { (time,label)->Text("${MobilePresentation.time(time)}\n${MobilePresentation.status(label)}") }
-        val position=detail.obj("position")
-        if(position.value("recorded_at").isNotBlank()) Text("Last recorded position: ${position.value("latitude")}, ${position.value("longitude")}\n${MobilePresentation.time(position.value("recorded_at"))} · accuracy ${position.value("accuracy_m").ifBlank{"unknown"}} m")
-        val points=mutableListOf<Pair<String,org.maplibre.android.geometry.LatLng>>()
-        fun point(label:String,lat:String,lng:String) {val a=lat.toDoubleOrNull();val b=lng.toDoubleOrNull();if(a!=null && b!=null)points.add(label to org.maplibre.android.geometry.LatLng(a,b))}
-        point("Pickup",s.value("pickup_lat"),s.value("pickup_lng"));point("Destination",s.value("dropoff_lat"),s.value("dropoff_lng"));point("Last recorded vehicle position",position.value("latitude"),position.value("longitude"))
-        if(points.isNotEmpty()) ShipmentMap(points,s["route_geometry"]?.toString())
-        if(position.value("recorded_at").isNotBlank()) SupportingText(if(runCatching {java.time.Instant.parse(position.value("recorded_at")).isBefore(java.time.Instant.now().minusSeconds(300))}.getOrDefault(true))"Stale location · more than five minutes old" else "Recent GPS · check the recorded time")
+
         Text("Proof of delivery",style=MaterialTheme.typography.titleMedium)
         val documents=detail.rows("documents")
         if(documents.isEmpty()) Text("No proof documents are available for this shipment.")

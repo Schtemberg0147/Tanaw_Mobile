@@ -62,15 +62,33 @@ object MobileGeocoding {
 
 private const val STREET_MAP = "https://tiles.openfreemap.org/styles/liberty"
 
-private fun pinIcon(context:android.content.Context,label:String):android.graphics.Bitmap {
+internal fun pinIcon(context:android.content.Context,label:String):android.graphics.Bitmap {
  val scale=context.resources.displayMetrics.density
  val bitmap=createBitmap((32*scale).toInt(),(42*scale).toInt())
  val canvas=android.graphics.Canvas(bitmap);canvas.scale(scale,scale)
  val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
- paint.color=if(label=="Destination")android.graphics.Color.rgb(37,99,235) else android.graphics.Color.rgb(220,38,38)
+ val isVehicle=label=="Vehicle" || label=="Last recorded vehicle position"
+ val isDestination=label=="Destination"
+ val markerColor=when {
+  isDestination -> android.graphics.Color.rgb(37,99,235)
+  isVehicle -> android.graphics.Color.rgb(22,163,74)
+  else -> android.graphics.Color.rgb(220,38,38)
+ }
+ paint.color=markerColor
  val path=android.graphics.Path().apply {moveTo(16f,41f);lineTo(3f,22f);cubicTo(-9f,-6f,41f,-6f,29f,22f);close()}
  canvas.drawPath(path,paint)
- paint.color=android.graphics.Color.WHITE;canvas.drawCircle(16f,14f,7f,paint)
+ paint.color=android.graphics.Color.WHITE
+ if(isVehicle) {
+  canvas.drawCircle(16f,14f,8f,paint)
+  paint.color=markerColor
+  paint.style=android.graphics.Paint.Style.FILL
+  canvas.drawRect(11.5f,10.5f,16.5f,15.5f,paint)
+  canvas.drawRect(17f,12f,20.5f,15.5f,paint)
+  canvas.drawCircle(13f,16.5f,1.2f,paint)
+  canvas.drawCircle(19f,16.5f,1.2f,paint)
+ } else {
+  canvas.drawCircle(16f,14f,7f,paint)
+ }
  return bitmap
 }
 
@@ -80,7 +98,7 @@ private fun pinIcon(context:android.content.Context,label:String):android.graphi
  val callback by rememberUpdatedState(onSelect)
  val currentPoints by rememberUpdatedState(points)
  val currentGeometry by rememberUpdatedState(geometry)
- val pinIcons=remember(context) {mapOf("Pickup" to pinIcon(context,"Pickup"),"Destination" to pinIcon(context,"Destination"))}
+ val pinIcons=remember(context) {mapOf("Pickup" to pinIcon(context,"Pickup"),"Destination" to pinIcon(context,"Destination"),"Vehicle" to pinIcon(context,"Vehicle"))}
  var fallback by remember {mutableStateOf(BuildConfig.MAPTILER_KEY.isBlank())}
  var ready by remember {mutableStateOf(false)}
  var failed by remember {mutableStateOf(false)}
@@ -99,11 +117,18 @@ private fun pinIcon(context:android.content.Context,label:String):android.graphi
    pinIcons.forEach {(label,bitmap)->style.addImage("shipment-pin-$label",bitmap)}
    val pins=buildJsonObject {
     put("type","FeatureCollection")
-    put("features",buildJsonArray {locations.forEach {(label,point)->add(buildJsonObject {
-     put("type","Feature")
-     put("properties",buildJsonObject {put("icon","shipment-pin-${if(label=="Destination")"Destination" else "Pickup"}")})
-     put("geometry",buildJsonObject {put("type","Point");put("coordinates",buildJsonArray {add(point.longitude);add(point.latitude)})})
-    })}})
+    put("features",buildJsonArray {locations.forEach {(label,point)->
+     val iconName=when {
+      label=="Destination" -> "Destination"
+      label=="Vehicle" || label=="Last recorded vehicle position" -> "Vehicle"
+      else -> "Pickup"
+     }
+     add(buildJsonObject {
+      put("type","Feature")
+      put("properties",buildJsonObject {put("icon","shipment-pin-$iconName")})
+      put("geometry",buildJsonObject {put("type","Point");put("coordinates",buildJsonArray {add(point.longitude);add(point.latitude)})})
+     })
+    }})
    }.toString()
    style.getSourceAs<GeoJsonSource>("shipment-stops")?.setGeoJson(pins) ?: style.addSource(GeoJsonSource("shipment-stops",pins))
    if(style.getLayer("shipment-stop-pins")==null)style.addLayer(SymbolLayer("shipment-stop-pins","shipment-stops").withProperties(iconImage(Expression.get("icon")),iconAnchor("bottom"),iconAllowOverlap(true),iconIgnorePlacement(true)))
@@ -173,6 +198,7 @@ private fun pinIcon(context:android.content.Context,label:String):android.graphi
  else if(!ready)SupportingText("Loading street map…")
  else if(onSelect!=null)SupportingText("Map ready · drag to move, pinch to zoom, tap to place a pin.")
  else SupportingText(routeError ?: if(previousGeometry!=null)"Route line displayed · ${points.size} saved stops" else "Saved stops displayed · no road route loaded")
+ if(points.any { it.first == "Vehicle" || it.first == "Last recorded vehicle position" }) SupportingText("Red: pickup · Blue: destination · Green: last recorded vehicle position")
  if(fallback)SupportingText("© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors")
 }
 /** Inline route editor: tapping places a pin immediately; coordinates stay internal. */

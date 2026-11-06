@@ -85,6 +85,7 @@ internal fun driverStopPins(s:JsonObject):List<Pair<String,LatLng>> =
             val routing=state.details?.takeIf{it.value("shipment_id")==s.value("id")}?.obj("routing")?:buildJsonObject{}
             HorizontalDivider(color=DriverLine)
             DriverRouteStatusCard(DriverRouteStatus.forAssignment(routing,s,d),state.offline)
+            if(s.value("scheduled_departure").isNotBlank())Text("Scheduled departure: ${MobilePresentation.time(s.value("scheduled_departure"))}",fontSize=12.sp,color=DriverMuted)
             Text("Office planned arrival: ${MobilePresentation.time(s.value("estimated_arrival"))}",fontSize=12.sp,color=DriverMuted)
             Text("Recorded distance: ${MobilePresentation.number(s.value("distance_km"),"km")} · duration: ${MobilePresentation.number(s.value("route_duration_minutes"),"min")}",fontSize=12.sp,color=DriverMuted)
             if(points.isEmpty())Text("This assignment has no saved map pins. Use address directions and confirm the entrance with the office.",fontSize=12.sp,color=DriverMuted)

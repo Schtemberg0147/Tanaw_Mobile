@@ -27,7 +27,7 @@ Type: `client` = Android code only | `backend?` = may need backend change, check
 | C01 | Paginate history and alerts; search beyond latest 200 shipments | #11, #13 | backend? | Limit may come from the `mobile_workspace` RPC |
 | C03 | Add Barangay and province to customer addresses | #7, #9 | backend? | Likely new fields in profile/booking RPCs |
 | C05 | Verify changes to login/SMS phone number | #3, #7 | backend? | OTP flow, TextBee gateway |
-| C06 | Tracking freshness; separate scheduled arrival from live ETA | #11, #17 | client + backend? | Vehicle marker currently renders as the red Pickup pin |
+| [x] C06 | Tracking freshness; separate scheduled arrival from live ETA | #11, #17 | client + backend? | Done (`feat/C06-tracking-freshness-live-eta`). Distinct Emerald Green vehicle marker with inner truck badge in `ShipmentMap.kt` (`shipment-pin-Vehicle`). Evaluated position freshness (`evaluatePositionFreshness`) and ETA presentation (`customerEtaSummary`) in `TrackingFreshnessRules.kt`. Resilient customer routing fetch in `MobileWorkspaceViewModel.kt` (`readDetails`). Dedicated Arrival & Tracking Freshness section in `MobileWorkspaceApp.kt` (`ShipmentDetails`) backed by 15s clock tick separating Scheduled Arrival (office plan) from Live ETA and GPS Freshness badge. |
 | D07 | Open recovery links directly in the app | #6 | client + config | Manifest `VIEW`/`BROWSABLE` filter + Supabase redirect URL settings |
 | C12 | Small-screen layouts, keyboards, accessibility, field errors | cross-cutting | client | Do screen by screen, not in one pass |
 

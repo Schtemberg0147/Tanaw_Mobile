@@ -41,6 +41,7 @@
 ---
 
 ### Module C06: Tracking Freshness, Separate Scheduled Arrival vs. Live ETA & Distinct Vehicle Pin
+* **Status:** Complete (`feat/C06-tracking-freshness-live-eta`)
 * **Branch:** `feat/C06-tracking-freshness-live-eta`
 * **Reference Docs:** `docs/BACKLOG.md` (C06), `docs/FEATURES.md` (#11, #17), `MISSING_FEATURES_AUDIT.md` (F01, F02)
 
