@@ -27,9 +27,9 @@ internal object CustomerProfileRules {
             "full_name" to JsonPrimitive(name.trim()),
             "phone" to JsonPrimitive(phone.trim())
         ))
-        if (data.containsKey("customer")) {
-            val c = data.obj("customer")
-            updates["customer"] = JsonObject(c + mapOf(
+        val customer = data["customer"] as? JsonObject
+        if (customer != null) {
+            updates["customer"] = JsonObject(customer + mapOf(
                 "name" to JsonPrimitive(name.trim()),
                 "phone" to JsonPrimitive(phone.trim()),
                 "address" to JsonPrimitive(address.trim()),
@@ -38,6 +38,18 @@ internal object CustomerProfileRules {
         }
         return JsonObject(data + updates)
     }
+
+    fun resolveRefreshMessage(currentMessage: String?): String {
+        return if (currentMessage == null || currentMessage == MSG_PROFILE_SAVED) {
+            MSG_PROFILE_SAVED
+        } else {
+            currentMessage
+        }
+    }
+
+    fun validateName(name: String): Boolean = name.trim().length in 2..200
+    fun validateAddress(address: String): Boolean = address.trim().length <= 500
+    fun validateCity(city: String): Boolean = city.trim().length <= 100
 
     suspend fun saveProfile(
         mutate: suspend () -> Unit,

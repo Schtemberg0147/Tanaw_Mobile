@@ -308,11 +308,16 @@ internal fun CustomerProfile(
                     onClick = {
                         when (editingFieldKey) {
                             "full_name" -> {
-                                if (editingFieldValue.trim().length !in 2..200) {
+                                if (!CustomerProfileRules.validateName(editingFieldValue)) {
                                     editError = "Name must be between 2 and 200 characters."
                                     return@Button
                                 }
-                                vm.profile(editingFieldValue, p.value("phone"), c.value("address"), c.value("city"))
+                                val currentPhone = MobileValidation.phone(p.value("phone"))
+                                if (currentPhone == null) {
+                                    editError = "A valid contact number must be set first before changing your name."
+                                    return@Button
+                                }
+                                vm.profile(editingFieldValue, currentPhone, c.value("address"), c.value("city"))
                                 editingFieldKey = null
                             }
                             "phone" -> {
@@ -321,15 +326,30 @@ internal fun CustomerProfile(
                                     editError = "Please enter a valid phone number."
                                     return@Button
                                 }
-                                vm.profile(p.value("full_name"), normalized, c.value("address"), c.value("city"))
+                                val currentName = p.value("full_name").trim()
+                                if (!CustomerProfileRules.validateName(currentName)) {
+                                    editError = "Name must be between 2 and 200 characters."
+                                    return@Button
+                                }
+                                vm.profile(currentName, normalized, c.value("address"), c.value("city"))
                                 editingFieldKey = null
                             }
                             "address" -> {
-                                if (editingFieldValue.trim().length > 500 || editingCityValue.trim().length > 100) {
+                                if (!CustomerProfileRules.validateAddress(editingFieldValue) || !CustomerProfileRules.validateCity(editingCityValue)) {
                                     editError = "Address or city exceeds maximum length."
                                     return@Button
                                 }
-                                vm.profile(p.value("full_name"), p.value("phone"), editingFieldValue, editingCityValue)
+                                val currentPhone = MobileValidation.phone(p.value("phone"))
+                                if (currentPhone == null) {
+                                    editError = "A valid contact number must be set first before updating address."
+                                    return@Button
+                                }
+                                val currentName = p.value("full_name").trim()
+                                if (!CustomerProfileRules.validateName(currentName)) {
+                                    editError = "Name must be between 2 and 200 characters."
+                                    return@Button
+                                }
+                                vm.profile(currentName, currentPhone, editingFieldValue, editingCityValue)
                                 editingFieldKey = null
                             }
                         }

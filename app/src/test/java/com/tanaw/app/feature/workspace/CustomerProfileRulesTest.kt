@@ -109,6 +109,32 @@ class CustomerProfileRulesTest {
     }
 
     @Test
+    fun optimisticUpdatePreservesJsonNullCustomerSectionWithoutSynthesizingCustomerObject() {
+        val driverWithNullCustomer = buildJsonObject {
+            put("profile", buildJsonObject {
+                put("id", "d1")
+                put("full_name", "Driver One")
+                put("phone", "+639111111111")
+                put("role", "driver")
+            })
+            put("customer", JsonNull)
+        }
+        val updated = CustomerProfileRules.optimisticUpdate(
+            data = driverWithNullCustomer,
+            name = "Driver Renamed",
+            phone = "+639999999999",
+            address = "New Address",
+            city = "New City"
+        )
+
+        assertNotNull(updated)
+        assertEquals("Driver Renamed", updated!!.obj("profile").value("full_name"))
+        assertEquals("+639999999999", updated.obj("profile").value("phone"))
+        assertTrue(updated.containsKey("customer"))
+        assertEquals(JsonNull, updated["customer"])
+    }
+
+    @Test
     fun saveProfileAcknowledgesBeforeFailedRefreshWithoutRepeatingMutation() = runTest {
         val events = mutableListOf<String>()
         var message: String? = null
@@ -223,5 +249,101 @@ class CustomerProfileRulesTest {
 
         assertFalse(acknowledged)
         assertFalse(refreshed)
+    }
+
+    @Test
+    fun saveProfilePropagatesCancellationExceptionFromMutate() = runTest {
+        var acknowledged = false
+        var refreshed = false
+        var refreshFailed = false
+
+        val result = runCatching {
+            CustomerProfileRules.saveProfile(
+                mutate = { throw CancellationException("mutation cancelled") },
+                current = { true },
+                onOptimisticUpdate = { acknowledged = true },
+                refresh = { refreshed = true },
+                onRefreshFailed = { refreshFailed = true }
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is CancellationException)
+        assertFalse(acknowledged)
+        assertFalse(refreshed)
+        assertFalse(refreshFailed)
+    }
+
+    @Test
+    fun saveProfileAbortsRefreshFailedIfSessionSwitchedDuringRefresh() = runTest {
+        var isCurrent = true
+        var acknowledged = false
+        var refreshFailedCalled = false
+
+        CustomerProfileRules.saveProfile(
+            mutate = { },
+            current = { isCurrent },
+            onOptimisticUpdate = { acknowledged = true },
+            refresh = {
+                // Session switched / logged out during refresh
+                isCurrent = false
+                error("simulated network error during refresh")
+            },
+            onRefreshFailed = {
+                refreshFailedCalled = true
+            }
+        )
+
+        assertTrue(acknowledged)
+        assertFalse("refreshFailed must not run if session switched during refresh", refreshFailedCalled)
+    }
+
+    @Test
+    fun resolveRefreshMessagePreservesLoadWarningsAndReconciliationNotices() {
+        // Default / null case -> MSG_PROFILE_SAVED
+        assertEquals(
+            CustomerProfileRules.MSG_PROFILE_SAVED,
+            CustomerProfileRules.resolveRefreshMessage(null)
+        )
+        // Already profile saved -> MSG_PROFILE_SAVED
+        assertEquals(
+            CustomerProfileRules.MSG_PROFILE_SAVED,
+            CustomerProfileRules.resolveRefreshMessage(CustomerProfileRules.MSG_PROFILE_SAVED)
+        )
+        // Offline cache warning preserved
+        assertEquals(
+            "Offline copy could not be saved on this device.",
+            CustomerProfileRules.resolveRefreshMessage("Offline copy could not be saved on this device.")
+        )
+        // Booking reconciliation notice preserved
+        val reconciliationNotice = "Request TRK-001 confirmed. Office review and quotation are pending."
+        assertEquals(
+            reconciliationNotice,
+            CustomerProfileRules.resolveRefreshMessage(reconciliationNotice)
+        )
+    }
+
+    @Test
+    fun validationRulesValidateLengthsAndBounds() {
+        // Name: 2..200 chars trimmed
+        assertFalse(CustomerProfileRules.validateName(""))
+        assertFalse(CustomerProfileRules.validateName("   "))
+        assertFalse(CustomerProfileRules.validateName("A"))
+        assertTrue(CustomerProfileRules.validateName("Al"))
+        assertTrue(CustomerProfileRules.validateName(" Juan dela Cruz "))
+        assertTrue(CustomerProfileRules.validateName("A".repeat(200)))
+        assertFalse(CustomerProfileRules.validateName("A".repeat(201)))
+
+        // Address: <= 500 chars
+        assertTrue(CustomerProfileRules.validateAddress(""))
+        assertTrue(CustomerProfileRules.validateAddress("123 Rizal St."))
+        assertTrue(CustomerProfileRules.validateAddress("A".repeat(500)))
+        assertFalse(CustomerProfileRules.validateAddress("A".repeat(501)))
+
+        // City: <= 100 chars
+        assertTrue(CustomerProfileRules.validateCity(""))
+        assertTrue(CustomerProfileRules.validateCity("Pasig City"))
+        assertTrue(CustomerProfileRules.validateCity("A".repeat(100)))
+        assertFalse(CustomerProfileRules.validateCity("A".repeat(101)))
     }
 }

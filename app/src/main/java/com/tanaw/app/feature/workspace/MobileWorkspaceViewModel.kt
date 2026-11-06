@@ -618,13 +618,31 @@ class MobileWorkspaceViewModel @Inject constructor(
                     val updated = CustomerProfileRules.optimisticUpdate(currentData, name, normalized, address, city)
                     state.copy(data = updated ?: currentData, message = CustomerProfileRules.MSG_PROFILE_SAVED, error = null)
                 }
+                val currentData = mutable.value.data
+                if (currentData != null) {
+                    val snapshot = RecoveryPolicy.workspace(currentData, uid)
+                    if (snapshot != null) {
+                        recoveryStore.write(uid, buildJsonObject {
+                            put("created", System.currentTimeMillis())
+                            put("saved_at", java.time.Instant.now().toString())
+                            put("data", snapshot)
+                        })
+                    }
+                }
             },
             refresh = {
                 load()
-                mutable.update { it.copy(message = CustomerProfileRules.MSG_PROFILE_SAVED, error = null) }
+                if (version == generation && client.auth.currentUserOrNull()?.id == uid) {
+                    mutable.update { state ->
+                        state.copy(
+                            message = CustomerProfileRules.resolveRefreshMessage(state.message),
+                            error = null
+                        )
+                    }
+                }
             },
             onRefreshFailed = {
-                mutable.update { it.copy(message = CustomerProfileRules.MSG_PROFILE_SAVED_REFRESH_FAILED, error = null) }
+                mutable.update { it.copy(message = CustomerProfileRules.MSG_PROFILE_SAVED_REFRESH_FAILED, error = null, offline = true) }
             }
         )
     }
