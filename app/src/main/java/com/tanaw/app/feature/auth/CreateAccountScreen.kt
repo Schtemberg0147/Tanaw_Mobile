@@ -5,7 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -18,11 +21,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -31,6 +38,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.feature.workspace.CustomerAddressRules
 import com.tanaw.app.feature.workspace.MobileValidation
 import com.tanaw.app.ui.components.*
 import com.tanaw.app.ui.theme.*
@@ -78,6 +86,10 @@ fun CreateAccountScreen(
     var contactNumber   by remember { mutableStateOf("") }
     var email           by remember { mutableStateOf("") }
     var address         by remember { mutableStateOf("") }
+    var streetAddress   by remember { mutableStateOf("") }
+    var barangay        by remember { mutableStateOf("") }
+    var city            by remember { mutableStateOf("") }
+    var province        by remember { mutableStateOf(CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION) }
     var password        by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible        by remember { mutableStateOf(false) }
@@ -87,11 +99,12 @@ fun CreateAccountScreen(
     val passwordStrength = evaluatePasswordStrength(password)
 
     val passwordMismatch = confirmPassword.isNotEmpty() && password != confirmPassword
+    val addressValid = !phoneSignup || (streetAddress.isNotBlank() && city.isNotBlank() && CustomerAddressRules.isValidAddress(streetAddress, barangay, city, province))
     val canSubmit = firstName.isNotBlank()
             && lastName.isNotBlank()
             && MobileValidation.phone(contactNumber) != null
             && MobileValidation.email(email)
-            && (!phoneSignup || address.trim().length in 1..500)
+            && addressValid
             && password.isNotBlank()
             && confirmPassword.isNotEmpty()
             && password.length >= 8
@@ -99,10 +112,13 @@ fun CreateAccountScreen(
             && agreedToTerms
             && !isLoading
 
+    val focusManager = LocalFocusManager.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -140,7 +156,8 @@ fun CreateAccountScreen(
                     value = firstName,
                     onValueChange = { firstName = it },
                     placeholder = "Juan",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -150,7 +167,8 @@ fun CreateAccountScreen(
                     value = lastName,
                     onValueChange = { lastName = it },
                     placeholder = "Dela Cruz",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 )
             }
         }
@@ -159,6 +177,7 @@ fun CreateAccountScreen(
 
         TanawInputLabel(text = "CONTACT NUMBER")
         Spacer(modifier = Modifier.height(6.dp))
+        val contactInvalid = contactNumber.isNotBlank() && MobileValidation.phone(contactNumber) == null
         TanawTextField(
             value = contactNumber,
             onValueChange = { contactNumber = it },
@@ -171,9 +190,11 @@ fun CreateAccountScreen(
                     modifier = Modifier.size(18.dp)
                 )
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+            isError = contactInvalid,
         )
-        if (contactNumber.isNotBlank() && MobileValidation.phone(contactNumber) == null) {
+        if (contactInvalid) {
             Text("Enter a Philippine mobile number, e.g. 0912 345 6789.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
 
@@ -181,6 +202,7 @@ fun CreateAccountScreen(
 
         TanawInputLabel(text = "EMAIL ADDRESS")
         Spacer(modifier = Modifier.height(6.dp))
+        val emailInvalid = email.isNotBlank() && !MobileValidation.email(email)
         TanawTextField(
             value = email,
             onValueChange = { email = it },
@@ -193,20 +215,73 @@ fun CreateAccountScreen(
                     modifier = Modifier.size(18.dp)
                 )
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+            isError = emailInvalid,
         )
-        if (email.isNotBlank() && !MobileValidation.email(email)) {
+        if (emailInvalid) {
             Text("Enter a valid email address.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
         if (phoneSignup) {
             Text("For your customer details only. Verification and account messages use SMS.", fontSize = 12.sp)
             Spacer(modifier = Modifier.height(16.dp))
-            TanawInputLabel(text = "LOCATION ADDRESS")
+
+            TanawInputLabel(text = "STREET / BUILDING ADDRESS")
             Spacer(modifier = Modifier.height(6.dp))
-            TanawTextField(value = address, onValueChange = { address = it },
-                placeholder = "House/building, street, barangay, city, province",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text))
-            if (address.length > 500) Text("Use 500 characters or fewer.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            val streetInvalid = streetAddress.isNotBlank() && !CustomerAddressRules.validateStreet(streetAddress)
+            TanawTextField(
+                value = streetAddress,
+                onValueChange = { streetAddress = it },
+                placeholder = "House/building number, street name",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                isError = streetInvalid,
+            )
+            if (streetInvalid) Text("Use 380 characters or fewer.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+
+            Spacer(modifier = Modifier.height(12.dp))
+            TanawInputLabel(text = "BARANGAY")
+            Spacer(modifier = Modifier.height(6.dp))
+            val brgyInvalid = barangay.isNotBlank() && !CustomerAddressRules.validateBarangay(barangay)
+            TanawTextField(
+                value = barangay,
+                onValueChange = { barangay = it },
+                placeholder = "e.g. San Josef Sur",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                isError = brgyInvalid,
+            )
+            if (brgyInvalid) Text("Use 100 characters or fewer.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+
+            Spacer(modifier = Modifier.height(12.dp))
+            TanawInputLabel(text = "CITY / MUNICIPALITY")
+            Spacer(modifier = Modifier.height(6.dp))
+            val cityInvalid = city.isNotBlank() && !CustomerAddressRules.validateCity(city)
+            TanawTextField(
+                value = city,
+                onValueChange = { city = it },
+                placeholder = "e.g. Cabanatuan City",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                isError = cityInvalid,
+            )
+            if (cityInvalid) Text("Use 60 characters or fewer.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+
+            Spacer(modifier = Modifier.height(12.dp))
+            TanawInputLabel(text = "PROVINCE")
+            Spacer(modifier = Modifier.height(6.dp))
+            val provInvalid = province.isNotBlank() && !CustomerAddressRules.validateProvince(province)
+            TanawTextField(
+                value = province,
+                onValueChange = { province = it },
+                placeholder = "e.g. Nueva Ecija",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                isError = provInvalid,
+            )
+            if (provInvalid) Text("Use 35 characters or fewer.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+
+            Spacer(modifier = Modifier.height(6.dp))
             Text("We will text a verification code to your contact number.", fontSize = 12.sp)
         }
 
@@ -214,6 +289,7 @@ fun CreateAccountScreen(
 
         TanawInputLabel(text = "PASSWORD")
         Spacer(modifier = Modifier.height(6.dp))
+        val passwordTooShort = password.isNotEmpty() && password.length < 8
         TanawTextField(
             value = password,
             onValueChange = { password = it },
@@ -243,7 +319,9 @@ fun CreateAccountScreen(
                 VisualTransformation.None
             else
                 PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+            isError = passwordTooShort,
         )
 
         if (passwordStrength != PasswordStrength.EMPTY) {
@@ -296,7 +374,9 @@ fun CreateAccountScreen(
                 VisualTransformation.None
             else
                 PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            isError = passwordMismatch,
         )
 
         if (passwordMismatch) {
@@ -322,34 +402,52 @@ fun CreateAccountScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = agreedToTerms,
+                    role = Role.Checkbox,
+                    onValueChange = { agreedToTerms = it }
+                )
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
                 checked = agreedToTerms,
-                onCheckedChange = { agreedToTerms = it },
+                onCheckedChange = null,
                 colors = CheckboxDefaults.colors(
                     checkedColor = NavyPrimary,
                     uncheckedColor = BorderGray
                 ),
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.minimumInteractiveComponentSize()
             )
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             val termsText = buildAnnotatedString {
                 withStyle(SpanStyle(color = TextDark, fontSize = 12.sp)) {
                     append("I agree to Tanaw's ")
                 }
+                pushStringAnnotation(tag = "TERMS", annotation = "terms")
                 withStyle(SpanStyle(color = OrangeAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)) {
                     append("Terms of Service")
                 }
+                pop()
                 withStyle(SpanStyle(color = TextDark, fontSize = 12.sp)) {
                     append(" and confirm all booking information I provide is accurate.")
                 }
             }
-            Text(
+            @Suppress("DEPRECATION")
+            ClickableText(
                 text = termsText,
-                lineHeight = 18.sp,
-                modifier = Modifier.clickable { onTermsClick() }
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                modifier = Modifier.weight(1f),
+                onClick = { offset ->
+                    val clickedTerms = termsText.getStringAnnotations(tag = "TERMS", start = offset, end = offset).isNotEmpty()
+                    if (clickedTerms) {
+                        onTermsClick()
+                    } else {
+                        agreedToTerms = !agreedToTerms
+                    }
+                }
             )
         }
 
@@ -357,8 +455,19 @@ fun CreateAccountScreen(
 
         Button(
             onClick = {
+                val finalAddress = if (phoneSignup) {
+                    val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
+                        street = streetAddress,
+                        barangay = barangay,
+                        city = city,
+                        province = province
+                    )
+                    if (pCity.isNotBlank()) "$pAddress, $pCity" else pAddress
+                } else {
+                    address
+                }
                 onVerifyAndContinue(
-                    firstName, lastName, contactNumber, email, password, address
+                    firstName, lastName, contactNumber, email, password, finalAddress
                 )
             },
             modifier = Modifier

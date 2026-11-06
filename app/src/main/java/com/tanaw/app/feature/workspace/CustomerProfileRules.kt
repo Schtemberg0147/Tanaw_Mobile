@@ -18,7 +18,9 @@ internal object CustomerProfileRules {
         name: String,
         phone: String,
         address: String,
-        city: String
+        city: String,
+        barangay: String = "",
+        province: String = ""
     ): JsonObject? {
         if (data == null) return null
         val updates = mutableMapOf<String, JsonElement>()
@@ -29,11 +31,19 @@ internal object CustomerProfileRules {
         ))
         val customer = data["customer"] as? JsonObject
         if (customer != null) {
+            val resolvedAddress = CustomerAddressRules.parseFromSaved(
+                rawAddress = address,
+                rawCity = city,
+                explicitBarangay = barangay,
+                explicitProvince = province
+            )
             updates["customer"] = JsonObject(customer + mapOf(
                 "name" to JsonPrimitive(name.trim()),
                 "phone" to JsonPrimitive(phone.trim()),
                 "address" to JsonPrimitive(address.trim()),
-                "city" to JsonPrimitive(city.trim())
+                "city" to JsonPrimitive(city.trim()),
+                "barangay" to JsonPrimitive(resolvedAddress.barangay),
+                "province" to JsonPrimitive(resolvedAddress.province)
             ))
         }
         return JsonObject(data + updates)

@@ -284,7 +284,9 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                 }
                 "Active","History" -> {
                     LaunchedEffect(tab, historyFilter, query) {
-                        kotlinx.coroutines.delay(350)
+                        if (query.isNotBlank()) {
+                            kotlinx.coroutines.delay(350)
+                        }
                         vm.loadCustomerShipments(tab, historyFilter, query, loadMore = false)
                     }
                     Text(if(tab=="History") "Shipment history" else "Active shipments",style=MaterialTheme.typography.headlineSmall)
@@ -293,20 +295,30 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     if(tab=="History") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("All","Completed","Cancelled").forEach { f -> FilterChip(selected=historyFilter==f,onClick={historyFilter=f},label={Text(f)}) }
                     }
-                    val displayedShipments = state.customerShipments ?: CustomerPaginationRules.filterOfflineShipments(
-                        data.rows("shipments"),
-                        tab,
-                        historyFilter,
-                        query
-                    )
-                    if(state.customerShipmentsLoading && state.customerShipments == null) {
+                    val isCurrentTabLoaded = state.customerShipmentsTab == tab && (tab != "History" || state.customerShipmentsFilter == historyFilter)
+                    val displayedShipments = if (isCurrentTabLoaded) {
+                        state.customerShipments ?: CustomerPaginationRules.filterOfflineShipments(
+                            data.rows("shipments"),
+                            tab,
+                            historyFilter,
+                            query
+                        )
+                    } else {
+                        CustomerPaginationRules.filterOfflineShipments(
+                            data.rows("shipments"),
+                            tab,
+                            historyFilter,
+                            query
+                        )
+                    }
+                    if(state.customerShipmentsLoading && (!isCurrentTabLoaded || state.customerShipments == null)) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                     if(state.customerShipmentsError != null) {
                         Text(state.customerShipmentsError!!, color = MaterialTheme.colorScheme.error)
                     }
                     ShipmentList(displayedShipments) {detail=it}
-                    if(state.customerShipmentsHasMore) {
+                    if(isCurrentTabLoaded && state.customerShipmentsHasMore) {
                         OutlinedButton(
                             onClick = { vm.loadCustomerShipments(tab, historyFilter, query, loadMore = true) },
                             enabled = !state.customerShipmentsLoading,

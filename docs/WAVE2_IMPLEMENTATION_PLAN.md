@@ -150,7 +150,7 @@
 ---
 
 ### Module C03: Add Barangay and Province to Customer Addresses
-* **Status:** Ready for Implementation
+* **Status:** Complete (implemented directly on `JBranch`)
 * **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C03), `docs/FEATURES.md` (#7, #9)
 

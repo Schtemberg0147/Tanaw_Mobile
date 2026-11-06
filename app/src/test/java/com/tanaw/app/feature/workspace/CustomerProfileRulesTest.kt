@@ -346,4 +346,40 @@ class CustomerProfileRulesTest {
         assertTrue(CustomerProfileRules.validateCity("A".repeat(100)))
         assertFalse(CustomerProfileRules.validateCity("A".repeat(101)))
     }
+
+    @Test
+    fun optimisticUpdatePopulatesStructuredBarangayAndProvince() {
+        val initial = JsonObject(mapOf(
+            "profile" to JsonObject(mapOf(
+                "full_name" to JsonPrimitive("Old Name"),
+                "phone" to JsonPrimitive("09123456789")
+            )),
+            "customer" to JsonObject(mapOf(
+                "name" to JsonPrimitive("Old Name"),
+                "phone" to JsonPrimitive("09123456789"),
+                "address" to JsonPrimitive("Old Street"),
+                "city" to JsonPrimitive("Old City")
+            ))
+        ))
+
+        val updated = CustomerProfileRules.optimisticUpdate(
+            data = initial,
+            name = "Maria Santos",
+            phone = "09987654321",
+            address = "123 Maharlika Highway, Brgy. San Juan",
+            city = "Cabanatuan City, Nueva Ecija",
+            barangay = "San Juan",
+            province = "Nueva Ecija"
+        )
+
+        assertNotNull(updated)
+        val customer = updated?.get("customer") as? JsonObject
+        assertNotNull(customer)
+        assertEquals("Maria Santos", customer?.get("name")?.let { (it as JsonPrimitive).content })
+        assertEquals("09987654321", customer?.get("phone")?.let { (it as JsonPrimitive).content })
+        assertEquals("123 Maharlika Highway, Brgy. San Juan", customer?.get("address")?.let { (it as JsonPrimitive).content })
+        assertEquals("Cabanatuan City, Nueva Ecija", customer?.get("city")?.let { (it as JsonPrimitive).content })
+        assertEquals("San Juan", customer?.get("barangay")?.let { (it as JsonPrimitive).content })
+        assertEquals("Nueva Ecija", customer?.get("province")?.let { (it as JsonPrimitive).content })
+    }
 }

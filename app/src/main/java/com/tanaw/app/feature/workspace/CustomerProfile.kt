@@ -54,8 +54,17 @@ internal fun CustomerProfile(
 
     var editingFieldKey by remember { mutableStateOf<String?>(null) }
     var editingFieldValue by remember { mutableStateOf("") }
+    var editingBarangayValue by remember { mutableStateOf("") }
     var editingCityValue by remember { mutableStateOf("") }
+    var editingProvinceValue by remember { mutableStateOf("") }
     var editError by remember { mutableStateOf<String?>(null) }
+
+    val savedStructuredAddress = CustomerAddressRules.parseFromSaved(
+        rawAddress = c.value("address"),
+        rawCity = c.value("city"),
+        explicitBarangay = c.value("barangay"),
+        explicitProvince = c.value("province")
+    )
 
     fun openUriSafely(value: String) {
         linkError = runCatching { uri.openUri(value) }.isFailure
@@ -117,13 +126,13 @@ internal fun CustomerProfile(
                             HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "ADDRESS",
+                                    text = "HOUSE / BUILDING / STREET",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = DriverMuted,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = c.value("address").ifBlank { "No default address set" },
+                                    text = savedStructuredAddress.streetAddress.ifBlank { "No street address set" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = DriverNavy
@@ -131,13 +140,41 @@ internal fun CustomerProfile(
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "CITY",
+                                    text = "BARANGAY",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = DriverMuted,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = c.value("city").ifBlank { "Not set" },
+                                    text = savedStructuredAddress.barangay.ifBlank { "Not set" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DriverNavy
+                                )
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "CITY / MUNICIPALITY",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DriverMuted,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = savedStructuredAddress.city.ifBlank { "Not set" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DriverNavy
+                                )
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "PROVINCE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DriverMuted,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = savedStructuredAddress.province.ifBlank { "Not set" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = DriverNavy
@@ -147,8 +184,10 @@ internal fun CustomerProfile(
                             Button(
                                 onClick = {
                                     editingFieldKey = "address"
-                                    editingFieldValue = c.value("address")
-                                    editingCityValue = c.value("city")
+                                    editingFieldValue = savedStructuredAddress.streetAddress
+                                    editingBarangayValue = savedStructuredAddress.barangay
+                                    editingCityValue = savedStructuredAddress.city
+                                    editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
                                     editError = null
                                 },
                                 shape = RoundedCornerShape(8.dp),
@@ -285,14 +324,28 @@ internal fun CustomerProfile(
                             OutlinedTextField(
                                 value = editingFieldValue,
                                 onValueChange = { editingFieldValue = it; editError = null },
-                                label = { Text("Address") },
+                                label = { Text("House / Building / Street") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editingBarangayValue,
+                                onValueChange = { editingBarangayValue = it; editError = null },
+                                label = { Text("Barangay") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = editingCityValue,
                                 onValueChange = { editingCityValue = it; editError = null },
-                                label = { Text("City") },
+                                label = { Text("City / Municipality") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editingProvinceValue,
+                                onValueChange = { editingProvinceValue = it; editError = null },
+                                label = { Text("Province") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -335,10 +388,36 @@ internal fun CustomerProfile(
                                 editingFieldKey = null
                             }
                             "address" -> {
-                                if (!CustomerProfileRules.validateAddress(editingFieldValue) || !CustomerProfileRules.validateCity(editingCityValue)) {
-                                    editError = "Address or city exceeds maximum length."
+                                if (editingFieldValue.isBlank()) {
+                                    editError = "Street address cannot be empty."
                                     return@Button
                                 }
+                                if (!CustomerAddressRules.validateStreet(editingFieldValue)) {
+                                    editError = "Street address must be 380 characters or fewer."
+                                    return@Button
+                                }
+                                if (editingBarangayValue.isNotBlank() && !CustomerAddressRules.validateBarangay(editingBarangayValue)) {
+                                    editError = "Barangay must be 100 characters or fewer."
+                                    return@Button
+                                }
+                                if (editingCityValue.isBlank()) {
+                                    editError = "City / Municipality cannot be empty."
+                                    return@Button
+                                }
+                                if (!CustomerAddressRules.validateCity(editingCityValue)) {
+                                    editError = "City must be 60 characters or fewer."
+                                    return@Button
+                                }
+                                if (editingProvinceValue.isNotBlank() && !CustomerAddressRules.validateProvince(editingProvinceValue)) {
+                                    editError = "Province must be 35 characters or fewer."
+                                    return@Button
+                                }
+                                val (formattedAddress, formattedCity) = CustomerAddressRules.formatForRpc(
+                                    street = editingFieldValue,
+                                    barangay = editingBarangayValue,
+                                    city = editingCityValue,
+                                    province = editingProvinceValue
+                                )
                                 val currentPhone = MobileValidation.phone(p.value("phone"))
                                 if (currentPhone == null) {
                                     editError = "A valid contact number must be set first before updating address."
@@ -349,7 +428,7 @@ internal fun CustomerProfile(
                                     editError = "Name must be between 2 and 200 characters."
                                     return@Button
                                 }
-                                vm.profile(currentName, currentPhone, editingFieldValue, editingCityValue)
+                                vm.profile(currentName, currentPhone, formattedAddress, formattedCity)
                                 editingFieldKey = null
                             }
                         }
@@ -389,7 +468,7 @@ internal fun CustomerProfile(
     val fullName = p.value("full_name").ifBlank { "Customer" }
     val email = p.value("email").ifBlank { "Phone-number account" }
     val contact = p.value("phone").ifBlank { "No contact set" }
-    val defaultAddress = c.value("address").ifBlank { "No default address set" }
+    val defaultAddress = savedStructuredAddress.fullDisplayAddress().ifBlank { c.value("address").ifBlank { "No default address set" } }
     val memberSince = CustomerProfilePresentation.memberSince(p.value("created_at"))
 
     Column(
@@ -592,8 +671,10 @@ internal fun CustomerProfile(
                             isLocked = false,
                             onClick = {
                                 editingFieldKey = "address"
-                                editingFieldValue = c.value("address")
-                                editingCityValue = c.value("city")
+                                editingFieldValue = savedStructuredAddress.streetAddress
+                                editingBarangayValue = savedStructuredAddress.barangay
+                                editingCityValue = savedStructuredAddress.city
+                                editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
                                 editError = null
                             }
                         )

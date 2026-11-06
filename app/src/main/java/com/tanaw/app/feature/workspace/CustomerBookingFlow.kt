@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -37,7 +38,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -218,6 +224,16 @@ fun CustomerBookingFlow(
     val unreadCount = data.rows("notifications").count { it.value("read_at").isBlank() }
     val customerId = customer.value("id").ifBlank { profile.value("id") }
     val coroutineScope = rememberCoroutineScope()
+
+    val savedDefaultAddress = remember(customer) {
+        CustomerAddressRules.parseFromSaved(
+            rawAddress = customer.value("address"),
+            rawCity = customer.value("city"),
+            explicitBarangay = customer.value("barangay"),
+            explicitProvince = customer.value("province")
+        )
+    }
+    val fullSavedProfileAddress = savedDefaultAddress.fullDisplayAddress().ifBlank { customer.value("address") }
 
     var stepName by rememberSaveable { mutableStateOf(CustomerBookingStep.HOME.name) }
     val step = runCatching { CustomerBookingStep.valueOf(stepName) }.getOrDefault(CustomerBookingStep.HOME)
@@ -686,6 +702,8 @@ internal fun CustomerBookingHomeContent(
     activeShipmentsCount: Int = 0,
     completedShipmentsCount: Int = 0,
     onOpenActiveShipments: () -> Unit = {},
+    savedDefaultAddress: String = "",
+    onUseSavedAddress: (() -> Unit)? = null,
     availableDraft: BookingDraft? = null,
     onResumeDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {}
@@ -948,6 +966,36 @@ internal fun CustomerBookingHomeContent(
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
+                    if (pickup.isBlank() && savedDefaultAddress.isNotBlank() && onUseSavedAddress != null) {
+                        Surface(
+                            onClick = onUseSavedAddress,
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Home,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Use default address: $savedDefaultAddress",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             // Pick-up Location Row
@@ -1011,6 +1059,7 @@ internal fun CustomerBookingHomeContent(
                     ) {
                         if (routePreview != null) {
                             Row(
+                                modifier = Modifier.weight(1f, fill = false),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
@@ -1024,7 +1073,9 @@ internal fun CustomerBookingHomeContent(
                                     text = "${routePreview.distanceKm} km · ${CustomerBookingRules.formatDuration(routePreview.minutes)}",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         } else {
@@ -1034,10 +1085,10 @@ internal fun CustomerBookingHomeContent(
                         OutlinedButton(
                             onClick = onScheduleClick,
                             shape = RoundedCornerShape(50),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                             modifier = Modifier
-                                .height(36.dp)
+                                .heightIn(min = 36.dp)
                                 .testTag("SchedulePillButton")
                         ) {
                             Icon(
@@ -1051,7 +1102,9 @@ internal fun CustomerBookingHomeContent(
                                 text = scheduleLabel,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Icon(
@@ -1180,7 +1233,12 @@ private fun LocationSelectorField(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = "$label: ${value.ifBlank { placeholder }}"
+            }
     ) {
         Row(
             modifier = Modifier
@@ -1228,6 +1286,7 @@ private fun VehicleSelectionCard(
 ) {
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
     val borderWidth = if (selected) 2.dp else 1.dp
+    val cardContentDesc = "$name, $badgeText, capacity $capacityText" + if (selected) ", selected" else ""
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(14.dp),
@@ -1235,7 +1294,12 @@ private fun VehicleSelectionCard(
         tonalElevation = if (selected) 3.dp else 1.dp,
         shadowElevation = if (selected) 3.dp else 1.dp,
         border = BorderStroke(borderWidth, borderColor),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = cardContentDesc
+                role = Role.RadioButton
+            }
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
             if (selected) {
@@ -1272,7 +1336,7 @@ private fun VehicleSelectionCard(
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(6.dp)) {
                         Image(
                             painter = painterResource(id = iconRes),
-                            contentDescription = name,
+                            contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Fit,
                             colorFilter = ColorFilter.tint(if (isDark) Color.White else NavyPrimary)
@@ -1285,6 +1349,7 @@ private fun VehicleSelectionCard(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -1292,7 +1357,10 @@ private fun VehicleSelectionCard(
                             text = name,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -1311,13 +1379,17 @@ private fun VehicleSelectionCard(
                     Text(
                         text = capacityText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = stringResource(R.string.awaiting_office_quotation),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1849,6 +1921,7 @@ fun FullScreenLocationPicker(
                         .fillMaxSize()
                         .statusBarsPadding()
                         .navigationBarsPadding()
+                        .imePadding()
                 ) {
                     // Top Rounded Search Input Card (Image 3)
                     Surface(
@@ -1902,6 +1975,10 @@ fun FullScreenLocationPicker(
                                         fontWeight = FontWeight.Medium
                                     ),
                                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Text,
+                                        imeAction = ImeAction.Search
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .focusRequester(searchFocusRequester)
@@ -2088,6 +2165,8 @@ fun PickupTimeBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -2573,7 +2652,7 @@ fun AddMoreDetailsScreen(
                             placeholder = { Text("0912 345 6789") },
                             singleLine = true,
                             isError = contact.isNotBlank() && normalizedContact == null,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2590,22 +2669,44 @@ fun AddMoreDetailsScreen(
 
                     // CARGO DESCRIPTION
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = stringResource(R.string.cargo_description_label),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.cargo_description_label),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${cargo.trim().length}/1000",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (cargo.isNotEmpty() && cargo.trim().length < 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                        val isCargoError = cargo.isNotEmpty() && cargo.trim().length < 3
                         OutlinedTextField(
                             value = cargo,
                             onValueChange = onCargoChange,
                             placeholder = { Text(stringResource(R.string.cargo_description_placeholder)) },
                             singleLine = true,
+                            isError = isCargoError,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("CargoDescriptionInput")
                         )
+                        if (isCargoError) {
+                            Text(
+                                text = "Cargo description must be at least 3 characters.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
 
                     // EST. WEIGHT (kg)
@@ -2616,24 +2717,37 @@ fun AddMoreDetailsScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        val isWeightInvalid = weight.isNotBlank() && (parsedWeight == null || parsedWeight <= 0 || !weightFits)
                         OutlinedTextField(
                             value = weight,
                             onValueChange = onWeightChange,
                             placeholder = { Text("0") },
                             suffix = { Text("kg", fontWeight = FontWeight.SemiBold) },
                             singleLine = true,
-                            isError = weight.isNotBlank() && (parsedWeight == null || !weightFits),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            isError = isWeightInvalid,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("EstWeightInput")
                         )
-                        if (selectedVehicle != null) {
+                        if (weight.isNotBlank() && (parsedWeight == null || parsedWeight <= 0)) {
                             Text(
-                                text = "Selected vehicle: ${selectedVehicle.value("name")} (${CustomerBookingRules.formatCapacity(vehicleCap)})",
+                                text = "Enter a valid positive cargo weight in kilograms.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if ( parsedWeight != null && !weightFits) MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else if (selectedVehicle != null) {
+                            val capKgVal = vehicleCap.toDoubleOrNull() ?: 0.0
+                            val exceededText = if (parsedWeight != null && parsedWeight > capKgVal) {
+                                "Weight exceeds ${selectedVehicle.value("name")}'s max limit of ${CustomerBookingRules.formatCapacity(vehicleCap)}."
+                            } else {
+                                "Selected vehicle: ${selectedVehicle.value("name")} (${CustomerBookingRules.formatCapacity(vehicleCap)})"
+                            }
+                            Text(
+                                text = exceededText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (parsedWeight != null && !weightFits) MaterialTheme.colorScheme.error
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -2706,6 +2820,7 @@ fun AddMoreDetailsScreen(
                             placeholder = { Text(stringResource(R.string.notes_to_driver_placeholder)) },
                             minLines = 3,
                             maxLines = 5,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2725,13 +2840,20 @@ private fun RouteSummaryCard(
     routePreview: RoutePreview?,
     onEdit: () -> Unit
 ) {
+    val routeDesc = "Route summary. Pickup: $pickup. Destination: $dropoff." +
+        if (routePreview != null) " Distance ${routePreview.distanceKm} kilometers, estimated ${CustomerBookingRules.formatDuration(routePreview.minutes)}." else ""
+
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
         shadowElevation = 1.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = routeDesc
+            }
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -2758,6 +2880,7 @@ private fun RouteSummaryCard(
             }
 
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -2768,7 +2891,7 @@ private fun RouteSummaryCard(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                 )
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.pickup),
                         style = MaterialTheme.typography.labelSmall,
@@ -2785,6 +2908,7 @@ private fun RouteSummaryCard(
             }
 
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -2795,7 +2919,7 @@ private fun RouteSummaryCard(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.secondary)
                 )
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.destination),
                         style = MaterialTheme.typography.labelSmall,
@@ -2822,13 +2946,17 @@ private fun RouteSummaryCard(
                         text = "⇅ ${routePreview.distanceKm} km",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "⏱ ${CustomerBookingRules.formatDuration(routePreview.minutes)}",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -3019,13 +3147,17 @@ fun BookingSummaryScreen(
                                 text = vehicleName,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = CustomerBookingRules.formatCapacity(vehicleCapacity),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
@@ -3039,7 +3171,9 @@ fun BookingSummaryScreen(
                                 text = "$weight kg",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -3056,7 +3190,9 @@ fun BookingSummaryScreen(
                                 text = cargo,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
@@ -3076,7 +3212,9 @@ fun BookingSummaryScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -3093,7 +3231,9 @@ fun BookingSummaryScreen(
                             text = contact,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -3133,7 +3273,10 @@ fun BookingSummaryScreen(
                             text = scheduleSummary,
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -3173,7 +3316,11 @@ fun BookingSummaryScreen(
                             text = stringResource(R.string.awaiting_office_quotation),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.secondary
+                            color = MaterialTheme.colorScheme.secondary,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Text(
@@ -3304,7 +3451,8 @@ fun BookingSubmittedScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                         }
                         Row(
@@ -3322,7 +3470,8 @@ fun BookingSubmittedScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                         }
 
@@ -3332,7 +3481,7 @@ fun BookingSubmittedScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
                                 Text(
                                     text = stringResource(R.string.vehicle_label),
                                     style = MaterialTheme.typography.labelSmall,
@@ -3343,10 +3492,12 @@ fun BookingSubmittedScreen(
                                     text = vehicleName,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Column {
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
                                 Text(
                                     text = stringResource(R.string.schedule_label),
                                     style = MaterialTheme.typography.labelSmall,
@@ -3357,10 +3508,15 @@ fun BookingSubmittedScreen(
                                     text = scheduleSummary,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Column(horizontalAlignment = Alignment.End) {
+                            Column(
+                                modifier = Modifier.weight(1f, fill = false),
+                                horizontalAlignment = Alignment.End
+                            ) {
                                 Text(
                                     text = stringResource(R.string.total_fee_label),
                                     style = MaterialTheme.typography.labelSmall,
@@ -3371,7 +3527,9 @@ fun BookingSubmittedScreen(
                                     text = "Pending quote",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.secondary
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
