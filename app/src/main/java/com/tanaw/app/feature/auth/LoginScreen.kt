@@ -2,7 +2,6 @@ package com.tanaw.app.feature.auth
 
 import android.content.res.Configuration
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -10,7 +9,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,8 +37,8 @@ import com.tanaw.app.ui.theme.TanawTheme
  * LoginScreen
  *
  * State that changes during a login attempt (isLoading, errorMessage) is owned
- * by the parent (TanawNavHost) and passed in as parameters so the composable
- * itself stays stateless and easy to preview/test.
+ * by the parent (TanawNavHost / MobileWorkspaceApp) and passed in as parameters
+ * so the composable itself stays stateless and easy to preview/test.
  *
  * @param onLoginClick        Called with (email, password) when the user taps Login.
  *                            The parent is responsible for validation + navigation.
@@ -73,7 +76,12 @@ fun LoginScreen(
     val isPhoneInvalid = emailTouched && email.isNotBlank() && MobileValidation.phone(email) == null
     val isInputError = if (useEmail) isEmailInvalid else isPhoneInvalid
     val inputSupportingText: @Composable (() -> Unit)? = if (isInputError) {
-        { Text(if (useEmail) "Enter a valid email address." else "Enter a Philippine mobile number, e.g. 0912 345 6789.") }
+        {
+            Text(
+                text  = if (useEmail) "Enter a valid email address." else "Enter a Philippine mobile number, e.g. 0912 345 6789.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
     } else null
 
     val isInputValid = if (useEmail) MobileValidation.email(email) else (MobileValidation.phone(email) != null)
@@ -115,7 +123,9 @@ fun LoginScreen(
 
                 // ── TANAW Logo ───────────────────────────────────────────────
                 Image(
-                    painter            = painterResource(id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo),
+                    painter            = painterResource(
+                        id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo
+                    ),
                     contentDescription = "TANAW logo",
                     modifier           = Modifier.size(56.dp)
                 )
@@ -130,8 +140,10 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(36.dp))
 
-                // ── Email field ──────────────────────────────────────────────
+                // ── Google Sign In (Optional) ────────────────────────────────
                 onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
+
+                // ── Identifier field ─────────────────────────────────────────
                 TanawInputLabel(text = if (useEmail) "EMAIL ADDRESS" else "PHONE NUMBER")
                 Spacer(modifier = Modifier.height(6.dp))
                 TanawTextField(
@@ -142,14 +154,10 @@ fun LoginScreen(
                     },
                     placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
                     leadingIcon   = {
-                        if (!useEmail) Icon(Icons.Outlined.Phone, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                        else
                         Icon(
-                            painter            = painterResource(id = R.drawable.ic_mail_check),
+                            imageVector        = if (useEmail) Icons.Outlined.Email else Icons.Outlined.Phone,
                             contentDescription = null,
-                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier           = Modifier.size(18.dp)
+                            modifier           = Modifier.size(20.dp)
                         )
                     },
                     keyboardOptions = KeyboardOptions(
@@ -159,12 +167,25 @@ fun LoginScreen(
                     keyboardActions = KeyboardActions(
                         onNext = { focusManager.moveFocus(FocusDirection.Down) }
                     ),
-                    isError = isInputError,
+                    isError        = isInputError,
                     supportingText = inputSupportingText,
                 )
                 if (allowPhone) {
-                    TextButton(enabled = !isLoading, onClick = { useEmail = !useEmail; email = ""; emailTouched = false }) {
-                        Text(if (useEmail) "Use phone number instead" else "Use email address instead")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        TanawTextLink(
+                            text    = if (useEmail) "Use phone number instead" else "Use email address instead",
+                            onClick = {
+                                if (!isLoading) {
+                                    useEmail = !useEmail
+                                    email = ""
+                                    emailTouched = false
+                                }
+                            }
+                        )
                     }
                 }
 
@@ -179,21 +200,17 @@ fun LoginScreen(
                     placeholder   = "••••••••",
                     leadingIcon   = {
                         Icon(
-                            painter            = painterResource(id = R.drawable.ic_shield_lock),
+                            imageVector        = Icons.Outlined.Lock,
                             contentDescription = null,
-                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier           = Modifier.size(18.dp)
+                            modifier           = Modifier.size(20.dp)
                         )
                     },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
-                                painter = painterResource(
-                                    id = if (passwordVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
-                                ),
+                                imageVector        = if (passwordVisible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
                                 contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
+                                modifier           = Modifier.size(20.dp)
                             )
                         }
                     },
@@ -214,24 +231,23 @@ fun LoginScreen(
                 )
 
                 // ── Forgot password ──────────────────────────────────────────
-                onForgotPassword?.let { openRecovery -> Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text       = "Forgot Password?",
-                        color      = MaterialTheme.colorScheme.secondary,
-                        style      = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier   = Modifier
-                            .padding(top = 10.dp)
-                            .clickable(onClick = openRecovery)
-                    )
-                } }
+                onForgotPassword?.let { openRecovery ->
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TanawTextLink(
+                            text       = "Forgot Password?",
+                            onClick    = openRecovery,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier   = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                }
 
                 // ── Inline error ─────────────────────────────────────────────
                 if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text     = errorMessage,
                         color    = MaterialTheme.colorScheme.error,
@@ -240,7 +256,7 @@ fun LoginScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
                 // ── Login button ─────────────────────────────────────────────
                 TanawPrimaryButton(
@@ -265,7 +281,7 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // ── Terms footer ─────────────────────────────────────────────
+                // ── Terms footer ─────────────────────────────────────
                 TermsFooter(
                     onTermsClick   = onTermsClick,
                     onPrivacyClick = onPrivacyClick

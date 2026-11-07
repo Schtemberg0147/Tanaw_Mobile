@@ -322,7 +322,7 @@
 ---
 
 ### Module C12: Small-Screen Layouts, Keyboards, Accessibility & Field Errors
-* **Status:** Ready for Implementation
+* **Status:** Complete (implemented directly on `JBranch`)
 * **Target Branch:** `JBranch`
 * **Execution Strategy:** Execute screen-by-screen in 4 focused passes directly on `JBranch` (C12a Auth & Recovery, C12b Booking & Tracking, C12c Profile & History/Alerts, C12d Driver Workspace) as required by `docs/BACKLOG.md` (*"Do screen by screen, not in one pass"*).
 * **Reference Docs:** `docs/BACKLOG.md` (C12)

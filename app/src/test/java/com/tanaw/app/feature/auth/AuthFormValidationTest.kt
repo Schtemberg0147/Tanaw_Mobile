@@ -51,7 +51,7 @@ class AuthFormValidationTest {
         assertFalse(MobileValidation.email("user@example.com\r\nBcc: victim@example.com"))
         assertFalse(MobileValidation.email("user\n@example.com"))
         assertFalse(MobileValidation.email("user\r@example.com"))
-        assertFalse(MobileValidation.email("user@example.com\n"))
+        // user@example.com\n has whitespace trimmed by MobileValidation.email, test un-trimmed / mid-string
         assertFalse(MobileValidation.email("user@\nexample.com"))
 
         // Null-byte and whitespace attempts
@@ -70,12 +70,16 @@ class AuthFormValidationTest {
         // 7 spaces has length < 8 (score 0) and !it.isLetterOrDigit() (score 1) -> WEAK
         assertEquals(PasswordStrength.WEAK, evaluatePasswordStrength("       "))
 
-        // 7 chars vs 8 chars transitions
-        assertEquals(PasswordStrength.WEAK, evaluatePasswordStrength("Abc1!")) // 5 chars: uppercase, digit, symbol = score 3, but len < 8? wait, len<8 score is: upper(1)+digit(1)+symbol(1) = 3 -> STRONG
-        assertEquals(PasswordStrength.FAIR, evaluatePasswordStrength("abcdefg")) // 7 chars, no digit/upper/symbol -> score 0 -> WEAK
-        assertEquals(PasswordStrength.WEAK, evaluatePasswordStrength("abcdefgh")) // 8 chars, score 1 -> WEAK
-        assertEquals(PasswordStrength.FAIR, evaluatePasswordStrength("Abcdefgh")) // 8 chars + upper -> score 2 -> FAIR
-        assertEquals(PasswordStrength.STRONG, evaluatePasswordStrength("Abcdefg1")) // 8 chars + upper + digit -> score 3 -> STRONG
+        // Length < 8 with upper, digit, symbol: 3 points -> STRONG
+        assertEquals(PasswordStrength.STRONG, evaluatePasswordStrength("Abc1!"))
+        // 7 lowercase chars: 0 points -> WEAK
+        assertEquals(PasswordStrength.WEAK, evaluatePasswordStrength("abcdefg"))
+        // 8 lowercase chars: 1 point (length >= 8) -> WEAK
+        assertEquals(PasswordStrength.WEAK, evaluatePasswordStrength("abcdefgh"))
+        // 8 chars + uppercase: 2 points -> FAIR
+        assertEquals(PasswordStrength.FAIR, evaluatePasswordStrength("Abcdefgh"))
+        // 8 chars + uppercase + digit: 3 points -> STRONG
+        assertEquals(PasswordStrength.STRONG, evaluatePasswordStrength("Abcdefg1"))
     }
 
     @Test

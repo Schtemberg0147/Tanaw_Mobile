@@ -19,6 +19,6 @@ object MobileValidation {
         return result.takeIf { it.matches(Regex("\\+639[0-9]{9}")) }
     }
     fun weight(raw: String): Double? = raw.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 && it <= 100000 }
-    fun email(raw: String): Boolean = raw.trim().matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"))
+    fun email(raw: String): Boolean = !raw.contains('\u0000') && raw.trim().matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"))
     fun password(value: String, confirmation: String): Boolean = value.length >= 8 && value == confirmation
 }
