@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -117,12 +118,38 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
     BackHandler(tab!="Home" || selected!=null) {if(tab=="Messages" && messageThread!=null)messageThread=null else if(selected!=null)selected=null else tab="Home"}
     Scaffold(containerColor=DriverBackground,topBar={
         if(tab!="Navigate" || shipment==null) Surface(color=Color.White,shadowElevation=1.dp) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal=25.dp),
+            Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal=16.dp),
                 verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-                DriverAsset(R.drawable.figma_driver_fac2b,50)
-                Row(verticalAlignment=Alignment.CenterVertically) {
-                    if(conversation!=null)TextButton(onClick={tab="Messages";selected=null;messageThread=null}) {Text("Messages (${if(state.offline || state.conversationUnread==null) "?" else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}.toString()})")}
-                    IconButton(onClick={tab="Alerts";selected=null}) {DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications")}
+                DriverAsset(R.drawable.figma_driver_fac2b,46)
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                    if(conversation!=null) {
+                        val unreadCount = if(state.offline || state.conversationUnread==null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}
+                        TextButton(
+                            onClick={tab="Messages";selected=null;messageThread=null},
+                            contentPadding=PaddingValues(horizontal=8.dp,vertical=4.dp)
+                        ) {
+                            Text(
+                                text=if(unreadCount!=null && unreadCount>0) "Messages ($unreadCount)" else "Messages",
+                                maxLines=1,
+                                overflow=TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
+                    IconButton(
+                        onClick={tab="Alerts";selected=null},
+                        modifier=Modifier.size(48.dp)
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (unreadAlerts > 0) {
+                                    Badge { Text("$unreadAlerts") }
+                                }
+                            }
+                        ) {
+                            DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications")
+                        }
+                    }
                 }
             }
         }
@@ -342,14 +369,20 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 @Composable private fun DriverAssignment(s:JsonObject,d:JsonObject,open:()->Unit) {
     Surface(onClick=open,color=Color.White,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,DriverLine)) {Column {
         Row(Modifier.fillMaxWidth().background(Color(0xFFF7F8FF)).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-            Text("Trip Assignment",fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+            Text("Trip Assignment",fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+            Spacer(Modifier.width(8.dp))
             DriverBadge(s.value("tracking_number"),DriverNavy,DriverLine)
         }
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             Row(horizontalArrangement=Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f)) {DriverCaption("CARGO",R.drawable.figma_driver_99491,10,10);Text(s.value("cargo_description").ifBlank {"Not recorded"},fontSize=14.sp);SupportingText(MobilePresentation.number(s.value("weight_kg"),"kg"))}
+                Column(Modifier.weight(1f)) {
+                    DriverCaption("CARGO",R.drawable.figma_driver_99491,10,10)
+                    Text(s.value("cargo_description").ifBlank {"Not recorded"},fontSize=14.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    SupportingText(MobilePresentation.number(s.value("weight_kg"),"kg"))
+                }
                 s.value("special_handling").takeIf {it.isNotBlank() && it!="false"}?.let {Column(Modifier.weight(1f)) {
-                    DriverCaption("SPECIAL",R.drawable.figma_driver_02651,10,8);DriverBadge(if(it=="true")"Special handling" else it,Color(0xFF7D3100),Color(0xFFFFDBCA))
+                    DriverCaption("SPECIAL",R.drawable.figma_driver_02651,10,8)
+                    DriverBadge(if(it=="true")"Special handling" else it,Color(0xFF7D3100),Color(0xFFFFDBCA))
                 }}
             }
             DriverRoute(s)
@@ -371,9 +404,9 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         listOf("PICK-UP" to "pickup_address","DESTINATION" to "dropoff_address").forEachIndexed {index,(label,key)->
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.padding(top=5.dp).size(9.dp).clip(CircleShape).background(if(index==0)DriverNavy else Color(0xFFBA1A1A)))
-                Column {
+                Column(Modifier.weight(1f, fill=false)) {
                     Text(label,color=Color(0xFF73777F),fontSize=10.sp,letterSpacing=.5.sp)
-                    Text(s.value(key).ifBlank {"Not recorded"},fontSize=14.sp,fontWeight=FontWeight.SemiBold)
+                    Text(s.value(key).ifBlank {"Not recorded"},fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
                     if(index==0)Text(MobilePresentation.time(s.value("scheduled_departure")),fontSize=12.sp,color=DriverMuted)
                 }
             }
@@ -456,10 +489,13 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
         visible.forEach {s->Surface(onClick={open(s.value("id"))},color=Color.White,shape=RoundedCornerShape(4.dp)) {
             Column {
                 Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                        Text(s.value("tracking_number"),fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));DriverBadge(MobilePresentation.status(s.value("status")))
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                        Text(s.value("tracking_number"),fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Spacer(Modifier.width(8.dp))
+                        DriverBadge(MobilePresentation.status(s.value("status")))
                     }
-                    Text("○  ${s.value("pickup_address")}",fontSize=14.sp);Text("○  ${s.value("dropoff_address")}",fontSize=14.sp,color=DriverMuted)
+                    Text("○  ${s.value("pickup_address")}",fontSize=14.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text("○  ${s.value("dropoff_address")}",fontSize=14.sp,color=DriverMuted,maxLines=2,overflow=TextOverflow.Ellipsis)
                     HorizontalDivider(color=DriverLine)
                     Text(MobilePresentation.time(s.value("scheduled_departure")),fontSize=12.sp,color=DriverMuted)
                     Text(DriverUiRules.delivery(recordData,s.value("id")).value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",fontWeight=FontWeight.Bold,color=DriverNavy)
@@ -529,15 +565,15 @@ private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
 }
 @Composable internal fun DriverPageHeading(title:String,back:(()->Unit)?=null) {
     Row(Modifier.fillMaxWidth().background(Color.White).heightIn(min=64.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(back!=null)IconButton(onClick=back,modifier=Modifier.size(32.dp)){DriverAsset(R.drawable.figma_driver_e6917,16,description="Back")}
-        Text(title,fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold)
+        if(back!=null)IconButton(onClick=back,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){DriverAsset(R.drawable.figma_driver_e6917,16,description="Back")}
+        Text(title,fontSize=18.sp,color=DriverNavy,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
     }
 }
 @Composable private fun DriverCaption(text:String,icon:Int?=null,width:Int=10,height:Int=10) {
     Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {if(icon!=null)DriverAsset(icon,width,height);Text(text,fontSize=10.sp,color=Color(0xFF536581),letterSpacing=.5.sp)}
 }
 @Composable private fun DriverBadge(label:String,color:Color=DriverNavy,background:Color=DriverLine,uppercase:Boolean=true) {
-    Surface(color=background,shape=RoundedCornerShape(2.dp)) {Text(if(uppercase)label.uppercase()else label,Modifier.padding(8.dp,4.dp),color=color,fontSize=10.sp,fontWeight=FontWeight.SemiBold)}
+    Surface(color=background,shape=RoundedCornerShape(2.dp)) {Text(if(uppercase)label.uppercase()else label,Modifier.padding(8.dp,4.dp),color=color,fontSize=10.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)}
 }
 @Composable private fun DriverCard(accent:Color?=null,content:@Composable ColumnScope.()->Unit) {
     Surface(color=Color.White,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,DriverLine)) {

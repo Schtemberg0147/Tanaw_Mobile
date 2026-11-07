@@ -6,7 +6,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import java.math.BigDecimal
 import java.util.UUID
 
 @Composable internal fun DriverFuelForm(delivery:String,state:MobileState,close:()->Unit,submit:(String,FuelEntry,()->Unit)->Unit) {
@@ -19,6 +22,18 @@ import java.util.UUID
     var confirmClose by remember {mutableStateOf(false)}
     val entry=FuelEntry.parse(liters,price,odometer,station)
     val editable=!state.busy && !unconfirmed
+
+    val litersDec = liters.trim().takeIf { it.matches(Regex("[0-9]{1,8}(\\.[0-9]{1,3})?")) }?.toBigDecimalOrNull()
+    val isLitersError = liters.isNotBlank() && (litersDec == null || litersDec.scale() > 2 || litersDec <= BigDecimal.ZERO || litersDec > BigDecimal("10000"))
+
+    val priceDec = price.trim().takeIf { it.matches(Regex("[0-9]{1,8}(\\.[0-9]{1,3})?")) }?.toBigDecimalOrNull()
+    val isPriceError = price.isNotBlank() && (priceDec == null || priceDec.scale() > 2 || priceDec <= BigDecimal.ZERO || priceDec > BigDecimal("10000"))
+
+    val odoDec = odometer.trim().takeIf { it.matches(Regex("[0-9]{1,8}(\\.[0-9]{1,3})?")) }?.toBigDecimalOrNull()
+    val isOdoError = odometer.isNotBlank() && (odoDec == null || odoDec.scale() > 1 || odoDec < BigDecimal.ZERO || odoDec > BigDecimal("10000000"))
+
+    val isTotalOverLimit = entry != null && entry.total > BigDecimal("1000000")
+
     fun requestClose(){if(unconfirmed)confirmClose=true else close()}
     DriverTransaction("Record Fuel",state.busy,::requestClose,if(unconfirmed)"Retry Fuel Record" else "Save Fuel Record",entry!=null && !state.offline,{
         entry?.let {record->
@@ -27,11 +42,68 @@ import java.util.UUID
         }
     }) {
         Text("Record actual fuel purchased for this delivery. Liters and unit price calculate the actual cost.")
-        listOf(Triple("Liters",liters) {s:String->liters=s},Triple("Price per liter (PHP)",price) {s:String->price=s},Triple("Odometer (km)",odometer) {s:String->odometer=s}).forEach {(label,value,changed)->
-            OutlinedTextField(value,changed,label={Text(label)},enabled=editable,singleLine=true,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
+        OutlinedTextField(
+            value = liters,
+            onValueChange = { liters = it },
+            label = { Text("Liters") },
+            placeholder = { Text("e.g. 45.50") },
+            enabled = editable,
+            singleLine = true,
+            isError = isLitersError,
+            supportingText = if (isLitersError) {
+                { Text("Enter valid liters between 0.01 and 10,000.00.") }
+            } else null,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+        )
+        OutlinedTextField(
+            value = price,
+            onValueChange = { price = it },
+            label = { Text("Price per liter (PHP)") },
+            placeholder = { Text("e.g. 62.50") },
+            enabled = editable,
+            singleLine = true,
+            isError = isPriceError,
+            supportingText = if (isPriceError) {
+                { Text("Enter valid unit price between ₱0.01 and ₱10,000.00.") }
+            } else null,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+        )
+        OutlinedTextField(
+            value = odometer,
+            onValueChange = { odometer = it },
+            label = { Text("Odometer (km)") },
+            placeholder = { Text("e.g. 125430.5") },
+            enabled = editable,
+            singleLine = true,
+            isError = isOdoError,
+            supportingText = if (isOdoError) {
+                { Text("Enter odometer reading between 0 and 10,000,000.0 km.") }
+            } else null,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+        )
+        OutlinedTextField(
+            value = station,
+            onValueChange = { station = it.take(200) },
+            label = { Text("Station (optional)") },
+            placeholder = { Text("e.g. Shell Maharlika") },
+            enabled = editable,
+            singleLine = true,
+            supportingText = { Text("${station.length}/200 characters") },
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done)
+        )
+        Text(
+            text = "Total: ${entry?.let { MobilePresentation.money(it.total.toPlainString()) } ?: "Enter valid quantities"}",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (isTotalOverLimit) MaterialTheme.colorScheme.error else DriverNavy
+        )
+        if (isTotalOverLimit) {
+            Text("Total fuel cost cannot exceed ₱1,000,000.00.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
-        OutlinedTextField(station,{station=it.take(200)},label={Text("Station (optional)")},enabled=editable,modifier=Modifier.fillMaxWidth())
-        Text("Total: ${entry?.let {MobilePresentation.money(it.total.toPlainString())}?:"Enter valid quantities"}")
         Text("Fuel records are separate from trip expenses. Avoid recording the same fuel cost again as an expense.")
         Text("Receipt attachment is not available for fuel records yet.")
         if(unconfirmed)Text("Save unconfirmed. Retry the same quantities and request to confirm the record without a duplicate.")

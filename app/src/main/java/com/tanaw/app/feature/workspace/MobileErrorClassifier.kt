@@ -142,6 +142,12 @@ object MobileErrorClassifier {
             return "Service temporarily unavailable. Please try again later or contact the office."
         }
         val detail = error.message.orEmpty()
+        if (detail.contains("phone_exists", ignoreCase = true) ||
+            detail.contains("phone_already_exists", ignoreCase = true) ||
+            detail.contains("phone number is already registered", ignoreCase = true)
+        ) {
+            return "This phone number is already registered to another account."
+        }
         MobileAuthErrors.message(detail)?.let { return it }
 
         return when {

@@ -118,4 +118,86 @@ class DeepLinkParserTest {
         assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse(null, host))
         assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse("not a url :::", host))
     }
+
+    @Test
+    fun parsesMixedCaseAndTrailingSlashes() {
+        val mixedCustom = "TANAW://AUTH/CALLBACK/?token_hash=$validToken&type=RECOVERY"
+        val res1 = DeepLinkParser.parse(mixedCustom, host)
+        assertTrue(res1 is DeepLinkResult.Otp)
+        assertEquals(validToken, (res1 as DeepLinkResult.Otp).tokenHash)
+        assertTrue(res1.isRecovery)
+
+        val mixedHttps = "HTTPS://$host/AUTH/V1/VERIFY/?token_hash=$validToken&type=SIGNUP"
+        val res2 = DeepLinkParser.parse(mixedHttps, host)
+        assertTrue(res2 is DeepLinkResult.Otp)
+        assertEquals(validToken, (res2 as DeepLinkResult.Otp).tokenHash)
+        assertTrue(res2.isSignup)
+    }
+
+    @Test
+    fun parsesErrorWithoutDescriptionFallbackToError() {
+        val uri = "tanaw://auth/callback?error=access_denied"
+        val result = DeepLinkParser.parse(uri, host)
+        assertTrue(result is DeepLinkResult.Error)
+        val err = result as DeepLinkResult.Error
+        assertEquals("access_denied", err.error)
+        assertEquals("access_denied", err.description)
+    }
+
+    @Test
+    fun handlesEmptyAndConsecutiveAmpersandsInParams() {
+        val uri = "tanaw://auth/callback?&&token_hash=$validToken&&type=recovery&"
+        val result = DeepLinkParser.parse(uri, host)
+        assertTrue(result is DeepLinkResult.Otp)
+        assertEquals(validToken, (result as DeepLinkResult.Otp).tokenHash)
+    }
+
+    @Test
+    fun vulnerability_tokenHashLengthBoundaryChecks() {
+        // 19 chars -> rejected (below 20 chars minimum)
+        val shortToken = "a".repeat(19)
+        assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse("tanaw://auth/callback?token_hash=$shortToken&type=recovery", host))
+
+        // 20 chars -> accepted
+        val minToken = "a".repeat(20)
+        assertTrue(DeepLinkParser.parse("tanaw://auth/callback?token_hash=$minToken&type=recovery", host) is DeepLinkResult.Otp)
+
+        // 500 chars -> accepted
+        val maxToken = "a".repeat(500)
+        assertTrue(DeepLinkParser.parse("tanaw://auth/callback?token_hash=$maxToken&type=recovery", host) is DeepLinkResult.Otp)
+
+        // 501 chars -> rejected (exceeds 500 chars maximum)
+        val excessToken = "a".repeat(501)
+        assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse("tanaw://auth/callback?token_hash=$excessToken&type=recovery", host))
+    }
+
+    @Test
+    fun vulnerability_rejectsSpecialCharactersAndScriptInjectionInTokens() {
+        val tokensWithPayloads = listOf(
+            "<script>alert(1)</script>",
+            "token with spaces 1234567890",
+            "token_with_quotes' OR '1'='1",
+            "token_with_semicolon;DROP TABLE",
+            "token!@#$%^&*()1234567890"
+        )
+        for (token in tokensWithPayloads) {
+            val uri = "tanaw://auth/callback?token_hash=$token&type=recovery"
+            assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse(uri, host))
+        }
+    }
+
+    @Test
+    fun vulnerability_rejectsSubdomainAndDomainSpoofing() {
+        // Attacker attempting to prefix or suffix project host
+        val spoofedHosts = listOf(
+            "$host.attacker.com",
+            "attacker-$host",
+            "$host@attacker.com",
+            "sub.$host"
+        )
+        for (spoofed in spoofedHosts) {
+            val uri = "https://$spoofed/auth/v1/verify?token_hash=$validToken&type=recovery"
+            assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse(uri, host))
+        }
+    }
 }

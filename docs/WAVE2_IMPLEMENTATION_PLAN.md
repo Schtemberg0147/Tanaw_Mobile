@@ -31,7 +31,7 @@
 | **D07** | Open recovery links directly in the app (`VIEW`/`BROWSABLE`) | #6 | **Client + Config:** Custom URI scheme `tanaw://auth/callback` (plus HTTPS verify link parsing) in `AndroidManifest.xml`, `MainActivity.kt`, and `MobileValidation.kt` | **2nd** |
 | **C03** | Add Barangay and Province to customer addresses | #7, #9 | **Client-Structured + Backward-Compatible:** Structured fields in Profile, Signup, & Booking (`CustomerAddressRules`), formatted into existing `address`/`city` RPC parameters + optional schema spec in `docs/BACKEND-REQUESTS.md` | **3rd** |
 | **C01** | Paginate history and alerts; search beyond latest 200 shipments | #11, #13 | **Postgrest RLS Table Queries:** Offset/range pagination (`limit`/`range`) and server-side `ilike` search on `public.shipments` and `public.notifications` under existing RLS policies | **4th** |
-| **C05** | Verify changes to login/SMS phone number | #3, #7 | **Single-Tier Supabase Phone Change OTP:** `auth.updateUser { phone }` → SMS OTP via TextBee hook → `auth.verifyPhoneOtp(OtpType.Phone.PHONE_CHANGE)` → `mobile_save_profile` | **5th** |
+| **C05** | Verify changes to login/SMS phone number | #3, #7 | **Single-Tier Supabase Phone Change OTP:** `auth.updateUser { phone }` → SMS OTP via TextBee hook → `auth.verifyPhoneOtp(OtpType.Phone.PHONE_CHANGE)` → `mobile_save_profile` | **Complete** |
 | **C12** | Small-screen layouts, keyboards, accessibility, field errors | Cross-cutting | **Screen-by-Screen Client Passes (C12a–C12d):** Incremental passes across Auth, Customer Booking/Tracking, Customer Profile/History/Alerts, and Driver Workspace | **6th** |
 
 ---
@@ -266,7 +266,7 @@
 ---
 
 ### Module C05: Verify Changes to Login/SMS Phone Number
-* **Status:** Ready for Implementation
+* **Status:** Complete (merged directly on `JBranch`)
 * **Target Branch:** `JBranch`
 * **Reference Docs:** `docs/BACKLOG.md` (C05), `docs/FEATURES.md` (#3, #7), `TEXTBEE_SETUP.md`
 

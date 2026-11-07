@@ -17,7 +17,7 @@ class MobileValidationTest {
         assertNull(MobileValidation.linkToken("https://$host/other?token=$token&type=recovery",host,"recovery"))
     }
     @Test fun normalizesPhilippineMobileNumbersWithoutInventingDigits() {
-        listOf("09123456789","9123456789","+63 912-345-6789").forEach { assertEquals("+639123456789",MobileValidation.phone(it)) }
+        listOf("09123456789","9123456789","+63 912-345-6789","639123456789").forEach { assertEquals("+639123456789",MobileValidation.phone(it)) }
         listOf("", "0912345678", "+631234567890", "+6391234567890", "abc09123456789").forEach { assertNull(MobileValidation.phone(it)) }
     }
     @Test fun weightRejectsNonFiniteZeroNegativeAndUnboundedInput() {

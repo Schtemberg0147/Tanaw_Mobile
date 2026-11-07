@@ -18,16 +18,22 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
@@ -46,6 +52,7 @@ internal fun CustomerProfile(
     var linkError by remember { mutableStateOf(false) }
     var infoDialog by remember { mutableStateOf<String?>(null) }
     val uri = LocalUriHandler.current
+    val focusManager = LocalFocusManager.current
 
     val p = data.obj("profile")
     val c = data.obj("customer")
@@ -296,6 +303,71 @@ internal fun CustomerProfile(
             "address" -> "Edit Default Address"
             else -> "Edit Profile"
         }
+        val saveEdit: () -> Unit = {
+            when (editingFieldKey) {
+                "full_name" -> {
+                    if (!CustomerProfileRules.validateName(editingFieldValue)) {
+                        editError = "Name must be between 2 and 200 characters."
+                    } else {
+                        val currentPhone = MobileValidation.phone(p.value("phone"))
+                        if (currentPhone == null) {
+                            editError = "A valid contact number must be set first before changing your name."
+                        } else {
+                            vm.profile(editingFieldValue, currentPhone, c.value("address"), c.value("city"))
+                            editingFieldKey = null
+                        }
+                    }
+                }
+                "phone" -> {
+                    val normalized = MobileValidation.phone(editingFieldValue)
+                    if (normalized == null) {
+                        editError = "Please enter a valid phone number."
+                    } else {
+                        val currentName = p.value("full_name").trim()
+                        if (!CustomerProfileRules.validateName(currentName)) {
+                            editError = "Name must be between 2 and 200 characters."
+                        } else {
+                            vm.profile(currentName, normalized, c.value("address"), c.value("city"))
+                            editingFieldKey = null
+                        }
+                    }
+                }
+                "address" -> {
+                    if (editingFieldValue.isBlank()) {
+                        editError = "Street address cannot be empty."
+                    } else if (!CustomerAddressRules.validateStreet(editingFieldValue)) {
+                        editError = "Street address must be 380 characters or fewer."
+                    } else if (editingBarangayValue.isNotBlank() && !CustomerAddressRules.validateBarangay(editingBarangayValue)) {
+                        editError = "Barangay must be 100 characters or fewer."
+                    } else if (editingCityValue.isBlank()) {
+                        editError = "City / Municipality cannot be empty."
+                    } else if (!CustomerAddressRules.validateCity(editingCityValue)) {
+                        editError = "City must be 60 characters or fewer."
+                    } else if (editingProvinceValue.isNotBlank() && !CustomerAddressRules.validateProvince(editingProvinceValue)) {
+                        editError = "Province must be 35 characters or fewer."
+                    } else {
+                        val (formattedAddress, formattedCity) = CustomerAddressRules.formatForRpc(
+                            street = editingFieldValue,
+                            barangay = editingBarangayValue,
+                            city = editingCityValue,
+                            province = editingProvinceValue
+                        )
+                        val currentPhone = MobileValidation.phone(p.value("phone"))
+                        if (currentPhone == null) {
+                            editError = "A valid contact number must be set first before updating address."
+                        } else {
+                            val currentName = p.value("full_name").trim()
+                            if (!CustomerProfileRules.validateName(currentName)) {
+                                editError = "Name must be between 2 and 200 characters."
+                            } else {
+                                vm.profile(currentName, currentPhone, formattedAddress, formattedCity)
+                                editingFieldKey = null
+                            }
+                        }
+                    }
+                }
+            }
+        }
         AlertDialog(
             onDismissRequest = { if (!state.busy) editingFieldKey = null },
             title = { Text(title, fontWeight = FontWeight.Bold, color = DriverNavy) },
@@ -307,7 +379,10 @@ internal fun CustomerProfile(
                                 value = editingFieldValue,
                                 onValueChange = { editingFieldValue = it; editError = null },
                                 label = { Text("Full Name") },
+                                isError = editError != null,
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { saveEdit() }),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -316,7 +391,12 @@ internal fun CustomerProfile(
                                 value = editingFieldValue,
                                 onValueChange = { editingFieldValue = it; editError = null },
                                 label = { Text("Phone Number") },
+                                placeholder = { Text("09XXXXXXXXX") },
+                                supportingText = { Text("Verification SMS will be sent if changed.") },
+                                isError = editError != null,
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { saveEdit() }),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -325,28 +405,40 @@ internal fun CustomerProfile(
                                 value = editingFieldValue,
                                 onValueChange = { editingFieldValue = it; editError = null },
                                 label = { Text("House / Building / Street") },
+                                isError = editError != null && (editingFieldValue.isBlank() || !CustomerAddressRules.validateStreet(editingFieldValue)),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = editingBarangayValue,
                                 onValueChange = { editingBarangayValue = it; editError = null },
                                 label = { Text("Barangay") },
+                                isError = editingBarangayValue.isNotBlank() && !CustomerAddressRules.validateBarangay(editingBarangayValue),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = editingCityValue,
                                 onValueChange = { editingCityValue = it; editError = null },
                                 label = { Text("City / Municipality") },
+                                isError = editError != null && (editingCityValue.isBlank() || !CustomerAddressRules.validateCity(editingCityValue)),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = editingProvinceValue,
                                 onValueChange = { editingProvinceValue = it; editError = null },
                                 label = { Text("Province") },
+                                isError = editingProvinceValue.isNotBlank() && !CustomerAddressRules.validateProvince(editingProvinceValue),
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { saveEdit() }),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -358,81 +450,7 @@ internal fun CustomerProfile(
             },
             confirmButton = {
                 Button(
-                    onClick = {
-                        when (editingFieldKey) {
-                            "full_name" -> {
-                                if (!CustomerProfileRules.validateName(editingFieldValue)) {
-                                    editError = "Name must be between 2 and 200 characters."
-                                    return@Button
-                                }
-                                val currentPhone = MobileValidation.phone(p.value("phone"))
-                                if (currentPhone == null) {
-                                    editError = "A valid contact number must be set first before changing your name."
-                                    return@Button
-                                }
-                                vm.profile(editingFieldValue, currentPhone, c.value("address"), c.value("city"))
-                                editingFieldKey = null
-                            }
-                            "phone" -> {
-                                val normalized = MobileValidation.phone(editingFieldValue)
-                                if (normalized == null) {
-                                    editError = "Please enter a valid phone number."
-                                    return@Button
-                                }
-                                val currentName = p.value("full_name").trim()
-                                if (!CustomerProfileRules.validateName(currentName)) {
-                                    editError = "Name must be between 2 and 200 characters."
-                                    return@Button
-                                }
-                                vm.profile(currentName, normalized, c.value("address"), c.value("city"))
-                                editingFieldKey = null
-                            }
-                            "address" -> {
-                                if (editingFieldValue.isBlank()) {
-                                    editError = "Street address cannot be empty."
-                                    return@Button
-                                }
-                                if (!CustomerAddressRules.validateStreet(editingFieldValue)) {
-                                    editError = "Street address must be 380 characters or fewer."
-                                    return@Button
-                                }
-                                if (editingBarangayValue.isNotBlank() && !CustomerAddressRules.validateBarangay(editingBarangayValue)) {
-                                    editError = "Barangay must be 100 characters or fewer."
-                                    return@Button
-                                }
-                                if (editingCityValue.isBlank()) {
-                                    editError = "City / Municipality cannot be empty."
-                                    return@Button
-                                }
-                                if (!CustomerAddressRules.validateCity(editingCityValue)) {
-                                    editError = "City must be 60 characters or fewer."
-                                    return@Button
-                                }
-                                if (editingProvinceValue.isNotBlank() && !CustomerAddressRules.validateProvince(editingProvinceValue)) {
-                                    editError = "Province must be 35 characters or fewer."
-                                    return@Button
-                                }
-                                val (formattedAddress, formattedCity) = CustomerAddressRules.formatForRpc(
-                                    street = editingFieldValue,
-                                    barangay = editingBarangayValue,
-                                    city = editingCityValue,
-                                    province = editingProvinceValue
-                                )
-                                val currentPhone = MobileValidation.phone(p.value("phone"))
-                                if (currentPhone == null) {
-                                    editError = "A valid contact number must be set first before updating address."
-                                    return@Button
-                                }
-                                val currentName = p.value("full_name").trim()
-                                if (!CustomerProfileRules.validateName(currentName)) {
-                                    editError = "Name must be between 2 and 200 characters."
-                                    return@Button
-                                }
-                                vm.profile(currentName, currentPhone, formattedAddress, formattedCity)
-                                editingFieldKey = null
-                            }
-                        }
-                    },
+                    onClick = saveEdit,
                     enabled = !state.busy,
                     colors = ButtonDefaults.buttonColors(containerColor = DriverNavy)
                 ) {
@@ -491,25 +509,25 @@ internal fun CustomerProfile(
                 contentDescription = "Tanaw",
                 modifier = Modifier.height(28.dp)
             )
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onOpenAlerts)
-                    .padding(4.dp)
+            IconButton(
+                onClick = onOpenAlerts,
+                modifier = Modifier.size(48.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Notifications,
-                    contentDescription = "Notifications",
-                    tint = DriverNavy,
-                    modifier = Modifier.size(26.dp)
-                )
-                if (unreadNotifications > 0) {
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .background(MaterialTheme.colorScheme.secondary, shape = CircleShape)
-                            .align(Alignment.TopEnd)
+                Box {
+                    Icon(
+                        imageVector = Icons.Outlined.Notifications,
+                        contentDescription = "Notifications",
+                        tint = DriverNavy,
+                        modifier = Modifier.size(26.dp)
                     )
+                    if (unreadNotifications > 0) {
+                        Box(
+                            modifier = Modifier
+                                .size(9.dp)
+                                .background(MaterialTheme.colorScheme.secondary, shape = CircleShape)
+                                .align(Alignment.TopEnd)
+                        )
+                    }
                 }
             }
         }
@@ -566,7 +584,8 @@ internal fun CustomerProfile(
                         border = BorderStroke(1.dp, DriverLine),
                         modifier = Modifier
                             .offset(x = 6.dp, y = 6.dp)
-                            .size(32.dp)
+                            .minimumInteractiveComponentSize()
+                            .size(36.dp)
                             .clickable {
                                 infoDialog = "Profile photos are managed with your office profile. Contact your administrator to update your photo."
                             }
@@ -576,7 +595,7 @@ internal fun CustomerProfile(
                                 painter = painterResource(id = R.drawable.ic_camera),
                                 contentDescription = "Edit photo",
                                 tint = DriverNavy,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -13,14 +14,18 @@ import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.R
+import com.tanaw.app.feature.workspace.MobileValidation
 import com.tanaw.app.ui.components.*
 import com.tanaw.app.ui.theme.TanawTheme
 
@@ -57,10 +62,22 @@ fun LoginScreen(
 ) {
     // Local UI-only state
     var email           by remember { mutableStateOf("") }
+    var emailTouched    by remember { mutableStateOf(false) }
     var useEmail        by remember(allowPhone) { mutableStateOf(!allowPhone) }
     var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var showBanner      by remember { mutableStateOf(successMessage != null) }
+    val focusManager = LocalFocusManager.current
+
+    val isEmailInvalid = emailTouched && email.isNotBlank() && !MobileValidation.email(email)
+    val isPhoneInvalid = emailTouched && email.isNotBlank() && MobileValidation.phone(email) == null
+    val isInputError = if (useEmail) isEmailInvalid else isPhoneInvalid
+    val inputSupportingText: @Composable (() -> Unit)? = if (isInputError) {
+        { Text(if (useEmail) "Enter a valid email address." else "Enter a Philippine mobile number, e.g. 0912 345 6789.") }
+    } else null
+
+    val isInputValid = if (useEmail) MobileValidation.email(email) else (MobileValidation.phone(email) != null)
+    val canSubmit = isInputValid && password.isNotBlank() && !isLoading
 
     LaunchedEffect(successMessage) {
         showBanner = successMessage != null
@@ -88,6 +105,7 @@ fun LoginScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -118,7 +136,10 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 TanawTextField(
                     value         = email,
-                    onValueChange = { email = it },
+                    onValueChange = {
+                        email = it
+                        emailTouched = true
+                    },
                     placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
                     leadingIcon   = {
                         if (!useEmail) Icon(Icons.Outlined.Phone, contentDescription = null,
@@ -131,10 +152,18 @@ fun LoginScreen(
                             modifier           = Modifier.size(18.dp)
                         )
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone,
+                        imeAction    = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
+                    isError = isInputError,
+                    supportingText = inputSupportingText,
                 )
                 if (allowPhone) {
-                    TextButton(enabled = !isLoading, onClick = { useEmail = !useEmail; email = "" }) {
+                    TextButton(enabled = !isLoading, onClick = { useEmail = !useEmail; email = ""; emailTouched = false }) {
                         Text(if (useEmail) "Use phone number instead" else "Use email address instead")
                     }
                 }
@@ -172,7 +201,16 @@ fun LoginScreen(
                         VisualTransformation.None
                     else
                         PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction    = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            if (canSubmit) onLoginClick(email, password)
+                        }
+                    ),
                 )
 
                 // ── Forgot password ──────────────────────────────────────────
@@ -208,7 +246,8 @@ fun LoginScreen(
                 TanawPrimaryButton(
                     text      = "Login  →",
                     onClick   = { onLoginClick(email, password) },
-                    isLoading = isLoading
+                    isLoading = isLoading,
+                    enabled   = canSubmit
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))

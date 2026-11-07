@@ -10,6 +10,24 @@ object CustomerPaginationRules {
     const val NOTIFICATION_COLUMNS = "id,title,body,shipment_id,read_at,created_at"
 
     /**
+     * Chronological comparator for timestamps in descending order (newest first).
+     * Handles ISO-8601 strings with Z or timezone offset (+00:00), with or without fractional seconds.
+     * Falls back to string comparison if Instant parsing fails. Blank timestamps sort last.
+     */
+    internal fun compareTimestampsDesc(aRaw: String, bRaw: String): Int {
+        if (aRaw == bRaw) return 0
+        if (aRaw.isBlank()) return 1
+        if (bRaw.isBlank()) return -1
+        val aInstant = runCatching { java.time.Instant.parse(aRaw) }.getOrNull()
+        val bInstant = runCatching { java.time.Instant.parse(bRaw) }.getOrNull()
+        return if (aInstant != null && bInstant != null) {
+            bInstant.compareTo(aInstant)
+        } else {
+            bRaw.compareTo(aRaw)
+        }
+    }
+
+    /**
      * Deduplicates shipments/notifications by id while preserving created_at DESC order.
      * When reset is false, incoming items replace existing items with the same id and new items are appended.
      */
@@ -22,17 +40,18 @@ object CustomerPaginationRules {
         }
         return base
             .distinctBy { it.value("id").ifBlank { it.toString() } }
-            .sortedWith { a, b -> b.value("created_at").compareTo(a.value("created_at")) }
+            .sortedWith { a, b -> compareTimestampsDesc(a.value("created_at"), b.value("created_at")) }
     }
 
     /**
      * Determines if more items can be fetched based on last fetched page size.
      */
     fun hasMore(lastFetchedCount: Int, pageSize: Int = SHIPMENTS_PAGE_SIZE): Boolean =
-        lastFetchedCount >= pageSize
+        pageSize > 0 && lastFetchedCount >= pageSize
 
     /**
-     * Trims and escapes %, _, ,, (, ) and \ characters so PostgREST or / ilike filters are safe against injection.
+     * Trims and escapes %, _, ,, (, ), and \ characters so PostgREST or / ilike filters are safe against injection.
+     * Strips double quotes (") and ASCII control characters to prevent filter tokenizer disruption.
      */
     fun sanitizeSearchQuery(raw: String): String {
         val trimmed = raw.trim()
@@ -43,6 +62,12 @@ object CustomerPaginationRules {
                     '\\', '%', '_', ',', '(', ')' -> {
                         append('\\')
                         append(char)
+                    }
+                    '"' -> {
+                        // Strip double quotes to avoid unclosed string / token disruption in PostgREST URL syntax
+                    }
+                    '\r', '\n', '\t', '\u0000' -> {
+                        // Strip control characters
                     }
                     else -> append(char)
                 }
@@ -62,7 +87,7 @@ object CustomerPaginationRules {
         val trimmedQuery = query.trim()
         return cachedShipments
             .filter { shipment ->
-                val status = shipment.value("status")
+                val status = shipment.value("status").lowercase()
                 val isHistory = status in listOf("completed", "cancelled")
                 val tabMatches = if (tab == "History") isHistory else !isHistory
                 val filterMatches = tab != "History" || statusFilter == "All" || status.equals(statusFilter, ignoreCase = true)
@@ -71,7 +96,7 @@ object CustomerPaginationRules {
                 }
                 tabMatches && filterMatches && queryMatches
             }
-            .sortedWith { a, b -> b.value("created_at").compareTo(a.value("created_at")) }
+            .sortedWith { a, b -> compareTimestampsDesc(a.value("created_at"), b.value("created_at")) }
     }
 
     /**
@@ -80,6 +105,6 @@ object CustomerPaginationRules {
     fun filterOfflineNotifications(cachedNotifications: List<JsonObject>): List<JsonObject> {
         return cachedNotifications
             .distinctBy { it.value("id").ifBlank { it.toString() } }
-            .sortedWith { a, b -> b.value("created_at").compareTo(a.value("created_at")) }
+            .sortedWith { a, b -> compareTimestampsDesc(a.value("created_at"), b.value("created_at")) }
     }
 }

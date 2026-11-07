@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -2493,6 +2495,7 @@ fun AddMoreDetailsScreen(
     val normalizedContact = MobileValidation.phone(contact)
     val vehicleCap = selectedVehicle?.value("default_capacity_kg").orEmpty()
     val weightFits = selectedVehicle != null && CustomerBookingRules.weightFitsCapacity(weight, vehicleCap)
+    val focusManager = LocalFocusManager.current
     val canConfirm = !busy &&
         pickup.trim().length in 5..500 &&
         dropoff.trim().length in 5..500 &&
@@ -2653,6 +2656,7 @@ fun AddMoreDetailsScreen(
                             singleLine = true,
                             isError = contact.isNotBlank() && normalizedContact == null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2695,6 +2699,7 @@ fun AddMoreDetailsScreen(
                             singleLine = true,
                             isError = isCargoError,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2726,12 +2731,20 @@ fun AddMoreDetailsScreen(
                             singleLine = true,
                             isError = isWeightInvalid,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("EstWeightInput")
                         )
-                        if (weight.isNotBlank() && (parsedWeight == null || parsedWeight <= 0)) {
+                        val rawWeight = weight.toDoubleOrNull()
+                        if (weight.isNotBlank() && rawWeight != null && rawWeight > 100000.0) {
+                            Text(
+                                text = "Cargo weight cannot exceed 100,000 kg.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else if (weight.isNotBlank() && (parsedWeight == null || parsedWeight <= 0)) {
                             Text(
                                 text = "Enter a valid positive cargo weight in kilograms.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -2808,24 +2821,46 @@ fun AddMoreDetailsScreen(
 
                     // NOTES TO DRIVER
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = stringResource(R.string.notes_to_driver_label),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.notes_to_driver_label),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${notes.length}/2000",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (notes.length > 2000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                        val isNotesError = notes.length > 2000
                         OutlinedTextField(
                             value = notes,
                             onValueChange = onNotesChange,
                             placeholder = { Text(stringResource(R.string.notes_to_driver_placeholder)) },
                             minLines = 3,
                             maxLines = 5,
+                            isError = isNotesError,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("NotesToDriverInput")
                         )
+                        if (isNotesError) {
+                            Text(
+                                text = "Notes to driver must be 2000 characters or fewer.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }

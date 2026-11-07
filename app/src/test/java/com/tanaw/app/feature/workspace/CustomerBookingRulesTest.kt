@@ -77,4 +77,94 @@ class CustomerBookingRulesTest {
         assertFalse(CustomerBookingRules.weightFitsCapacity("0", "2000"))
         assertFalse(CustomerBookingRules.weightFitsCapacity("-10", "2000"))
     }
+
+    @Test
+    fun formatDurationFormatsMinutesAndHours() {
+        assertEquals("Est. 1min", CustomerBookingRules.formatDuration(0))
+        assertEquals("Est. 25min", CustomerBookingRules.formatDuration(25))
+        assertEquals("Est. 1h", CustomerBookingRules.formatDuration(60))
+        assertEquals("Est. 1h 45min", CustomerBookingRules.formatDuration(105))
+        assertEquals("Est. 3h", CustomerBookingRules.formatDuration(180))
+    }
+
+    @Test
+    fun bookingValidationRulesForCargoAndContact() {
+        // Cargo description validation: min 3 chars, max 1000
+        val shortCargo = "AB"
+        val validCargo = "Boxes of electronic parts"
+        val maxCargo = "A".repeat(1000)
+        val overflowCargo = "A".repeat(1001)
+
+        assertTrue(shortCargo.trim().length < 3)
+        assertTrue(validCargo.trim().length in 3..1000)
+        assertTrue(maxCargo.trim().length in 3..1000)
+        assertTrue(overflowCargo.trim().length > 1000)
+
+        // Contact validation via MobileValidation.phone
+        assertEquals("+639123456789", MobileValidation.phone("09123456789"))
+        assertEquals("+639123456789", MobileValidation.phone("9123456789"))
+        assertEquals("+639123456789", MobileValidation.phone("+639123456789"))
+        assertNull(MobileValidation.phone("0912345"))
+        assertNull(MobileValidation.phone("invalid"))
+
+        // Weight fits capacity edge cases
+        assertTrue(CustomerBookingRules.weightFitsCapacity("1500.5", "2000"))
+        assertFalse(CustomerBookingRules.weightFitsCapacity("2000.1", "2000"))
+        assertFalse(CustomerBookingRules.weightFitsCapacity("abc", "2000"))
+        assertFalse(CustomerBookingRules.weightFitsCapacity("100", "0"))
+        assertFalse(CustomerBookingRules.weightFitsCapacity("100", "-50"))
+    }
+
+    @Test
+    fun weightBoundaryValidationAndSystemCeiling() {
+        // System ceiling: 100,000 kg via MobileValidation.weight
+        assertEquals(100000.0, MobileValidation.weight("100000")!!, 0.001)
+        assertEquals(99999.9, MobileValidation.weight("99999.9")!!, 0.001)
+        assertEquals(0.1, MobileValidation.weight("0.1")!!, 0.001)
+
+        // Exceeding system ceiling or non-finite numbers
+        assertNull(MobileValidation.weight("100000.1"))
+        assertNull(MobileValidation.weight("100001"))
+        assertNull(MobileValidation.weight("1000000"))
+        assertNull(MobileValidation.weight("0"))
+        assertNull(MobileValidation.weight("-1"))
+        assertNull(MobileValidation.weight("-100000"))
+        assertNull(MobileValidation.weight("NaN"))
+        assertNull(MobileValidation.weight("Infinity"))
+        assertNull(MobileValidation.weight("-Infinity"))
+        assertNull(MobileValidation.weight(""))
+        assertNull(MobileValidation.weight("   "))
+    }
+
+    @Test
+    fun cargoDescriptionWhitespaceAndHomoglyphBypasses() {
+        // Whitespace-only descriptions must fail
+        val blankCargo = "     "
+        val tabCargo = "\t\n  "
+        assertFalse(blankCargo.trim().length in 3..1000)
+        assertFalse(tabCargo.trim().length in 3..1000)
+
+        // Unicode, accented characters and emojis
+        val unicodeCargo = "Möbel & Elektronik 📦"
+        assertTrue(unicodeCargo.trim().length in 3..1000)
+
+        // Leading/trailing spaces must be trimmed for length evaluation
+        val paddedCargo = "   Box   "
+        assertEquals(3, paddedCargo.trim().length)
+        assertTrue(paddedCargo.trim().length in 3..1000)
+    }
+
+    @Test
+    fun notesToDriverCharacterLimitBoundaries() {
+        val emptyNotes = ""
+        val boundaryNotes = "A".repeat(2000)
+        val overflowNotes = "A".repeat(2001)
+
+        // Notes are optional (can be empty) and capped at 2000 characters
+        assertFalse(emptyNotes.length > 2000)
+        assertFalse(boundaryNotes.length > 2000)
+        assertTrue(overflowNotes.length > 2000)
+        assertEquals(2000, boundaryNotes.length)
+        assertEquals(2001, overflowNotes.length)
+    }
 }

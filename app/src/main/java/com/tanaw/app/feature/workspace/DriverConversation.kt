@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -99,8 +100,8 @@ internal object ConversationRules {
                 Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Office",color=DriverNavy,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
-                        if(reference.isNotBlank())Text(reference,style=MaterialTheme.typography.labelMedium,color=DriverMuted)
-                        Text(if(offline) "Offline" else unread?.let {"$it unread · Delivery updates"} ?: "Unread unavailable",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                        if(reference.isNotBlank())Text(reference,style=MaterialTheme.typography.labelMedium,color=DriverMuted,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(if(offline) "Offline" else unread?.let {"$it unread · Delivery updates"} ?: "Unread unavailable",style=MaterialTheme.typography.bodySmall,color=DriverMuted,maxLines=1,overflow=TextOverflow.Ellipsis)
                     }
                     TextButton(onClick={revision++},enabled=!busy && !offline){Text("Retry / refresh messages",fontSize=11.sp)}
                 }
@@ -139,8 +140,25 @@ internal object ConversationRules {
                 HorizontalDivider(color=DriverLine)
                 Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     if(request!=null)Text("Last send unconfirmed. The message is kept for a safe retry.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(value=draft,onValueChange={if(it.length<=4000)draft=it},label={Text("Message to office")},placeholder={Text("Write a delivery update…")},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),
-                        enabled=!busy && !offline && request==null && page?.value("can_send")=="true",minLines=1,maxLines=3)
+                    val isDraftOverLimit = draft.trim().length > 2000
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { if (it.length <= 4000) draft = it },
+                        label = { Text("Message to office") },
+                        placeholder = { Text("Write a delivery update…") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        enabled = !busy && !offline && request == null && page?.value("can_send") == "true",
+                        isError = isDraftOverLimit,
+                        minLines = 1,
+                        maxLines = 3,
+                        supportingText = {
+                            Text(
+                                "${draft.trim().length}/2000 characters" + if (isDraftOverLimit) " · exceeds limit" else "",
+                                color = if (isDraftOverLimit) MaterialTheme.colorScheme.error else Color.Unspecified
+                            )
+                        }
+                    )
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text("For urgent help, use your emergency contact.",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelSmall,color=DriverMuted)
                         Button(onClick={action {

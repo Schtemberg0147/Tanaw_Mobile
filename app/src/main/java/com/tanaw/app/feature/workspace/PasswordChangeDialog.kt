@@ -41,7 +41,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
                 enabled = !state.busy,
                 label = { Text("Recovery code (or original email link)") },
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                 isError = isCodeError,
                 supportingText = if (isCodeError) { { Text("Enter a valid recovery code or confirmation link.") } } else null

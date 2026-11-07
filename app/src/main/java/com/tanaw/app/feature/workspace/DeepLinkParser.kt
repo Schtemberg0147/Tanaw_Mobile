@@ -50,11 +50,11 @@ object DeepLinkParser {
 
         val scheme = uri.scheme?.lowercase() ?: return DeepLinkResult.Invalid
         val host = uri.host?.lowercase().orEmpty()
-        val path = uri.path.orEmpty()
+        val path = uri.path.orEmpty().trimEnd('/')
 
-        val isCustomScheme = scheme == "tanaw" && host == "auth" && (path == "/callback" || path.startsWith("/callback/"))
+        val isCustomScheme = scheme == "tanaw" && host == "auth" && (path.equals("/callback", ignoreCase = true) || path.lowercase().startsWith("/callback/"))
         val isSupabaseVerify = scheme == "https" && projectHost.isNotBlank() &&
-            host == projectHost.lowercase() && path == "/auth/v1/verify"
+            host == projectHost.lowercase() && path.equals("/auth/v1/verify", ignoreCase = true)
 
         if (!isCustomScheme && !isSupabaseVerify) {
             return DeepLinkResult.Invalid
@@ -111,7 +111,7 @@ object DeepLinkParser {
 
     private fun parseParams(raw: String?): Map<String, String> {
         if (raw.isNullOrBlank()) return emptyMap()
-        return raw.split('&').mapNotNull { item ->
+        return raw.split('&').filter { it.isNotBlank() }.mapNotNull { item ->
             val pair = item.split('=', limit = 2)
             if (pair.size == 2) {
                 runCatching {

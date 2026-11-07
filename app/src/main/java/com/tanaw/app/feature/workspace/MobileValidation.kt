@@ -13,6 +13,7 @@ object MobileValidation {
         val result = when {
             cleaned.matches(Regex("09[0-9]{9}")) -> "+63" + cleaned.drop(1)
             cleaned.matches(Regex("9[0-9]{9}")) -> "+63$cleaned"
+            cleaned.matches(Regex("639[0-9]{9}")) -> "+$cleaned"
             else -> cleaned
         }
         return result.takeIf { it.matches(Regex("\\+639[0-9]{9}")) }

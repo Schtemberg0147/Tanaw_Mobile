@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -21,6 +22,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,8 +92,12 @@ import kotlinx.coroutines.withContext
         }
     }
 
+    val isDescError = description.isNotEmpty() && (description.trim().length < 5 || description.trim().length > 2000)
+    val delayVal = minutes.toIntOrNull()
+    val isMinutesError = minutes.isNotEmpty() && (delayVal == null || delayVal !in 0..1440)
+
     DriverTransaction("Report an Issue",state.busy || preparingPhotos,close,if(preparingPhotos)"PREPARING PHOTO…" else "Submit Report",
-        !preparingPhotos && !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..10080,
+        !preparingPhotos && !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..1440,
         {if(!preparingPhotos)submit(request,category,description,minutes.toInt(),photos)}) {
         Text("SELECT ISSUE TYPE",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -107,20 +114,53 @@ import kotlinx.coroutines.withContext
             }
         }
         Text("DESCRIPTION",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
-        OutlinedTextField(description,{
-            description=it
-            val nextReq=UUID.randomUUID().toString()
-            request=nextReq
-            persist(d=it,r=nextReq)
-        },placeholder={Text("Describe the issue in detail…")},enabled=!state.busy && !preparingPhotos,
-            modifier=Modifier.fillMaxWidth().heightIn(min=160.dp),shape=RoundedCornerShape(2.dp))
-        OutlinedTextField(minutes,{
-            minutes=it
-            val nextReq=UUID.randomUUID().toString()
-            request=nextReq
-            persist(m=it,r=nextReq)
-        },label={Text("Expected delay in minutes")},enabled=!state.busy && !preparingPhotos,singleLine=true,
-            modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(2.dp),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
+        OutlinedTextField(
+            value = description,
+            onValueChange = {
+                description = it
+                val nextReq = UUID.randomUUID().toString()
+                request = nextReq
+                persist(d = it, r = nextReq)
+            },
+            placeholder = { Text("Describe the issue in detail…") },
+            enabled = !state.busy && !preparingPhotos,
+            isError = isDescError,
+            supportingText = {
+                if (isDescError) {
+                    Text(if (description.trim().length < 5) "Description must be at least 5 characters." else "Description cannot exceed 2000 characters.")
+                } else {
+                    Text("${description.trim().length}/2000 characters")
+                }
+            },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Next
+            ),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
+            shape = RoundedCornerShape(2.dp)
+        )
+        OutlinedTextField(
+            value = minutes,
+            onValueChange = {
+                minutes = it
+                val nextReq = UUID.randomUUID().toString()
+                request = nextReq
+                persist(m = it, r = nextReq)
+            },
+            label = { Text("Expected delay in minutes") },
+            enabled = !state.busy && !preparingPhotos,
+            singleLine = true,
+            isError = isMinutesError,
+            supportingText = if (isMinutesError) {
+                { Text("Enter a delay between 0 and 1440 minutes (up to 24 hours).") }
+            } else null,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(2.dp)
+        )
         Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=Color(0xFF536581))
         IncidentPhotoPicker(photos,state.busy||state.offline,onPreparingChange={preparingPhotos=it}){
             photos=it
@@ -263,7 +303,21 @@ import kotlinx.coroutines.withContext
         Text(if(draft.frozen)"This attempt is saved and locked while its result is uncertain. Retry checks existing proof before sending again." else "Your draft is saved privately on this device. Back keeps it for this account and delivery.",fontSize=12.sp,color=DriverMuted)
         if(state.offline)Text("Reconnect and refresh before submitting. Your saved draft is retained.")
         if(restored.isFailure)Text("The saved proof draft cannot be read. Contact the office before submitting another attempt.",color=MaterialTheme.colorScheme.error)
-        Text("1. PHOTO OF CARGO",fontSize=12.sp,color=DriverNavy)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("1. PHOTO OF CARGO", fontSize = 12.sp, color = DriverNavy, fontWeight = FontWeight.SemiBold)
+            Surface(
+                color = if (preview != null) Color(0xFFD6F5E3) else Color(0xFFFFEDEA),
+                shape = RoundedCornerShape(2.dp)
+            ) {
+                Text(
+                    text = if (preview != null) "PHOTO ADDED" else "REQUIRED",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = if (preview != null) Color(0xFF006C4C) else Color(0xFFBA1A1A),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
         Surface(onClick=::takePhoto,enabled=editable,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF))) {
             Column(Modifier.fillMaxWidth().heightIn(min=180.dp).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
                 if(preview!=null)Image(preview!!.asImageBitmap(),"Captured delivery photo",Modifier.fillMaxWidth().height(140.dp))
@@ -272,9 +326,37 @@ import kotlinx.coroutines.withContext
                 Text("Capture a clear view of items & labels",fontSize=10.sp,color=DriverMuted)
             }
         }
-        Text("2. RECIPIENT NAME",fontSize=12.sp,color=DriverNavy)
-        OutlinedTextField(draft.recipient,{persist(draft.changed().copy(recipient=it.take(100)))},placeholder={Text("Enter full name")},enabled=editable,modifier=Modifier.fillMaxWidth(),singleLine=true,shape=RoundedCornerShape(4.dp))
-        Text("3. DIGITAL SIGNATURE",fontSize=12.sp,color=DriverNavy)
+        val isRecipientError = draft.recipient.isNotBlank() && draft.recipient.trim().length < 2
+        Text("2. RECIPIENT NAME", fontSize = 12.sp, color = DriverNavy, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+            value = draft.recipient,
+            onValueChange = { persist(draft.changed().copy(recipient = it.take(100))) },
+            placeholder = { Text("Enter full name") },
+            enabled = editable,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            isError = isRecipientError,
+            supportingText = if (isRecipientError) {
+                { Text("Recipient name must be at least 2 characters.") }
+            } else null,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            shape = RoundedCornerShape(4.dp)
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("3. DIGITAL SIGNATURE", fontSize = 12.sp, color = DriverNavy, fontWeight = FontWeight.SemiBold)
+            Surface(
+                color = if (draft.strokes.isNotEmpty()) Color(0xFFD6F5E3) else Color(0xFFFFEDEA),
+                shape = RoundedCornerShape(2.dp)
+            ) {
+                Text(
+                    text = if (draft.strokes.isNotEmpty()) "SIGNED" else "REQUIRED",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = if (draft.strokes.isNotEmpty()) Color(0xFF006C4C) else Color(0xFFBA1A1A),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
         Box(Modifier.fillMaxWidth().height(160.dp).background(Color.White).border(1.dp,Color(0xFFC3C6CF),RoundedCornerShape(4.dp))) {
             if(draft.strokes.isEmpty() && current.isEmpty())Text("Tap and draw to sign",Modifier.align(Alignment.Center),fontSize=14.sp,color=Color(0xFF73777F))
             Canvas(Modifier.fillMaxSize().testTag("proof_signature_canvas").onSizeChanged{canvasSize=it}.pointerInput(editable) {

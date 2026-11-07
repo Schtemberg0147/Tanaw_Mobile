@@ -69,10 +69,16 @@ data class MobileState(val page: String = "loading", val busy: Boolean = false, 
     val customerShipmentsLoading: Boolean = false,
     val customerShipmentsHasMore: Boolean = false,
     val customerShipmentsError: String? = null,
+    val customerShipmentsTab: String? = null,
+    val customerShipmentsFilter: String? = null,
     val notificationsPage: List<JsonObject>? = null,
     val notificationsLoading: Boolean = false,
     val notificationsHasMore: Boolean = false,
-    val notificationsError: String? = null)
+    val notificationsError: String? = null,
+    val phoneChangeTarget: String? = null,
+    val phoneChangePendingName: String? = null,
+    val phoneChangePendingAddress: String? = null,
+    val phoneChangePendingCity: String? = null)
 fun JsonObject.value(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 fun JsonObject.rows(key: String): List<JsonObject> = (get(key) as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: buildJsonObject {}
@@ -250,7 +256,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             }
         }
     }
-    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){clearPasswordChallenge();signupPhone=""};mutable.update { it.copy(page=page,error=null,message=null,resendSeconds=if(page=="login")0 else it.resendSeconds,email=if(page=="login")"" else it.email,
+    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){clearPasswordChallenge();cancelPhoneChange();signupPhone=""};mutable.update { it.copy(page=page,error=null,message=null,resendSeconds=if(page=="login")0 else it.resendSeconds,email=if(page=="login")"" else it.email,
         passwordChangeOwner=if(page=="login")null else it.passwordChangeOwner,passwordChangeCodeSent=page!="login" && it.passwordChangeCodeSent) }} }
     private fun clearPasswordChallenge(){recoveryStore.clear("challenge");recoveryPhone=null;pendingPasswordChange=null;timer?.cancel()}
     fun openPasswordChange() {
@@ -342,10 +348,25 @@ class MobileWorkspaceViewModel @Inject constructor(
                 pendingPasswordChange=null
                 if(restoreChange)recoveryPhone=MobileValidation.phone(pending.value("target")) else clearPasswordChallenge()
             }
-            mutable.update { it.copy(page="workspace",data=data,error=null,offline=false,lastSync=savedAt,message=if(cached)it.message else "Offline copy could not be saved on this device.",
-                passwordChangeOwner=if(restoreChange)id else it.passwordChangeOwner,passwordChangeCodeSent=restoreChange || it.passwordChangeCodeSent,
-                email=if(restoreChange)pending.value("target") else it.email) }
-            if(restoreChange)countdown(((pending.value("created").toLong()+60000-System.currentTimeMillis())/1000).toInt().coerceIn(0,60))
+            val phoneChallenge = recoveryStore.read("phone_change_challenge", PhoneChangePolicy.CHALLENGE_AGE)
+            val restorePhoneChange = phoneChallenge != null && PhoneChangePolicy.canRestore(phoneChallenge, id, System.currentTimeMillis())
+            if (phoneChallenge != null && !restorePhoneChange) {
+                recoveryStore.clear("phone_change_challenge")
+            }
+            mutable.update { state ->
+                var s = state.copy(page="workspace",data=data,error=null,offline=false,lastSync=savedAt,message=if(cached)state.message else "Offline copy could not be saved on this device.",
+                    passwordChangeOwner=if(restoreChange)id else state.passwordChangeOwner,passwordChangeCodeSent=restoreChange || state.passwordChangeCodeSent,
+                    email=if(restoreChange)pending!!.value("target") else state.email)
+                if (restorePhoneChange && phoneChallenge != null) {
+                    s = PhoneChangePolicy.restore(s, phoneChallenge)
+                }
+                s
+            }
+            if(restoreChange)countdown(((pending!!.value("created").toLong()+60000-System.currentTimeMillis())/1000).toInt().coerceIn(0,60))
+            else if (restorePhoneChange && phoneChallenge != null) {
+                val remainingSeconds = ((phoneChallenge.value("created").toLong() + 60000 - System.currentTimeMillis()) / 1000).toInt().coerceIn(0, 60)
+                if (remainingSeconds > 0) countdown(remainingSeconds)
+            }
             if(data.obj("profile").value("role")!="driver" || data.rows("deliveries").none {it.value("id")==TripTrackingStatus.state.value.delivery && it.value("status") in listOf("assigned","loading","in_transit")}) TripTrackingService.stop(context)
         }
     }
@@ -397,7 +418,9 @@ class MobileWorkspaceViewModel @Inject constructor(
             it.copy(
                 customerShipments = if (loadMore) previousList else null,
                 customerShipmentsLoading = true,
-                customerShipmentsError = null
+                customerShipmentsError = null,
+                customerShipmentsTab = tab,
+                customerShipmentsFilter = statusFilter
             )
         }
 
@@ -409,7 +432,9 @@ class MobileWorkspaceViewModel @Inject constructor(
                     customerShipments = filtered,
                     customerShipmentsLoading = false,
                     customerShipmentsHasMore = false,
-                    customerShipmentsError = null
+                    customerShipmentsError = null,
+                    customerShipmentsTab = tab,
+                    customerShipmentsFilter = statusFilter
                 )
             }
             return
@@ -455,7 +480,9 @@ class MobileWorkspaceViewModel @Inject constructor(
                             customerShipments = merged,
                             customerShipmentsLoading = false,
                             customerShipmentsHasMore = hasMore,
-                            customerShipmentsError = null
+                            customerShipmentsError = null,
+                            customerShipmentsTab = tab,
+                            customerShipmentsFilter = statusFilter
                         )
                     }
                 }
@@ -470,7 +497,9 @@ class MobileWorkspaceViewModel @Inject constructor(
                             customerShipments = if (loadMore) previousList else filtered,
                             customerShipmentsLoading = false,
                             customerShipmentsHasMore = false,
-                            customerShipmentsError = if (loadMore) "Could not load more shipments. Check your connection and retry." else null
+                            customerShipmentsError = if (loadMore) "Could not load more shipments. Check your connection and retry." else null,
+                            customerShipmentsTab = tab,
+                            customerShipmentsFilter = statusFilter
                         )
                     }
                 }
@@ -710,7 +739,19 @@ class MobileWorkspaceViewModel @Inject constructor(
         if(changeOwner!=null)check(mutable.value.passwordChangeCodeSent && PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         val phone=recoveryPhone
         if(phone!=null) {require(code.matches(Regex("[0-9]{6,8}")));client.auth.verifyPhoneOtp(OtpType.Phone.SMS,phone,code)}
-        else if(code!="session") verifyEmail(code,"recovery",OtpType.Email.RECOVERY)
+        else if(code!="session") {
+            val host = runCatching { java.net.URI(BuildConfig.SUPABASE_URL).host }.getOrNull().orEmpty()
+            when (val parsed = DeepLinkParser.parse(code, host)) {
+                is DeepLinkResult.Session -> {
+                    if (parsed.isRecovery) {
+                        client.auth.importAuthToken(parsed.accessToken, parsed.refreshToken, retrieveUser = true)
+                    } else {
+                        verifyEmail(code, "recovery", OtpType.Email.RECOVERY)
+                    }
+                }
+                else -> verifyEmail(code, "recovery", OtpType.Email.RECOVERY)
+            }
+        }
         if(changeOwner!=null)check(PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
         client.auth.updateUser { this.password=password }
         clearPasswordChallenge()
@@ -722,8 +763,13 @@ class MobileWorkspaceViewModel @Inject constructor(
         when (val result = DeepLinkParser.parse(rawUri, host)) {
             is DeepLinkResult.Otp -> {
                 if (result.type.equals("recovery", ignoreCase = true)) {
+                    val currentUid = client.auth.currentUserOrNull()?.id
                     val changeOwner = mutable.value.passwordChangeOwner
-                    val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, client.auth.currentUserOrNull()?.id)
+                    if (currentUid != null && changeOwner == null) {
+                        mutable.update { it.copy(message = "Recovery link received. Log out to reset password, or use Profile to change password.") }
+                        return
+                    }
+                    val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, currentUid)
                     recoveryPhone = null
                     val email = result.email ?: mutable.value.email
                     saveChallenge("recover_code", email)
@@ -745,8 +791,13 @@ class MobileWorkspaceViewModel @Inject constructor(
             }
             is DeepLinkResult.Session -> {
                 if (result.type.equals("recovery", ignoreCase = true)) {
+                    val currentUid = client.auth.currentUserOrNull()?.id
                     val changeOwner = mutable.value.passwordChangeOwner
-                    val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, client.auth.currentUserOrNull()?.id)
+                    if (currentUid != null && changeOwner == null) {
+                        mutable.update { it.copy(message = "Recovery link received. Log out to reset password, or use Profile to change password.") }
+                        return
+                    }
+                    val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, currentUid)
                     recoveryPhone = null
                     viewModelScope.launch {
                         try {
@@ -784,6 +835,7 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     fun logout() = operation(allowOffline=true) {
         recoveryStore.clear("challenge")
+        recoveryStore.clear("phone_change_challenge")
         stopLive();loadedUser?.let {owner->
             recoveryStore.clear(owner)
             TrackingQueue(context).use {queue->queue.clearOwner(owner)}
@@ -862,8 +914,18 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     fun profile(name: String,phone: String,address: String,city: String) = operation {
         val normalized=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
-        val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
-        val version=generation
+        val user=client.auth.currentUserOrNull() ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val uid=user.id
+        val currentProfilePhone = mutable.value.data?.obj("profile")?.value("phone")
+        if (PhoneChangePolicy.isPhoneChanged(user.phone, currentProfilePhone, normalized)) {
+            requestPhoneChange(name, normalized, address, city)
+            return@operation
+        }
+        executeSaveProfile(name, normalized, address, city, uid)
+    }
+
+    private suspend fun executeSaveProfile(name: String, normalized: String, address: String, city: String, uid: String) {
+        val version = generation
         CustomerProfileRules.saveProfile(
             mutate = {
                 client.postgrest.rpc("mobile_save_profile",buildJsonObject { put("p_name",name.trim());put("p_phone",normalized);put("p_address",address.trim());put("p_city",city.trim()) })
@@ -902,6 +964,65 @@ class MobileWorkspaceViewModel @Inject constructor(
                 mutable.update { it.copy(message = CustomerProfileRules.MSG_PROFILE_SAVED_REFRESH_FAILED, error = null, offline = true) }
             }
         )
+    }
+
+    private suspend fun requestPhoneChange(name: String, normalizedPhone: String, address: String, city: String) {
+        val user = client.auth.currentUserOrNull() ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val uid = user.id
+        val pending = PendingProfileEdit(name = name.trim(), phone = normalizedPhone, address = address.trim(), city = city.trim())
+        client.auth.updateUser { this.phone = normalizedPhone }
+        val now = System.currentTimeMillis()
+        val challenge = PhoneChangePolicy.challenge(uid, normalizedPhone, pending, now)
+        recoveryStore.write("phone_change_challenge", challenge)
+        countdown()
+        mutable.update { state ->
+            PhoneChangePolicy.begin(state, uid, normalizedPhone, pending).copy(
+                message = "Verification code sent to $normalizedPhone via SMS."
+            )
+        }
+    }
+
+    fun verifyPhoneChange(code: String) = operation {
+        val targetPhone = mutable.value.phoneChangeTarget ?: error("NO_PENDING_PHONE_CHANGE")
+        require(code.matches(Regex("[0-9]{6,8}"))) { "INVALID_VERIFICATION_CODE" }
+        val user = client.auth.currentUserOrNull() ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val uid = user.id
+        client.auth.verifyPhoneOtp(type = OtpType.Phone.PHONE_CHANGE, phone = targetPhone, token = code.trim())
+        val pendingName = mutable.value.phoneChangePendingName ?: user.userMetadata?.get("full_name")?.let { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        val pendingAddress = mutable.value.phoneChangePendingAddress.orEmpty()
+        val pendingCity = mutable.value.phoneChangePendingCity.orEmpty()
+
+        executeSaveProfile(pendingName, targetPhone, pendingAddress, pendingCity, uid)
+        recoveryStore.clear("phone_change_challenge")
+        mutable.update { state ->
+            PhoneChangePolicy.cancel(state).copy(
+                message = "Phone number verified and profile updated. Use this number for sign-in and SMS alerts."
+            )
+        }
+    }
+
+    fun resendPhoneChange() = operation {
+        if (mutable.value.resendSeconds > 0) return@operation
+        val targetPhone = mutable.value.phoneChangeTarget ?: error("NO_PENDING_PHONE_CHANGE")
+        val user = client.auth.currentUserOrNull() ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        client.auth.resendPhone(type = OtpType.Phone.PHONE_CHANGE, phone = targetPhone)
+        val pending = PendingProfileEdit(
+            name = mutable.value.phoneChangePendingName.orEmpty(),
+            phone = targetPhone,
+            address = mutable.value.phoneChangePendingAddress.orEmpty(),
+            city = mutable.value.phoneChangePendingCity.orEmpty()
+        )
+        val now = System.currentTimeMillis()
+        val challenge = PhoneChangePolicy.challenge(user.id, targetPhone, pending, now)
+        recoveryStore.write("phone_change_challenge", challenge)
+        countdown()
+        mutable.update { it.copy(message = "A new verification code was sent to $targetPhone via SMS.", error = null) }
+    }
+
+    fun cancelPhoneChange() {
+        if (mutable.value.busy) return
+        recoveryStore.clear("phone_change_challenge")
+        mutable.update { PhoneChangePolicy.cancel(it) }
     }
     suspend fun conversation(delivery:String,before:String?):JsonObject = client.postgrest.rpc("delivery_conversation",buildJsonObject {
         put("p_delivery",delivery);put("p_before",before?.let(::JsonPrimitive)?:JsonNull)

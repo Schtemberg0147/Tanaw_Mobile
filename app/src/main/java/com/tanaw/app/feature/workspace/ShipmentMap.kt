@@ -10,6 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -181,7 +183,11 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
   if(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))view.onResume()
   onDispose {attached[0]=false;lifecycle.removeObserver(observer);view.onPause();view.onStop();view.onDestroy()}
  }
- AndroidView(factory={view},modifier=Modifier.fillMaxWidth().height(300.dp).testTag("Shipment map"),update={mapView ->
+ val mapDesc = when {
+  points.isEmpty() -> "Interactive shipment map"
+  else -> "Interactive shipment map showing " + points.joinToString(", ") { (label, _) -> label }
+ }
+ AndroidView(factory={view},modifier=Modifier.fillMaxWidth().height(300.dp).testTag("Shipment map").semantics { contentDescription = mapDesc },update={mapView ->
   mapView.getMapAsync {map ->
    if(!requested) {
     requested=true
@@ -261,8 +267,8 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
    finally {busy=false}
   }
  }
- OutlinedTextField(pickup,{searchRequest=null;onPickupText(it)},label={Text("Pickup address")},supportingText={Text(if(pickupPoint==null)"Place a pickup pin on the map." else "Pickup pin placed · add a street or landmark if needed.")},enabled=enabled,modifier=Modifier.fillMaxWidth())
- OutlinedTextField(destination,{searchRequest=null;onDestinationText(it)},label={Text("Destination address")},supportingText={Text(if(destinationPoint==null)"Place a destination pin on the map." else "Destination pin placed · add a street or landmark if needed.")},enabled=enabled,modifier=Modifier.fillMaxWidth())
+ OutlinedTextField(pickup,{searchRequest=null;onPickupText(it)},label={Text("Pickup address")},supportingText={Text(if(pickupPoint==null)"Place a pickup pin on the map." else "Pickup pin placed · add a street or landmark if needed.")},enabled=enabled,singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Next),modifier=Modifier.fillMaxWidth())
+ OutlinedTextField(destination,{searchRequest=null;onDestinationText(it)},label={Text("Destination address")},supportingText={Text(if(destinationPoint==null)"Place a destination pin on the map." else "Destination pin placed · add a street or landmark if needed.")},enabled=enabled,singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Done),modifier=Modifier.fillMaxWidth())
  Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
   FilterChip(selected=mode=="pickup",enabled=enabled,onClick={mode="pickup";searchRequest=null},label={Text("Pin pickup")})
   FilterChip(selected=mode=="destination",enabled=enabled,onClick={mode="destination";searchRequest=null},label={Text("Pin destination")})

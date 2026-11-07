@@ -163,4 +163,60 @@ class CustomerAddressRulesTest {
             )
         )
     }
+
+    @Test
+    fun maxValidInputsProduceRpcOutputsWithinDatabaseLimitsWithoutTruncation() {
+        val maxStreet = "S".repeat(380)
+        val maxBrgy = "B".repeat(100)
+        val maxCity = "C".repeat(60)
+        val maxProv = "P".repeat(35)
+
+        assertTrue(CustomerAddressRules.validateStreet(maxStreet))
+        assertTrue(CustomerAddressRules.validateBarangay(maxBrgy))
+        assertTrue(CustomerAddressRules.validateCity(maxCity))
+        assertTrue(CustomerAddressRules.validateProvince(maxProv))
+
+        val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
+            street = maxStreet,
+            barangay = maxBrgy,
+            city = maxCity,
+            province = maxProv
+        )
+
+        // 380 + ", Brgy. " (8) + 100 = 488 <= 500
+        assertEquals(488, pAddress.length)
+        assertTrue(pAddress.length <= CustomerAddressRules.MAX_RPC_ADDRESS_LENGTH)
+
+        // 60 + ", " (2) + 35 = 97 <= 100
+        assertEquals(97, pCity.length)
+        assertTrue(pCity.length <= CustomerAddressRules.MAX_RPC_CITY_LENGTH)
+    }
+
+    @Test
+    fun addressValidationRejectsWhitespaceOnlyAndHandlesUnicode() {
+        assertFalse("Whitespace-only street must fail", CustomerAddressRules.validateStreet("   "))
+        assertFalse("Whitespace-only barangay must fail", CustomerAddressRules.validateBarangay("   "))
+        assertFalse("Whitespace-only city must fail", CustomerAddressRules.validateCity("   "))
+        assertFalse("Whitespace-only province must fail", CustomerAddressRules.validateProvince("   "))
+
+        // Unicode addresses with accents and ñ
+        val unicodeStreet = "Calle España, Piso 3"
+        val unicodeBrgy = "Santo Niño"
+        val unicodeCity = "Valenzuela City"
+        val unicodeProv = "Metro Manila"
+
+        assertTrue(CustomerAddressRules.validateStreet(unicodeStreet))
+        assertTrue(CustomerAddressRules.validateBarangay(unicodeBrgy))
+        assertTrue(CustomerAddressRules.validateCity(unicodeCity))
+        assertTrue(CustomerAddressRules.validateProvince(unicodeProv))
+
+        val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
+            street = unicodeStreet,
+            barangay = unicodeBrgy,
+            city = unicodeCity,
+            province = unicodeProv
+        )
+        assertEquals("Calle España, Piso 3, Brgy. Santo Niño", pAddress)
+        assertEquals("Valenzuela City, Metro Manila", pCity)
+    }
 }

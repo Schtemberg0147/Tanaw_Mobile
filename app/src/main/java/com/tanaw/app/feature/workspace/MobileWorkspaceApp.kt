@@ -89,7 +89,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                         label = "Email code or confirmation link",
                         value = code,
                         change = { code = it.trim() },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { if (!state.busy && canVerify) vm.verifySignup(code) }),
                         isError = isCodeError,
                         supportingText = if (isCodeError) { { Text("Enter a valid verification code or link.") } } else null
@@ -107,7 +107,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                         label = "SMS verification code",
                         value = code,
                         change = { code = it.trim() },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { if (!state.busy && codeValid) vm.verifyPhoneSignup(code) }),
                         isError = isCodeError,
                         supportingText = if (isCodeError) { { Text("Enter a 6-digit verification code.") } } else null
@@ -152,7 +152,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                             label = "Recovery code (or original email link)",
                             value = code,
                             change = { code = it.trim() },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                             isError = isCodeError,
                             supportingText = if (isCodeError) { { Text("Enter a valid recovery code or confirmation link.") } } else null
@@ -200,6 +200,8 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     }
     if(state.passwordChangeOwner!=null) PasswordChangeDialog(state,vm::cancelPasswordChange,
         {vm.resetEmail(state.email)},{vm.canVerify(it,"recovery")},vm::recover)
+    if(state.phoneChangeTarget!=null) PhoneChangeDialog(state,vm::verifyPhoneChange,
+        vm::resendPhoneChange,vm::cancelPhoneChange)
 }
 
 @Composable private fun Workspace(vm: MobileWorkspaceViewModel,state: MobileState,data: JsonObject) {
@@ -209,6 +211,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     var query by rememberSaveable(tab) { mutableStateOf("") }
     var historyFilter by rememberSaveable { mutableStateOf("All") }
     var fullScreenBookingStep by rememberSaveable { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     val bookingDraft=rememberSaveableStateHolder()
     val profile=data.obj("profile")
     val role=profile.value("role")
@@ -220,8 +223,23 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
             NavigationBar(containerColor=MaterialTheme.colorScheme.surface) {
                 val icons=listOf(Icons.Outlined.Home,Icons.Outlined.LocalShipping,Icons.Outlined.History,Icons.Outlined.Notifications,Icons.Outlined.Person)
                 listOf("Home","Active","History","Alerts","Profile").forEachIndexed { index,label ->
-                    NavigationBarItem(selected=tab==label,onClick={tab=label;detail=null},enabled=!state.busy,
-                        icon={Icon(icons[index],null)},label={Text(label,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)})
+                    val unreadAlerts = if (label == "Alerts") data.rows("notifications").count { it.value("read_at").isBlank() } else 0
+                    NavigationBarItem(
+                        selected=tab==label,
+                        onClick={tab=label;detail=null},
+                        enabled=!state.busy,
+                        icon={
+                            if (unreadAlerts > 0) {
+                                BadgedBox(badge = { Badge { Text("$unreadAlerts") } }) {
+                                    Icon(icons[index], contentDescription = label)
+                                }
+                            } else {
+                                Icon(icons[index], contentDescription = label)
+                            }
+                        },
+                        label={Text(label,fontSize=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis)},
+                        alwaysShowLabel = true
+                    )
                 }
             }
         }
@@ -291,7 +309,13 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     }
                     Text(if(tab=="History") "Shipment history" else "Active shipments",style=MaterialTheme.typography.headlineSmall)
                     SupportingText("Search all your shipments by tracking reference or address.")
-                    Field("Search reference or address",query,{query=it})
+                    Field(
+                        label = "Search reference or address",
+                        value = query,
+                        change = { query = it },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                    )
                     if(tab=="History") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("All","Completed","Cancelled").forEach { f -> FilterChip(selected=historyFilter==f,onClick={historyFilter=f},label={Text(f)}) }
                     }
@@ -393,9 +417,26 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     rows.forEach { s ->
         OutlinedCard(onClick={open(s.value("id"))},modifier=Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                Text(s.value("tracking_number"),fontWeight=FontWeight.Bold)
-                StatusBadge(s.value("status"))
-                Text("${s.value("pickup_address")} → ${s.value("dropoff_address")}")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = s.value("tracking_number"),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    StatusBadge(s.value("status"))
+                }
+                Text(
+                    text = "${s.value("pickup_address")} → ${s.value("dropoff_address")}",
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 SupportingText(MobilePresentation.time(s.value("created_at")))
             }
         }

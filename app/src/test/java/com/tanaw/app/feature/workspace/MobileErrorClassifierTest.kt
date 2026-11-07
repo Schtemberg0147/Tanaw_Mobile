@@ -184,5 +184,11 @@ class MobileErrorClassifierTest {
         val serverMsg = MobileErrorClassifier.friendlyMessage(SerializationException("Missing field: secret_token"))
         assertTrue(serverMsg.contains("temporarily unavailable") || serverMsg.contains("contact the office"))
         assertFalse(serverMsg.contains("secret_token"))
+
+        val phoneExistsMsg = MobileErrorClassifier.friendlyMessage(Exception("AuthApiError: phone_exists"))
+        assertEquals("This phone number is already registered to another account.", phoneExistsMsg)
+
+        val otpExpiredMsg = MobileErrorClassifier.friendlyMessage(Exception("invalid_token or token is expired"))
+        assertEquals("The code is invalid or your session expired. Request another code or sign in again.", otpExpiredMsg)
     }
 }

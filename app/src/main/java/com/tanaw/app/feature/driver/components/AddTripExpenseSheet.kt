@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +68,10 @@ import kotlinx.coroutines.launch
             }
         }
     }
+    val isCategoryError = category.isNotEmpty() && category.trim().length !in 2..200
+    val amountVal = amount.toDoubleOrNull()
+    val isAmountError = amount.isNotEmpty() && (amountVal == null || !amountVal.isFinite() || amountVal <= 0 || amountVal > 1000000)
+
     ModalBottomSheet(onDismissRequest={if(!isSubmitting && !preparingReceipt)onDismiss()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
         containerColor=Color.White,shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),modifier=modifier.testTag("add_trip_expense_sheet")) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
@@ -77,15 +82,38 @@ import kotlinx.coroutines.launch
             }
             HorizontalDivider(color=Color(0xFFE7EEFF))
             Text("WHAT WAS THE EXPENSE?",fontSize=10.sp)
-            OutlinedTextField(category,{category=it;persist(c=it)},placeholder={Text("e.g. Loading fee, parking, etc.")},enabled=!isSubmitting && !preparingReceipt,
-                modifier=Modifier.fillMaxWidth().testTag("expense_category_input"),shape=RoundedCornerShape(0.dp),singleLine=true,
-                colors=OutlinedTextFieldDefaults.colors(unfocusedContainerColor=Color(0xFFF0F3FF),unfocusedBorderColor=Color(0xFFCDD7F7)))
+            OutlinedTextField(
+                value = category,
+                onValueChange = { category = it; persist(c = it) },
+                placeholder = { Text("e.g. Loading fee, parking, etc.") },
+                enabled = !isSubmitting && !preparingReceipt,
+                isError = isCategoryError,
+                supportingText = if (isCategoryError) {
+                    { Text("Category must be between 2 and 200 characters.") }
+                } else null,
+                modifier = Modifier.fillMaxWidth().testTag("expense_category_input"),
+                shape = RoundedCornerShape(0.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color(0xFFF0F3FF), unfocusedBorderColor = Color(0xFFCDD7F7))
+            )
             Text("AMOUNT",fontSize=10.sp)
-            OutlinedTextField(amount,{if(it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d{0,2}$"))){amount=it;persist(a=it)}},placeholder={Text("0.00",fontSize=24.sp)},
-                prefix={Text("₱ ",fontSize=24.sp,fontWeight=FontWeight.Bold,color=DriverNavy)},enabled=!isSubmitting && !preparingReceipt,
-                modifier=Modifier.fillMaxWidth().testTag("expense_amount_input"),singleLine=true,shape=RoundedCornerShape(0.dp),
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
-                colors=OutlinedTextFieldDefaults.colors(unfocusedContainerColor=Color(0xFFF0F3FF),unfocusedBorderColor=Color(0xFFCDD7F7)))
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d{0,2}$"))) { amount = it; persist(a = it) } },
+                placeholder = { Text("0.00", fontSize = 24.sp) },
+                prefix = { Text("₱ ", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DriverNavy) },
+                enabled = !isSubmitting && !preparingReceipt,
+                isError = isAmountError,
+                supportingText = if (isAmountError) {
+                    { Text("Amount must be between ₱0.01 and ₱1,000,000.00.") }
+                } else null,
+                modifier = Modifier.fillMaxWidth().testTag("expense_amount_input"),
+                singleLine = true,
+                shape = RoundedCornerShape(0.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color(0xFFF0F3FF), unfocusedBorderColor = Color(0xFFCDD7F7))
+            )
             Text("ATTACH RECEIPT (OPTIONAL)",fontSize=10.sp)
             Surface(onClick={picker.launch("image/*")},enabled=!isSubmitting && !preparingReceipt,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF)),modifier=Modifier.testTag("receipt_photo_selector")) {
                 Column(Modifier.fillMaxWidth().heightIn(min=150.dp).padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {

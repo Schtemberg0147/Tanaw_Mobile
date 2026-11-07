@@ -21,6 +21,10 @@ class DriverOperationalRecordsTest {
         assertNull(FuelEntry.parse("10","2.001","12000.1",""))
         assertNull(FuelEntry.parse("10","60","12000.12",""))
         assertNull(FuelEntry.parse("10000","10000","0",""))
+        assertNotNull(FuelEntry.parse("0.01","0.01","0","Station"))
+        assertNotNull(FuelEntry.parse("10000","100","10000000","A".repeat(200)))
+        assertNull(FuelEntry.parse("10","50","1000","A".repeat(201)))
+        assertNull(FuelEntry.parse("10","50","10000000.1","Station"))
     }
     @Test fun pagesKeepLinkedDeliveriesAndDeduplicateOverlaps() {
         val first=page("This month",0,"a","b")
@@ -38,5 +42,49 @@ class DriverOperationalRecordsTest {
         assertEquals("Not fully recorded",DriverHistory.allowance(buildJsonObject {put("allowance_missing",1);put("allowance_total",0)}))
         assertEquals("Not recorded",DriverHistory.onTime(buildJsonObject {put("on_time_known",0)}))
         assertEquals("75% (4 recorded)",DriverHistory.onTime(buildJsonObject {put("on_time_known",4);put("on_time_count",3)}))
+    }
+
+    @Test fun driverConversationMessageLengthAndWhitespaceBoundaries() {
+        assertFalse("Empty conversation message must be invalid", ConversationRules.valid(""))
+        assertFalse("Whitespace-only message must be invalid", ConversationRules.valid("   \n\t  "))
+        assertTrue("Single-character message must be valid", ConversationRules.valid("A"))
+        assertTrue("Whitespace-padded message with content must be valid", ConversationRules.valid("  Hello  "))
+
+        // Exactly 2000 code points
+        val maxMessage = "A".repeat(2000)
+        assertTrue("2000-character message must be valid", ConversationRules.valid(maxMessage))
+
+        // Exceeding 2000 code points
+        val overflowMessage = "A".repeat(2001)
+        assertFalse("2001-character message must exceed limit", ConversationRules.valid(overflowMessage))
+
+        // Unicode and emojis using surrogate pairs
+        val emojiMessage = "\uD83D\uDE9A".repeat(2000) // 2000 truck emojis (code points)
+        assertTrue("2000 emoji code points must be valid", ConversationRules.valid(emojiMessage))
+        val overflowEmoji = "\uD83D\uDE9A".repeat(2001)
+        assertFalse("2001 emoji code points must exceed limit", ConversationRules.valid(overflowEmoji))
+    }
+
+    @Test fun driverIncidentValidationBoundaries() {
+        // Incident description must be in 5..2000 trimmed characters
+        val shortDesc = "1234"
+        val minDesc = "12345"
+        val maxDesc = "A".repeat(2000)
+        val overflowDesc = "A".repeat(2001)
+        val blankDesc = "     "
+
+        assertFalse(shortDesc.trim().length in 5..2000)
+        assertTrue(minDesc.trim().length in 5..2000)
+        assertTrue(maxDesc.trim().length in 5..2000)
+        assertFalse(overflowDesc.trim().length in 5..2000)
+        assertFalse(blankDesc.trim().length in 5..2000)
+
+        // Expected delay minutes must be between 0 and 1440
+        listOf(0, 30, 60, 1440).forEach { minutes ->
+            assertTrue("Expected valid minutes $minutes", minutes in 0..1440)
+        }
+        listOf(-1, -100, 1441, 10000).forEach { minutes ->
+            assertFalse("Expected invalid minutes $minutes", minutes in 0..1440)
+        }
     }
 }

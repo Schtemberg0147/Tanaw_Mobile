@@ -322,6 +322,9 @@ fun CreateAccountScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
             isError = passwordTooShort,
+            supportingText = if (passwordTooShort) {
+                { Text("Password must be at least 8 characters.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            } else null,
         )
 
         if (passwordStrength != PasswordStrength.EMPTY) {
@@ -345,6 +348,23 @@ fun CreateAccountScreen(
 
         TanawInputLabel(text = "CONFIRM PASSWORD")
         Spacer(modifier = Modifier.height(6.dp))
+        fun submitForm() {
+            val finalAddress = if (phoneSignup) {
+                val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
+                    street = streetAddress.trim(),
+                    barangay = barangay.trim(),
+                    city = city.trim(),
+                    province = province.trim()
+                )
+                if (pCity.isNotBlank()) "$pAddress, $pCity" else pAddress
+            } else {
+                address.trim()
+            }
+            onVerifyAndContinue(
+                firstName.trim(), lastName.trim(), contactNumber.trim(), email.trim(), password, finalAddress
+            )
+        }
+
         TanawTextField(
             value = confirmPassword,
             onValueChange = { confirmPassword = it },
@@ -375,7 +395,10 @@ fun CreateAccountScreen(
             else
                 PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            keyboardActions = KeyboardActions(onDone = {
+                focusManager.clearFocus()
+                if (canSubmit) submitForm()
+            }),
             isError = passwordMismatch,
         )
 
@@ -454,22 +477,7 @@ fun CreateAccountScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = {
-                val finalAddress = if (phoneSignup) {
-                    val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
-                        street = streetAddress,
-                        barangay = barangay,
-                        city = city,
-                        province = province
-                    )
-                    if (pCity.isNotBlank()) "$pAddress, $pCity" else pAddress
-                } else {
-                    address
-                }
-                onVerifyAndContinue(
-                    firstName, lastName, contactNumber, email, password, finalAddress
-                )
-            },
+            onClick = ::submitForm,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),

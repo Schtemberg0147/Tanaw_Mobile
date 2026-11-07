@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -15,7 +16,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.ui.theme.TanawTheme
 
@@ -45,6 +45,9 @@ fun TanawTextField(
     trailingIcon: @Composable (() -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    isError: Boolean = false,
+    supportingText: @Composable (() -> Unit)? = null,
 ) {
     OutlinedTextField(
         value           = value,
@@ -62,15 +65,28 @@ fun TanawTextField(
         trailingIcon         = trailingIcon,
         visualTransformation = visualTransformation,
         keyboardOptions      = keyboardOptions,
+        keyboardActions      = keyboardActions,
+        isError              = isError,
+        supportingText       = supportingText,
         singleLine           = true,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor      = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor    = MaterialTheme.colorScheme.outline,
-            focusedContainerColor   = MaterialTheme.colorScheme.surfaceContainerHigh,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            cursorColor             = MaterialTheme.colorScheme.primary,
-            focusedTextColor        = MaterialTheme.colorScheme.onSurface,
-            unfocusedTextColor      = MaterialTheme.colorScheme.onSurface,
+            focusedBorderColor         = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor       = MaterialTheme.colorScheme.outline,
+            focusedContainerColor      = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor    = MaterialTheme.colorScheme.surfaceContainerHigh,
+            cursorColor                = MaterialTheme.colorScheme.primary,
+            focusedTextColor           = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor         = MaterialTheme.colorScheme.onSurface,
+            focusedLeadingIconColor    = MaterialTheme.colorScheme.primary,
+            unfocusedLeadingIconColor  = MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedTrailingIconColor   = MaterialTheme.colorScheme.onSurfaceVariant,
+            unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            errorBorderColor           = MaterialTheme.colorScheme.error,
+            errorLeadingIconColor      = MaterialTheme.colorScheme.error,
+            errorTrailingIconColor     = MaterialTheme.colorScheme.onSurfaceVariant,
+            errorTextColor             = MaterialTheme.colorScheme.onSurface,
+            errorContainerColor        = MaterialTheme.colorScheme.surfaceContainerHigh,
+            errorSupportingTextColor   = MaterialTheme.colorScheme.error,
         )
     )
 }
@@ -91,8 +107,10 @@ fun TanawPrimaryButton(
             .height(52.dp),
         shape   = RoundedCornerShape(28.dp),
         colors  = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor   = MaterialTheme.colorScheme.onPrimary
+            containerColor         = MaterialTheme.colorScheme.primary,
+            contentColor           = MaterialTheme.colorScheme.onPrimary,
+            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+            disabledContentColor   = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.70f)
         ),
         enabled = enabled && !isLoading
     ) {
@@ -126,9 +144,13 @@ fun TanawOutlinedButton(
             .fillMaxWidth()
             .height(52.dp),
         shape   = RoundedCornerShape(28.dp),
-        border  = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+        border  = BorderStroke(
+            1.5.dp,
+            if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        ),
         colors  = ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.primary
+            contentColor         = MaterialTheme.colorScheme.primary,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         ),
         enabled = enabled
     ) {
@@ -137,6 +159,26 @@ fun TanawOutlinedButton(
             style = MaterialTheme.typography.labelLarge
         )
     }
+}
+
+// ─── Text Link ────────────────────────────────────────────────────────────────
+@Composable
+fun TanawTextLink(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.secondary,
+    fontWeight: FontWeight = FontWeight.SemiBold
+) {
+    Text(
+        text       = text,
+        color      = color,
+        style      = MaterialTheme.typography.labelMedium,
+        fontWeight = fontWeight,
+        modifier   = modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp)
+    )
 }
 
 // ─── Divider ──────────────────────────────────────────────────────────────────
@@ -221,12 +263,38 @@ fun TermsFooter(
     onPrivacyClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier=modifier, horizontalAlignment=Alignment.CenterHorizontally) {
-        Text("Company policies",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=11.sp)
-        Row(verticalAlignment=Alignment.CenterVertically) {
-            TextButton(onClick=onTermsClick) { Text("Terms of Service",fontSize=11.sp) }
-            Text("and",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=11.sp)
-            TextButton(onClick=onPrivacyClick) { Text("Privacy Policy",fontSize=11.sp) }
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text  = "Company policies",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = onTermsClick,
+                colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Text(
+                    text       = "Terms of Service",
+                    style      = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                text  = "and",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            TextButton(
+                onClick = onPrivacyClick,
+                colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Text(
+                    text       = "Privacy Policy",
+                    style      = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
