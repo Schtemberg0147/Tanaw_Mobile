@@ -32,6 +32,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -115,6 +117,7 @@ class MobileWorkspaceViewModel @Inject constructor(
     private var customerShipmentsVersion = 0
     private var notificationsJob: Job? = null
     private var notificationsVersion = 0
+    private var pendingBackgroundRefresh = false
     private fun stopLive() {liveJob?.cancel();pollJob?.cancel();customerShipmentsJob?.cancel();notificationsJob?.cancel();TripTrackingService.stop(context)}
     private fun startLive(uid:String) {
         liveJob?.cancel();pollJob?.cancel()
@@ -138,7 +141,11 @@ class MobileWorkspaceViewModel @Inject constructor(
         }
     }
     private suspend fun backgroundRefresh() {
-        if(mutable.value.busy || mutable.value.page!="workspace")return
+        if(WorkspaceSyncRules.shouldQueueBackgroundRefresh(mutable.value.busy)) {
+            pendingBackgroundRefresh = true
+            return
+        }
+        if(mutable.value.page!="workspace")return
         val version = generation
         try {
             if (client.auth.currentUserOrNull() == null && loadedUser != null) {
@@ -293,7 +300,15 @@ class MobileWorkspaceViewModel @Inject constructor(
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { mutable.update { it.copy(error=friendly(error)) } }
-            finally { mutable.update { it.copy(busy=false) } }
+            finally {
+                mutable.update { it.copy(busy=false) }
+                if (WorkspaceSyncRules.shouldDrainPendingRefresh(pendingBackgroundRefresh, isBusy = false)) {
+                    pendingBackgroundRefresh = false
+                    viewModelScope.launch {
+                        try { backgroundRefresh() } catch (_: Exception) {}
+                    }
+                }
+            }
         }
     }
     private fun friendly(error: Exception): String = MobileErrorClassifier.friendlyMessage(error)
@@ -312,26 +327,34 @@ class MobileWorkspaceViewModel @Inject constructor(
         }
         if(data.obj("profile").value("role")=="driver") {
             // Driver-only reads retain the caller's RLS; customer loading is unchanged.
-            val extra=DriverDatabaseData.load(readSettings={
-                client.from("system_settings").select {
-                    filter {isIn("key",listOf("compliance_thresholds","compliance_threshold_days","driver_app_content"))}
-                }.decodeAs<JsonArray>()
-            }) {table,driverId->
-                client.from(table).select {
-                    when(table) {
-                        "drivers"->filter {eq("user_id",id)}
-                        // Truck RLS includes both permanent and delivery assignments.
-                        "trucks"->Unit
-                        else->filter {eq("driver_id",requireNotNull(driverId))}
+            val (extra, unread) = coroutineScope {
+                val extraDeferred = async {
+                    DriverDatabaseData.load(readSettings = {
+                        client.from("system_settings").select {
+                            filter { isIn("key", listOf("compliance_thresholds", "compliance_threshold_days", "driver_app_content")) }
+                        }.decodeAs<JsonArray>()
+                    }) { table, driverId ->
+                        client.from(table).select {
+                            when (table) {
+                                "drivers" -> filter { eq("user_id", id) }
+                                // Truck RLS includes both permanent and delivery assignments.
+                                "trucks" -> Unit
+                                else -> filter { eq("driver_id", requireNotNull(driverId)) }
+                            }
+                            if (table == "deliveries") { order("assigned_at", Order.DESCENDING); limit(200) }
+                            if (table == "delivery_expenses") { order("created_at", Order.DESCENDING); limit(200) }
+                        }.decodeAs<JsonArray>()
                     }
-                    if(table=="deliveries") {order("assigned_at",Order.DESCENDING);limit(200)}
-                    if(table=="delivery_expenses") {order("created_at",Order.DESCENDING);limit(200)}
-                }.decodeAs<JsonArray>()
+                }
+                val unreadDeferred = async {
+                    try { client.postgrest.rpc("delivery_conversation_unread").decodeAs<JsonArray>() }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { null }
+                }
+                extraDeferred.await() to unreadDeferred.await()
             }
-            data=JsonObject(data+extra)
-            val unread=try {client.postgrest.rpc("delivery_conversation_unread").decodeAs<JsonArray>()}
-            catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){null}
-            if(version==generation && client.auth.currentUserOrNull()?.id==id)mutable.update {it.copy(conversationUnread=unread)}
+            data = JsonObject(data + extra)
+            if (version == generation && client.auth.currentUserOrNull()?.id == id) mutable.update { it.copy(conversationUnread = unread) }
         }
         if(data.obj("profile").value("role")!="driver") {
             data=JsonObject(data+readSmsPreferences(id))
@@ -340,7 +363,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
             val savedAt=java.time.Instant.now().toString()
             val snapshot=RecoveryPolicy.workspace(data,id)
-            val cached=snapshot==null || recoveryStore.write(id,buildJsonObject {put("created",System.currentTimeMillis());put("saved_at",savedAt);put("data",snapshot)})
+            val cached=snapshot==null || recoveryStore.writeAsync(id,buildJsonObject {put("created",System.currentTimeMillis());put("saved_at",savedAt);put("data",snapshot)})
             val pending=pendingPasswordChange
             val user=client.auth.currentUserOrNull()
             val restoreChange=pending!=null && user!=null && PasswordChangePolicy.isAllowedRole(data.obj("profile").value("role")) && PasswordChangePolicy.canRestore(pending,id,user.phone,user.email)
@@ -348,7 +371,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                 pendingPasswordChange=null
                 if(restoreChange)recoveryPhone=MobileValidation.phone(pending.value("target")) else clearPasswordChallenge()
             }
-            val phoneChallenge = recoveryStore.read("phone_change_challenge", PhoneChangePolicy.CHALLENGE_AGE)
+            val phoneChallenge = recoveryStore.readAsync("phone_change_challenge", PhoneChangePolicy.CHALLENGE_AGE)
             val restorePhoneChange = phoneChallenge != null && PhoneChangePolicy.canRestore(phoneChallenge, id, System.currentTimeMillis())
             if (phoneChallenge != null && !restorePhoneChange) {
                 recoveryStore.clear("phone_change_challenge")
@@ -1034,27 +1057,49 @@ class MobileWorkspaceViewModel @Inject constructor(
     suspend fun readConversation(delivery:String,ids:List<String>) {
         client.postgrest.rpc("read_delivery_messages",buildJsonObject {put("p_delivery",delivery);put("p_ids",JsonArray(ids.map(::JsonPrimitive)))})
     }
-    private suspend fun confirmedDriverAction(message:String,onConfirmed:()->Unit={},mutate:suspend ()->Unit) {
+    private suspend fun reloadWorkspaceAndDetails(targetDeliveryId: String? = null) {
+        load()
+        val shipmentId = WorkspaceSyncRules.resolveShipmentToRefresh(
+            currentDetailsShipmentId = mutable.value.details?.value("shipment_id"),
+            deliveryId = targetDeliveryId,
+            data = mutable.value.data
+        )
+        if (shipmentId != null && WorkspaceSyncRules.shouldRefreshDetails(shipmentId, mutable.value.details?.value("shipment_id"))) {
+            val detailRequest = detailVersion
+            val version = generation
+            try {
+                val detail = readDetails(shipmentId)
+                if (version == generation && detailRequest == detailVersion && WorkspaceSyncRules.shouldRefreshDetails(shipmentId, mutable.value.details?.value("shipment_id"))) {
+                    mutable.update { it.copy(details = detail) }
+                }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) {
+                // Partial failure reading details does not invalidate confirmed workspace data
+            }
+        }
+    }
+    private suspend fun confirmedDriverAction(message:String,onConfirmed:()->Unit={},deliveryId:String?=null,mutate:suspend ()->Unit) {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED")
         val version=generation
         ConfirmedMutation.run(mutate,{version==generation && client.auth.currentUserOrNull()?.id==uid},{
             mutable.update {it.copy(message=message,error=null)}
             try {onConfirmed()}catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){mutable.update {it.copy(message="$message Location sharing could not start. Tap Resume location sharing.")}}
-        },{load()},{mutable.update {it.copy(message="${it.message?:message} Saved successfully. Refresh to reload current trip status before another action.",error=null,offline=true)}})
+        },{reloadWorkspaceAndDetails(deliveryId)},{mutable.update {it.copy(message="${it.message?:message} Saved successfully. Refresh to reload current trip status before another action.",error=null,offline=true)}})
     }
     fun driver(id: String,action: String) = operation {
-        confirmedDriverAction(if(action=="no_show")"No-show reported for office review." else "Assignment updated.") {
+        confirmedDriverAction(if(action=="no_show")"No-show reported for office review." else "Assignment updated.", deliveryId=id) {
             client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action",action)})
         }
     }
     fun arrive(id:String,lat:Double,lng:Double)=operation {
-        confirmedDriverAction("Pickup arrival recorded.") {
+        confirmedDriverAction("Pickup arrival recorded.", deliveryId=id) {
             client.postgrest.rpc("driver_arrive_at_pickup",buildJsonObject {put("p_delivery_id",id);put("p_lat",lat);put("p_lng",lng)})
         }
     }
     fun startTrip(id:String,onStarted:()->Unit)=operation {
-        confirmedDriverAction("Route started. Check location sharing status.",onStarted) {
+        confirmedDriverAction("Route started. Check location sharing status.",onStarted, deliveryId=id) {
             client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action","start")})
         }
     }
@@ -1083,7 +1128,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             mutable.update {it.copy(message="Incident reported to the office.",error=null)}
             try {onSaved()}catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){mutable.update {it.copy(message="Incident saved. Close the form to return to your trip.")}}
-        },{load()},{mutable.update {it.copy(message="Incident saved. Refresh to reload your records before another action.",error=null,offline=true)}})
+        },{reloadWorkspaceAndDetails(id)},{mutable.update {it.copy(message="Incident saved. Refresh to reload your records before another action.",error=null,offline=true)}})
     }
     fun addExpense(delivery:String,request:String,category:String,amount:Double,receipt:ByteArray?,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
@@ -1118,7 +1163,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             mutable.update {it.copy(message="Expense saved. See trip records for its current review status.",error=null)}
             try {onSaved()}catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){mutable.update {it.copy(message="Expense saved. Close the form to return to your trip.")}}
-        },{load()},{mutable.update {it.copy(message="Expense saved. Refresh to reload reviewed expense history before another action.",error=null,offline=true)}})
+        },{reloadWorkspaceAndDetails(delivery)},{mutable.update {it.copy(message="Expense saved. Refresh to reload reviewed expense history before another action.",error=null,offline=true)}})
     }
     fun submitProof(id:String,recipient:String,photo:ByteArray,signature:ByteArray,attempt:String,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
@@ -1146,7 +1191,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             proofDraftStore.clear(uid,id)
             mutable.update {it.copy(message="Proof saved. Refresh for the current office review status.",error=null)}
             try {onSaved()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){ /* Confirmed proof remains saved. */ }
-        },{load()},{mutable.update{it.copy(offline=true,error=null,message="Proof saved. Refresh to reload office review status before another action.")}})
+        },{reloadWorkspaceAndDetails(id)},{mutable.update{it.copy(offline=true,error=null,message="Proof saved. Refresh to reload office review status before another action.")}})
     }
     override fun onCleared() {liveJob?.cancel();pollJob?.cancel()}
     fun markRead(id: String) = operation {
@@ -1161,46 +1206,67 @@ class MobileWorkspaceViewModel @Inject constructor(
         }
         load()
     }
-    private suspend fun readDetails(id:String):JsonObject {
-        val details=client.postgrest.rpc("mobile_shipment_details",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()
-        if(mutable.value.data?.obj("profile")?.value("role")!="driver") {
-            val activeDelivery=mutable.value.data?.rows("deliveries")?.firstOrNull {
-                it.value("shipment_id")==id && it.value("status") in listOf("assigned","loading","in_transit")
+    private suspend fun readDetails(id:String):JsonObject = coroutineScope {
+        val detailsDeferred = async {
+            client.postgrest.rpc("mobile_shipment_details", buildJsonObject { put("p_shipment", id) }).decodeAs<JsonObject>()
+        }
+        if (mutable.value.data?.obj("profile")?.value("role") != "driver") {
+            val details = detailsDeferred.await()
+            val activeDelivery = mutable.value.data?.rows("deliveries")?.firstOrNull {
+                it.value("shipment_id") == id && it.value("status") in listOf("assigned", "loading", "in_transit")
             }
-            val routing=if(activeDelivery!=null) {
+            val routing = if (activeDelivery != null) {
                 try {
-                    val deliveryId=activeDelivery.value("id")
-                    if(deliveryId.isNotBlank()) readRouteStatus(deliveryId)
-                    else buildJsonObject { put("reason","Assigned delivery unavailable") }
-                } catch(cancelled:CancellationException) {
+                    val deliveryId = activeDelivery.value("id")
+                    if (deliveryId.isNotBlank()) readRouteStatus(deliveryId)
+                    else buildJsonObject { put("reason", "Assigned delivery unavailable") }
+                } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch(_:Exception) {
-                    buildJsonObject { put("reason","Live route calculation unavailable") }
+                } catch (_: Exception) {
+                    buildJsonObject { put("reason", "Live route calculation unavailable") }
                 }
             } else null
-            return if(routing!=null) JsonObject(details+mapOf("routing" to routing)) else details
+            return@coroutineScope if (routing != null) JsonObject(details + mapOf("routing" to routing)) else details
         }
-        val extra=try {
-            buildJsonObject {put("fuel_logs",client.postgrest.rpc("mobile_driver_fuel_history",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonArray>())}
-        }catch(cancelled:CancellationException){throw cancelled}
-        catch(_:Exception){buildJsonObject {put("fuel_error","Could not load fuel records. Refresh to retry.")}}
-        val evidence=try {client.postgrest.rpc("mobile_driver_evidence",buildJsonObject {put("p_shipment",id)}).decodeAs<JsonObject>()}
-        catch(cancelled:CancellationException){throw cancelled}
-        catch(_:Exception){buildJsonObject {put("evidence_error","Could not load incident photos or expense reviews. Refresh to retry.")}}
-        val routing=try {
-            val delivery=DriverUiRules.delivery(mutable.value.data?:buildJsonObject{},id).value("id")
-            if(delivery.isBlank())buildJsonObject {put("reason","Assigned delivery unavailable")}
-            else readRouteStatus(delivery)
-        }catch(cancelled:CancellationException){throw cancelled}
-        catch(_:Exception){buildJsonObject {put("reason","Truck routing provider unavailable. Refresh to retry.")}}
-        return JsonObject(details+extra+evidence+mapOf("routing" to routing))
+        val extraDeferred = async {
+            try {
+                buildJsonObject { put("fuel_logs", client.postgrest.rpc("mobile_driver_fuel_history", buildJsonObject { put("p_shipment", id) }).decodeAs<JsonArray>()) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { buildJsonObject { put("fuel_error", "Could not load fuel records. Refresh to retry.") } }
+        }
+        val evidenceDeferred = async {
+            try {
+                client.postgrest.rpc("mobile_driver_evidence", buildJsonObject { put("p_shipment", id) }).decodeAs<JsonObject>()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { buildJsonObject { put("evidence_error", "Could not load incident photos or expense reviews. Refresh to retry.") } }
+        }
+        val routingDeferred = async {
+            try {
+                val delivery = DriverUiRules.delivery(mutable.value.data ?: buildJsonObject {}, id).value("id")
+                if (delivery.isBlank()) buildJsonObject { put("reason", "Assigned delivery unavailable") }
+                else readRouteStatus(delivery)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { buildJsonObject { put("reason", "Truck routing provider unavailable. Refresh to retry.") } }
+        }
+        val details = detailsDeferred.await()
+        val extra = extraDeferred.await()
+        val evidence = evidenceDeferred.await()
+        val routing = routingDeferred.await()
+        JsonObject(details + extra + evidence + mapOf("routing" to routing))
     }
     fun loadDetails(id: String) {
         detailJob?.cancel()
         val requestVersion=++detailVersion
         val version=generation
         val uid=client.auth.currentUserOrNull()?.id ?: return
-        mutable.update { it.copy(details=null,proof=null,detailLoading=true,error=null) }
+        mutable.update { state ->
+            state.copy(
+                details = state.details?.takeIf { it.value("shipment_id") == id },
+                proof = null,
+                detailLoading = true,
+                error = null
+            )
+        }
         detailJob=viewModelScope.launch {
             try {
                 val details=readDetails(id)
