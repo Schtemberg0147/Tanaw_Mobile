@@ -98,14 +98,15 @@ fun TanawPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isLoading: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp)
 ) {
     Button(
         onClick  = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp),
-        shape   = RoundedCornerShape(28.dp),
+        shape   = shape,
         colors  = ButtonDefaults.buttonColors(
             containerColor         = MaterialTheme.colorScheme.primary,
             contentColor           = MaterialTheme.colorScheme.onPrimary,
@@ -136,14 +137,15 @@ fun TanawOutlinedButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp)
 ) {
     OutlinedButton(
         onClick  = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp),
-        shape   = RoundedCornerShape(28.dp),
+        shape   = shape,
         border  = BorderStroke(
             1.5.dp,
             if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)

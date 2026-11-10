@@ -8,10 +8,12 @@ import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.serialization.SerializationException
+import java.io.EOFException
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.PortUnreachableException
+import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -42,6 +44,8 @@ object MobileErrorClassifier {
                 is PortUnreachableException,
                 is SocketException,
                 is SSLException,
+                is EOFException,
+                is ProtocolException,
                 is HttpRequestException,
                 is HttpRequestTimeoutException,
                 is TimeoutCancellationException -> return true
@@ -213,6 +217,10 @@ object MobileErrorClassifier {
                 lower.contains("request timed out") ||
                 lower.contains("network timeout") ||
                 lower.contains("timed out") ||
+                lower.contains("unexpected end of stream") ||
+                lower.contains("stream was reset") ||
+                lower.contains("connection shutdown") ||
+                lower.contains("\\n not found") ||
                 lower.contains("no address associated with hostname")
     }
 }

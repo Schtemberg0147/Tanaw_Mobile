@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.sp
 
 internal object DriverRouteStatus {
     fun forAssignment(routing:JsonObject,shipment:JsonObject,delivery:JsonObject):JsonObject {
+        if(routing["loading"]==JsonPrimitive(true))return routing
         if(routing["route_verified"]!=JsonPrimitive(true))return routing
         val plan=routing.obj("plan")
         val matches=plan.value("truck_id").isNotBlank() && plan.value("truck_id")==delivery.value("truck_id") && plan["geometry"]==shipment["route_geometry"] &&
@@ -20,6 +21,7 @@ internal object DriverRouteStatus {
     }
     fun eta(data:JsonObject,offline:Boolean,now:Instant=Instant.now()):String {
         if(offline)return "Live ETA unavailable while offline"
+        if(data["loading"]==JsonPrimitive(true))return "Loading live route status and ETA…"
         data.value("reason").takeIf(String::isNotBlank)?.let{return "ETA unavailable: $it"}
         if(data["route_verified"]!=JsonPrimitive(true))return "ETA unavailable: office-confirmed truck route required"
         val expiry=runCatching{Instant.parse(data.value("expires_at"))}.getOrNull()?:return "ETA unavailable — refresh to retry"
@@ -35,9 +37,19 @@ internal object DriverRouteStatus {
 @Composable internal fun DriverRouteStatusCard(routing:JsonObject,offline:Boolean) {
     var now by remember {mutableStateOf(Instant.now())}
     LaunchedEffect(Unit){while(true){delay(15.seconds);now=Instant.now()}}
-    Text(if(routing["route_verified"]==JsonPrimitive(true))"Office-confirmed truck route" else "Truck route awaiting office confirmation",fontWeight=FontWeight.SemiBold,color=DriverNavy)
+    val isLoading = routing["loading"] == JsonPrimitive(true)
+    val isVerified = routing["route_verified"] == JsonPrimitive(true)
+    Text(
+        when {
+            isLoading -> "Checking office-confirmed truck route…"
+            isVerified -> "Office-confirmed truck route"
+            else -> "Truck route awaiting office confirmation"
+        },
+        fontWeight = FontWeight.SemiBold,
+        color = DriverNavy
+    )
     Text(DriverRouteStatus.eta(routing,offline,now),fontSize=14.sp)
     routing.value("calculated_at").takeIf(String::isNotBlank)?.let{Text("Calculated ${MobilePresentation.time(it)} · GPS ${MobilePresentation.time(routing.value("position_at"))}",fontSize=12.sp,color=DriverMuted)}
-    if(routing["route_verified"]==JsonPrimitive(true))Text("OpenRouteService HGV · vehicle limits applied · no live traffic",fontSize=12.sp,color=DriverMuted)
+    if(isVerified)Text("OpenRouteService HGV · vehicle limits applied · no live traffic",fontSize=12.sp,color=DriverMuted)
     Text("Google Maps may recalculate a different route and does not enforce this truck's dimensions or weight. Obey road signs and contact the office if a route is unsuitable.",fontSize=12.sp,color=DriverMuted)
 }

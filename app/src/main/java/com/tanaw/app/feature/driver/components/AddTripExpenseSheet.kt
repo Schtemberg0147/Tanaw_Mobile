@@ -73,15 +73,15 @@ import kotlinx.coroutines.launch
     val isAmountError = amount.isNotEmpty() && (amountVal == null || !amountVal.isFinite() || amountVal <= 0 || amountVal > 1000000)
 
     ModalBottomSheet(onDismissRequest={if(!isSubmitting && !preparingReceipt)onDismiss()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
-        containerColor=Color.White,shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),modifier=modifier.testTag("add_trip_expense_sheet")) {
+        containerColor=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),modifier=modifier.testTag("add_trip_expense_sheet")) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Text("Add Trip Expense",fontSize=18.sp,fontWeight=FontWeight.Bold,color=DriverNavy,modifier=Modifier.weight(1f))
-                Text(trackingNumber,fontSize=10.sp,color=DriverNavy)
+                Text("Add Trip Expense",fontSize=18.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f))
+                Text(trackingNumber,fontSize=10.sp,color=MaterialTheme.colorScheme.primary)
                 TextButton(onClick=onDismiss,enabled=!isSubmitting && !preparingReceipt){Text("×",fontSize=24.sp)}
             }
-            HorizontalDivider(color=Color(0xFFE7EEFF))
-            Text("WHAT WAS THE EXPENSE?",fontSize=10.sp)
+            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
+            Text("WHAT WAS THE EXPENSE?",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=FontWeight.SemiBold)
             OutlinedTextField(
                 value = category,
                 onValueChange = { category = it; persist(c = it) },
@@ -92,17 +92,22 @@ import kotlinx.coroutines.launch
                     { Text("Category must be between 2 and 200 characters.") }
                 } else null,
                 modifier = Modifier.fillMaxWidth().testTag("expense_category_input"),
-                shape = RoundedCornerShape(0.dp),
+                shape = RoundedCornerShape(4.dp),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
-                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color(0xFFF0F3FF), unfocusedBorderColor = Color(0xFFCDD7F7))
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary
+                )
             )
-            Text("AMOUNT",fontSize=10.sp)
+            Text("AMOUNT",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=FontWeight.SemiBold)
             OutlinedTextField(
                 value = amount,
                 onValueChange = { if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d{0,2}$"))) { amount = it; persist(a = it) } },
                 placeholder = { Text("0.00", fontSize = 24.sp) },
-                prefix = { Text("₱ ", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DriverNavy) },
+                prefix = { Text("₱ ", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                 enabled = !isSubmitting && !preparingReceipt,
                 isError = isAmountError,
                 supportingText = if (isAmountError) {
@@ -110,16 +115,21 @@ import kotlinx.coroutines.launch
                 } else null,
                 modifier = Modifier.fillMaxWidth().testTag("expense_amount_input"),
                 singleLine = true,
-                shape = RoundedCornerShape(0.dp),
+                shape = RoundedCornerShape(4.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color(0xFFF0F3FF), unfocusedBorderColor = Color(0xFFCDD7F7))
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary
+                )
             )
-            Text("ATTACH RECEIPT (OPTIONAL)",fontSize=10.sp)
-            Surface(onClick={picker.launch("image/*")},enabled=!isSubmitting && !preparingReceipt,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF)),modifier=Modifier.testTag("receipt_photo_selector")) {
+            Text("ATTACH RECEIPT (OPTIONAL)",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=FontWeight.SemiBold)
+            Surface(onClick={picker.launch("image/*")},enabled=!isSubmitting && !preparingReceipt,color=MaterialTheme.colorScheme.surfaceContainerHigh,border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant),modifier=Modifier.testTag("receipt_photo_selector")) {
                 Column(Modifier.fillMaxWidth().heightIn(min=150.dp).padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
                     DriverAsset(R.drawable.figma_driver_ceb65,48,46)
-                    Text(if(preparingReceipt)"Preparing receipt…" else if(receipt!=null)"Receipt attached · choose another" else "Upload receipt photo",fontSize=14.sp,color=DriverNavy)
-                    Text("JPG or PNG · Max 5MB",fontSize=12.sp,color=Color(0xFF73777F))
+                    Text(if(preparingReceipt)"Preparing receipt…" else if(receipt!=null)"Receipt attached · choose another" else "Upload receipt photo",fontSize=14.sp,color=MaterialTheme.colorScheme.onSurface)
+                    Text("JPG or PNG · Max 5MB",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if(preparingReceipt)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -128,11 +138,11 @@ import kotlinx.coroutines.launch
             if(receiptError!=null)TextButton(onClick={receiptError=null;hadReceipt=false;persist(r=null)}){Text("Continue without receipt")}
             if(offline)Text("Reconnect and refresh before submitting an expense.")
             (receiptError?:errorMessage)?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp)}
-            HorizontalDivider(color=Color(0xFFE7EEFF))
+            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
             DriverButton(if(isSubmitting)"Submitting…" else "Submit Expense",!isSubmitting && !preparingReceipt && !offline && receiptError==null && (!hadReceipt || receipt!=null) && category.trim().length in 2..200 && amount.toDoubleOrNull()?.let{it.isFinite() && it>0 && it<=1000000}==true) {
                 onSubmit(category.trim(),amount.toDouble(),receipt)
             }
-            Text("Submitted expenses are available for office review.",fontSize=10.sp,color=Color(0xFF73777F))
+            Text("Submitted expenses are available for office review.",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

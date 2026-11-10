@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import kotlinx.coroutines.*
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 import kotlin.coroutines.resume
@@ -28,19 +27,47 @@ import kotlin.coroutines.resumeWithException
 @SuppressLint("MissingPermission")
 suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.seconds) {
  val manager=context.getSystemService(LocationManager::class.java)
- val provider=TrackingSafety.provider(manager::isProviderEnabled)
- val location=suspendCancellableCoroutine { continuation ->
-  val signal=CancellationSignal()
-  continuation.invokeOnCancellation {signal.cancel()}
-  LocationManagerCompat.getCurrentLocation(manager,provider,signal,ContextCompat.getMainExecutor(context)) { location ->
-   if(continuation.isActive) {
-    if(location!=null)continuation.resume(location)
-    else continuation.resumeWithException(IllegalStateException("No fresh location fix. Try outdoors."))
+ val providers=TrackingSafety.providers(manager::isProviderEnabled)
+ val now=System.currentTimeMillis()
+ val cachedCandidates=providers.mapNotNull { p ->
+  runCatching { manager.getLastKnownLocation(p) }.getOrNull()?.takeIf { it.hasAccuracy() }
+ }.map { loc ->
+  FixCandidate(loc,loc.latitude,loc.longitude,loc.accuracy,loc.time)
+ }
+ val cached=TrackingSafety.chooseBestFix(cachedCandidates,now,maxAgeMs=15_000L)
+ if(cached!=null) return@withTimeout cached
+
+ coroutineScope {
+  val result=CompletableDeferred<Location>()
+  val signals=providers.map { CancellationSignal() }
+  var pending=providers.size
+  providers.forEachIndexed { index,provider ->
+   val signal=signals[index]
+   try {
+    LocationManagerCompat.getCurrentLocation(manager,provider,signal,ContextCompat.getMainExecutor(context)) { location ->
+     if(result.isCompleted) return@getCurrentLocation
+     if(location!=null && location.hasAccuracy() && TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time)) {
+      result.complete(location)
+     } else {
+      pending--
+      if(pending<=0 && !result.isCompleted) {
+       result.completeExceptionally(IllegalStateException("No fresh location fix. Try outdoors."))
+      }
+     }
+    }
+   } catch(_:Exception) {
+    pending--
+    if(pending<=0 && !result.isCompleted) {
+     result.completeExceptionally(IllegalStateException("No fresh location fix. Try outdoors."))
+    }
    }
   }
+  try {
+   result.await()
+  } finally {
+   signals.forEach { runCatching { it.cancel() } }
+  }
  }
- require(location.hasAccuracy() && TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time)) {"A fresh location accurate within 100 metres is required. Try outdoors."}
- location
 }
 
 @Composable fun DriverTripActions(delivery:JsonObject,state:MobileState,data:JsonObject,vm:MobileWorkspaceViewModel,reference:String="",onBackHome:()->Unit={}) {

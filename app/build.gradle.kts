@@ -142,6 +142,7 @@ dependencies {
     // Hilt & KSP Metadata
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    ksp("org.jetbrains.kotlin:kotlin-reflect:2.4.10")
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
@@ -155,7 +156,7 @@ dependencies {
     implementation(libs.postgrest.kt)
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.github.jan-tennert.supabase:realtime-kt")
-    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.okhttp)
 
     // Lifecycle / ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.ktx)

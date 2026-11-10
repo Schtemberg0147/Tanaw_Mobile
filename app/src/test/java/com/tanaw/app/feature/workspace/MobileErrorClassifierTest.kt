@@ -6,10 +6,12 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.EOFException
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.PortUnreachableException
+import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -26,6 +28,11 @@ class MobileErrorClassifierTest {
         assertTrue(MobileErrorClassifier.isNetworkError(NoRouteToHostException("No route to host")))
         assertTrue(MobileErrorClassifier.isNetworkError(PortUnreachableException("Port unreachable")))
         assertTrue(MobileErrorClassifier.isNetworkError(SSLException("SSL handshake aborted")))
+        assertTrue(MobileErrorClassifier.isNetworkError(EOFException("unexpected end of stream on https://api.supabase.co/...")))
+        assertTrue(MobileErrorClassifier.isNetworkError(ProtocolException("unexpected end of stream")))
+        assertTrue(MobileErrorClassifier.isNetworkError(IOException("stream was reset: CANCEL")))
+        assertTrue(MobileErrorClassifier.isNetworkError(IOException("\\n not found: limit=0 content=…")))
+        assertTrue(MobileErrorClassifier.isNetworkError(IOException("connection shutdown")))
         assertTrue(MobileErrorClassifier.isNetworkError(IOException("Software caused connection abort")))
         assertTrue(MobileErrorClassifier.isNetworkError(IOException("connect timed out")))
         assertTrue(MobileErrorClassifier.isNetworkError(RuntimeException("Wrapped", UnknownHostException())))

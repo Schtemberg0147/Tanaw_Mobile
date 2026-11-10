@@ -2,6 +2,8 @@ package com.tanaw.app.feature.workspace
 
 import android.content.Context
 import com.tanaw.app.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import java.util.UUID
 
@@ -194,4 +196,14 @@ internal class BookingDraftStore(context: Context, project: String = BuildConfig
             }
         }
     }
+
+    suspend fun saveAsync(customerId: String, draft: BookingDraft): Boolean = withContext(Dispatchers.IO) { save(customerId, draft) }
+
+    suspend fun readAsync(customerId: String, maxAge: Long = RecoveryPolicy.CACHE_AGE): BookingDraft? = withContext(Dispatchers.IO) { read(customerId, maxAge) }
+
+    suspend fun markSubmittedAsync(customerId: String, requestId: String): Boolean = withContext(Dispatchers.IO) { markSubmitted(customerId, requestId) }
+
+    suspend fun clearAsync(customerId: String): Boolean = withContext(Dispatchers.IO) { clear(customerId) }
+
+    suspend fun clearOwnerAsync(owner: String): Unit = withContext(Dispatchers.IO) { clearOwner(owner) }
 }

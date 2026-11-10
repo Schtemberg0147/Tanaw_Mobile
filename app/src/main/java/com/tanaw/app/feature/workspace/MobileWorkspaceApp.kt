@@ -69,11 +69,20 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         if(terms) InfoDialog("Before creating an account","Use accurate contact details. Requests require office review and a confirmed quotation before dispatch. Contact the office for privacy and service terms; the full policy has not been published in this app.") { terms=false }
         return
     }
+    if (state.page == "recover") {
+        BackHandler(!state.busy) { vm.page("login") }
+        ForgotPasswordCardScreen(state = state, vm = vm)
+        return
+    }
+    if (state.page == "recover_code") {
+        BackHandler(!state.busy) { vm.page("login") }
+        VerifyRecoveryCodeScreen(state = state, vm = vm)
+        return
+    }
     if ((state.page != "workspace") || (data == null)) {
-        BackHandler(state.page in listOf("verify","verify_phone","recover","recover_code")) {
+        BackHandler(state.page in listOf("verify","verify_phone")) {
             if(!state.busy) vm.page("login")
         }
-        val focusManager = LocalFocusManager.current
         FormPage("Tanaw") {
             Notices(state)
             if(state.offline) SupportingText("Offline or reconnecting · showing the last loaded records. Tap Refresh to retry.")
@@ -115,74 +124,9 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     Action("Verify phone",!state.busy && codeValid) {vm.verifyPhoneSignup(code)}
                     Action(if(state.resendSeconds>0) "Resend in ${state.resendSeconds}s" else "Resend SMS",!state.busy && state.resendSeconds==0,vm::resendPhoneSignup)
                 }
-                "recover","recover_code" -> {
-                    Text("Reset password",style=MaterialTheme.typography.headlineSmall)
-                    var email by remember { mutableStateOf(state.email) }
-                    val recoveryValid = MobileValidation.email(email) || MobileValidation.phone(email) != null
-                    val isRecoveryError = email.isNotBlank() && !recoveryValid
-                    Field(
-                        label = "Account phone number or email",
-                        value = email,
-                        change = { email = it },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = if (state.page == "recover_code") ImeAction.Next else ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) },
-                            onDone = { if (!state.busy && state.resendSeconds == 0 && recoveryValid) vm.resetEmail(email) }
-                        ),
-                        isError = isRecoveryError,
-                        supportingText = if (isRecoveryError) { { Text("Enter a valid email address or Philippine mobile number.") } } else null
-                    )
-                    Action("Request recovery code",!state.busy && state.resendSeconds==0 && recoveryValid) { vm.resetEmail(email) }
-                    if(state.resendSeconds>0)Text("Request another code in ${state.resendSeconds}s")
-                    if(state.page=="recover_code") {
-                        Text("Recovery requested for ${state.email}")
-                        var code by remember(state.recoveryCode) { mutableStateOf(state.recoveryCode.orEmpty()) }
-                        var password by remember { mutableStateOf("") }
-                        var confirm by remember { mutableStateOf("") }
-                        val codeValid = vm.canVerify(code, "recovery")
-                        val isCodeError = code.isNotBlank() && !codeValid
-                        val passwordTooShort = password.isNotEmpty() && password.length < 8
-                        val passwordMismatch = confirm.isNotEmpty() && password != confirm
-                        val canUpdatePassword = !state.busy && codeValid && MobileValidation.password(password, confirm)
-
-                        Field(
-                            label = "Recovery code (or original email link)",
-                            value = code,
-                            change = { code = it.trim() },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
-                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
-                            isError = isCodeError,
-                            supportingText = if (isCodeError) { { Text("Enter a valid recovery code or confirmation link.") } } else null
-                        )
-                        Field(
-                            label = "New password (8+ characters)",
-                            value = password,
-                            change = { password = it },
-                            secret = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
-                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
-                            isError = passwordTooShort,
-                            supportingText = if (passwordTooShort) { { Text("Password must be at least 8 characters.") } } else null
-                        )
-                        Field(
-                            label = "Confirm new password",
-                            value = confirm,
-                            change = { confirm = it },
-                            secret = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { if (canUpdatePassword) vm.recover(code, password, confirm) }),
-                            isError = passwordMismatch,
-                            supportingText = if (passwordMismatch) { { Text("Passwords do not match.") } } else null
-                        )
-                        Action("Update password", canUpdatePassword) { vm.recover(code, password, confirm) }
-                    }
-                }
                 else -> { Text("Account access needs attention.");Action("Retry",!state.busy,vm::refresh);Action("Sign out",!state.busy,vm::logout) }
             }
-            if(state.page in listOf("verify","verify_phone","recover","recover_code")) Action("Back to sign in",!state.busy) { vm.page("login") }
+            if(state.page in listOf("verify","verify_phone")) Action("Back to sign in",!state.busy) { vm.page("login") }
         }
         return
     }
@@ -582,7 +526,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     Action("Disable shipment SMS",!state.busy){vm.smsPreference(false)}
 }
 
-@Composable private fun Notices(state:MobileState) {
+@Composable internal fun Notices(state:MobileState) {
     if(state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     state.error?.let { Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(10.dp)) { Text(it,Modifier.padding(14.dp),color=MaterialTheme.colorScheme.onErrorContainer) } }
     state.message?.let { Surface(color=MaterialTheme.colorScheme.primary.copy(alpha=.08f),shape=RoundedCornerShape(10.dp)) { Text(it,Modifier.padding(14.dp),color=MaterialTheme.colorScheme.primary) } }

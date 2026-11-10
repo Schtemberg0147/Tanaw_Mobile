@@ -15,12 +15,12 @@ A deep source inspection of the active `feature/workspace/` architecture, Gradle
 
 | Bug ID | Severity | Summary | Primary Layer |
 |:-------|:--------:|:--------|:--------------|
-| **D01-B1** | **CRITICAL** | `io.ktor:ktor-client-android` does not support `WebSocketCapability` — Supabase Realtime never connects on Android, forcing the app to rely exclusively on the 30-second fallback poll timer | Gradle / Network Engine (`app/build.gradle.kts`, `gradle/libs.versions.toml`) |
-| **D01-B2** | **HIGH** | 8-to-12 sequential network request waterfall in `load()`, `DriverDatabaseData.load()`, and `readDetails()`, plus synchronous Main-thread AndroidKeyStore AES-GCM encryption of up to 2 MB JSON on every refresh | Data Loading & Threading (`DriverDatabaseData.kt`, `MobileWorkspaceViewModel.kt`, `WorkspaceRecoveryStore.kt`) |
+| **D01-B1** | **CRITICAL (RESOLVED)** | `io.ktor:ktor-client-android` does not support `WebSocketCapability` — Supabase Realtime never connects on Android, forcing the app to rely exclusively on the 30-second fallback poll timer | Gradle / Network Engine (`app/build.gradle.kts`, `gradle/libs.versions.toml`) |
+| **D01-B2** | **HIGH (RESOLVED)** | 8-to-12 sequential network request waterfall in `load()`, `DriverDatabaseData.load()`, and `readDetails()`, plus synchronous Main-thread AndroidKeyStore AES-GCM encryption of up to 2 MB JSON on every refresh | Data Loading & Threading (`DriverDatabaseData.kt`, `MobileWorkspaceViewModel.kt`, `WorkspaceRecoveryStore.kt`) |
 | **D01-B3** | **HIGH (RESOLVED)** | Driver milestone actions (`startTrip`, `arrive`, `driver`, `reportIncident`, `addExpense`, `submitProof`) never refresh `state.details` (Live ETA, route status, timeline, evidence) and drop concurrent `backgroundRefresh()` calls while `busy == true` | State Synchronization (`MobileWorkspaceViewModel.kt`, `WorkspaceSyncRules.kt`) |
-| **D01-B4** | **HIGH** | Unconflated 13-table Realtime fan-out in `startLive()` triggers concurrent duplicate `backgroundRefresh()` storms (including on the driver's own `tracking_logs` GPS pings every 15s) and tears down/rebuilds the Realtime channel on every manual `refresh()` | Realtime Orchestration (`MobileWorkspaceViewModel.kt`, `DriverConversation.kt`) |
-| **D01-B5** | **HIGH** | `TrackingSafety.provider` hardcodes raw satellite `"gps"` ahead of `"fused"`/`"network"`, causing 20-second timeouts on `"I'VE ARRIVED AT PICK-UP"`, plus a 15-second initial upload delay and redundant full `mobile_workspace` RPC calls inside `TripTrackingService` | GPS & Telemetry Service (`TrackingSafety.kt`, `DriverTripActions.kt`, `TripTrackingService.kt`) |
-| **D01-B6** | **HIGH** | Offline token expiry (`SessionStatus.RefreshFailure`) and initial ViewModel recreation stop `TripTrackingService`, wipe buffered offline GPS samples from SQLite (`queue.clearOwner`), and fail to auto-resume tracking after process restart | Offline & Process Lifecycle (`TripTrackingService.kt`, `MobileWorkspaceViewModel.kt`) |
+| **D01-B4** | **HIGH (RESOLVED)** | Unconflated 13-table Realtime fan-out in `startLive()` triggers concurrent duplicate `backgroundRefresh()` storms (including on the driver's own `tracking_logs` GPS pings every 15s) and tears down/rebuilds the Realtime channel on every manual `refresh()` | Realtime Orchestration (`MobileWorkspaceViewModel.kt`, `WorkspaceSyncRules.kt`, `DriverWorkspace.kt`) |
+| **D01-B5** | **HIGH (RESOLVED)** | `TrackingSafety.provider` hardcodes raw satellite `"gps"` ahead of `"fused"`/`"network"`, causing 20-second timeouts on `"I'VE ARRIVED AT PICK-UP"`, plus a 15-second initial upload delay and redundant full `mobile_workspace` RPC calls inside `TripTrackingService` | GPS & Telemetry Service (`TrackingSafety.kt`, `DriverTripActions.kt`, `TripTrackingService.kt`) |
+| **D01-B6** | **HIGH (RESOLVED)** | Offline token expiry (`SessionStatus.RefreshFailure`) and initial ViewModel recreation stop `TripTrackingService`, wipe buffered offline GPS samples from SQLite (`queue.clearOwner`), and fail to auto-resume tracking after process restart | Offline & Process Lifecycle (`TripTrackingService.kt`, `MobileWorkspaceViewModel.kt`, `TrackingSessionRules.kt`, `WorkspaceSyncRules.kt`) |
 
 ---
 
@@ -28,7 +28,7 @@ A deep source inspection of the active `feature/workspace/` architecture, Gradle
 
 ---
 
-### Bug `D01-B1` (CRITICAL): `io.ktor:ktor-client-android` Does Not Support WebSockets — Supabase Realtime Is 100% Dead
+### Bug `D01-B1` (CRITICAL — RESOLVED): `io.ktor:ktor-client-android` Does Not Support WebSockets — Supabase Realtime Is 100% Dead
 
 #### Affected Files
 - `gradle/libs.versions.toml` (lines 10, 48)
@@ -75,7 +75,7 @@ A deep source inspection of the active `feature/workspace/` architecture, Gradle
 
 ---
 
-### Bug `D01-B2` (HIGH): 8-to-12 Sequential Network Request Waterfall + Main-Thread Keystore Encryption in `load()` and `readDetails()`
+### Bug `D01-B2` (HIGH — RESOLVED): 8-to-12 Sequential Network Request Waterfall + Main-Thread Keystore Encryption in `load()` and `readDetails()`
 
 #### Affected Files
 - `app/src/main/java/com/tanaw/app/feature/workspace/DriverDatabaseData.kt` (lines 7–40)
@@ -170,7 +170,7 @@ A deep source inspection of the active `feature/workspace/` architecture, Gradle
 
 ---
 
-### Bug `D01-B4` (HIGH): Unconflated 13-Table Realtime Fan-Out Storm & Redundant Channel Rebuilds
+### Bug `D01-B4` (HIGH — RESOLVED): Unconflated 13-Table Realtime Fan-Out Storm & Redundant Channel Rebuilds
 
 #### Affected Files
 - `app/src/main/java/com/tanaw/app/feature/workspace/MobileWorkspaceViewModel.kt` (`startLive`, lines 119–139; `refresh`, line 380; `login`, line 620)
@@ -206,7 +206,7 @@ A deep source inspection of the active `feature/workspace/` architecture, Gradle
 
 ---
 
-### Bug `D01-B5` (HIGH): `TrackingSafety.provider` Hardcodes `"gps"` First, Causing 20s Pickup Arrival Timeouts & 15s Initial GPS Upload Delay
+### Bug `D01-B5` (HIGH — RESOLVED): `TrackingSafety.provider` Hardcodes `"gps"` First, Causing 20s Pickup Arrival Timeouts & 15s Initial GPS Upload Delay
 
 #### Affected Files
 - `app/src/main/java/com/tanaw/app/feature/workspace/TrackingSafety.kt` (lines 3–11)
@@ -249,11 +249,15 @@ A deep source inspection of the active `feature/workspace/` architecture, Gradle
 
 ---
 
-### Bug `D01-B6` (HIGH): Offline Token Expiry (`RefreshFailure`) & ViewModel Recreation Stop `TripTrackingService` and Wipe Queued GPS Samples
+### Bug `D01-B6` (HIGH — RESOLVED): Offline Token Expiry (`RefreshFailure`) & ViewModel Recreation Stop `TripTrackingService` and Wipe Queued GPS Samples
 
 #### Affected Files
-- `app/src/main/java/com/tanaw/app/feature/workspace/TripTrackingService.kt` (lines 74, 101)
-- `app/src/main/java/com/tanaw/app/feature/workspace/MobileWorkspaceViewModel.kt` (`stopLive`, line 118; `sessionStatus.collect`, lines 217–247; `load`, line 370)
+- `app/src/main/java/com/tanaw/app/feature/workspace/TripTrackingService.kt`
+- `app/src/main/java/com/tanaw/app/feature/workspace/TrackingSessionRules.kt` (new)
+- `app/src/main/java/com/tanaw/app/feature/workspace/WorkspaceSyncRules.kt`
+- `app/src/main/java/com/tanaw/app/feature/workspace/MobileWorkspaceViewModel.kt`
+- `app/src/test/java/com/tanaw/app/feature/workspace/TrackingSessionRulesTest.kt` (new)
+- `app/src/test/java/com/tanaw/app/feature/workspace/WorkspaceSyncRulesTest.kt`
 
 #### Root Cause Analysis
 1. **Offline Token Expiry (`SessionStatus.RefreshFailure`) Kills Tracking & Deletes Buffered SQLite Samples:**
@@ -332,15 +336,17 @@ flowchart TD
 
 ### 3.3 Step-by-Step Implementation Specs per Work Package
 
-#### Work Package `D01-WP1`: Replace `ktor-client-android` with `ktor-client-okhttp` (`D01-B1`)
+#### Work Package `D01-WP1`: Replace `ktor-client-android` with `ktor-client-okhttp` (`D01-B1` — RESOLVED)
 1. **Edit `gradle/libs.versions.toml`:**
-   - Add `ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktorClientAndroid" }` under `[libraries]`.
+   - Add `ktorClientOkhttp = "3.6.0"` and `ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktorClientOkhttp" }` under `[libraries]`.
 2. **Edit `app/build.gradle.kts`:**
-   - Replace `implementation(libs.ktor.client.android)` (line 130) with `implementation(libs.ktor.client.okhttp)`.
+   - Replace `implementation(libs.ktor.client.android)` with `implementation(libs.ktor.client.okhttp)`.
 3. **Verify `SupabaseModule.kt`:**
-   - Optionally configure `httpEngine = io.ktor.client.engine.okhttp.OkHttp.create()` inside `createSupabaseClient` so the OkHttp engine (with `WebSocketCapability` and HTTP/2) is explicitly bound.
-4. **Verify:**
-   - Run `./gradlew testDebugUnitTest assembleDebug`.
+   - Explicitly configured `httpEngine = io.ktor.client.engine.okhttp.OkHttp.create()` inside `createSupabaseClient` so the OkHttp engine (with `WebSocketCapability` and HTTP/2) is bound.
+4. **Edge Function Connection Pooling:**
+   - Migrated Edge Function calls in `MobileWorkspaceViewModel.kt` (`loginWithContactEmail`, `readRouteStatus`, `requestRoutePreview`) to pooled `client.httpClient.post` with timeout configurations.
+5. **Verify:**
+   - Unit test `SupabaseEngineCapabilityTest` verifies engine capabilities (`WebSocketCapability`, `HttpTimeoutCapability`) and Realtime installation.
 
 ---
 

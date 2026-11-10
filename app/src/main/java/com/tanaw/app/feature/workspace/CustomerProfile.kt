@@ -9,17 +9,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material3.*
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.ui.theme.*
 import kotlinx.serialization.json.*
 
 @Composable
@@ -83,19 +86,19 @@ internal fun CustomerProfile(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF8FAFC))
+                .background(BackgroundGray)
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             TextButton(onClick = { panel = null }) {
-                Text("← Back to profile", color = DriverNavy, fontWeight = FontWeight.Bold)
+                Text("← Back to profile", color = NavyPrimary, fontWeight = FontWeight.Bold)
             }
             Text(
                 text = panel!!,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = DriverNavy
+                color = NavyPrimary
             )
 
             CustomerProfileNotices(state)
@@ -112,79 +115,79 @@ internal fun CustomerProfile(
                 "Saved Addresses" -> {
                     Surface(
                         color = Color.White,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, DriverLine)
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderGray)
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             Text(
                                 text = "Default Saved Address",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = DriverNavy
+                                color = NavyPrimary
                             )
                             Text(
                                 text = "Your saved address is prefilled as your pickup address when booking new deliveries.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = DriverMuted
+                                color = HintGray
                             )
-                            HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                            HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = "HOUSE / BUILDING / STREET",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = DriverMuted,
+                                    color = HintGray,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = savedStructuredAddress.streetAddress.ifBlank { "No street address set" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = DriverNavy
+                                    color = NavyPrimary
                                 )
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = "BARANGAY",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = DriverMuted,
+                                    color = HintGray,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = savedStructuredAddress.barangay.ifBlank { "Not set" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = DriverNavy
+                                    color = NavyPrimary
                                 )
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = "CITY / MUNICIPALITY",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = DriverMuted,
+                                    color = HintGray,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = savedStructuredAddress.city.ifBlank { "Not set" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = DriverNavy
+                                    color = NavyPrimary
                                 )
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = "PROVINCE",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = DriverMuted,
+                                    color = HintGray,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = savedStructuredAddress.province.ifBlank { "Not set" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = DriverNavy
+                                    color = NavyPrimary
                                 )
                             }
                             Spacer(Modifier.height(4.dp))
@@ -197,9 +200,9 @@ internal fun CustomerProfile(
                                     editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
                                     editError = null
                                 },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DriverNavy),
-                                modifier = Modifier.fillMaxWidth()
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary),
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
                             ) {
                                 Text("Edit Default Address", fontWeight = FontWeight.Bold)
                             }
@@ -210,54 +213,54 @@ internal fun CustomerProfile(
                 "Help & Support" -> {
                     Surface(
                         color = Color.White,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, DriverLine)
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderGray)
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
                                 text = "Delivery Support",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = DriverNavy
+                                color = NavyPrimary
                             )
                             Text(
                                 text = "For pickup instructions, quotation questions, or delivery inquiries, have your tracking reference ready before contacting the office.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = DriverMuted
+                                color = HintGray
                             )
                         }
                     }
 
                     Surface(
                         color = Color.White,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, DriverLine)
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderGray)
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
                                 text = "Published Office Contacts",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = DriverNavy
+                                color = NavyPrimary
                             )
                             val email = content?.value("support_email")?.let(DriverProfileRules::email)
                             val phone = content?.value("support_phone")?.let(DriverProfileRules::phone)
                             val url = content?.value("support_url")?.let(DriverProfileRules::https)
 
                             if (settings == null) {
-                                Text("Office contacts unavailable. Tap Refresh to retry.", style = MaterialTheme.typography.bodySmall, color = DriverMuted)
+                                Text("Office contacts unavailable. Tap Refresh to retry.", style = MaterialTheme.typography.bodySmall, color = HintGray)
                             } else if (email == null && phone == null && url == null) {
-                                Text("The office has not published contact channels in this app. Please contact your dispatch representative.", style = MaterialTheme.typography.bodySmall, color = DriverMuted)
+                                Text("The office has not published contact channels in this app. Please contact your dispatch representative.", style = MaterialTheme.typography.bodySmall, color = HintGray)
                             }
-                            email?.let { TextButton(onClick = { openUriSafely("mailto:$it") }) { Text("Email: $it", color = DriverNavy) } }
-                            phone?.let { TextButton(onClick = { openUriSafely("tel:$it") }) { Text("Call: $it", color = DriverNavy) } }
-                            url?.let { TextButton(onClick = { openUriSafely(it) }) { Text("Open Support Website", color = DriverNavy) } }
+                            email?.let { TextButton(onClick = { openUriSafely("mailto:$it") }) { Text("Email: $it", color = NavyPrimary, fontWeight = FontWeight.SemiBold) } }
+                            phone?.let { TextButton(onClick = { openUriSafely("tel:$it") }) { Text("Call: $it", color = NavyPrimary, fontWeight = FontWeight.SemiBold) } }
+                            url?.let { TextButton(onClick = { openUriSafely(it) }) { Text("Open Support Website", color = NavyPrimary, fontWeight = FontWeight.SemiBold) } }
                         }
                     }
                 }
@@ -265,27 +268,27 @@ internal fun CustomerProfile(
                 else -> {
                     Surface(
                         color = Color.White,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, DriverLine)
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderGray)
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             val key = if (panel == "Privacy") "privacy_url" else "terms_url"
                             val url = content?.value(key)?.let(DriverProfileRules::https)
                             if (settings == null) {
-                                Text("Published policy information is unavailable. Tap Refresh to retry.", style = MaterialTheme.typography.bodySmall, color = DriverMuted)
+                                Text("Published policy information is unavailable. Tap Refresh to retry.", style = MaterialTheme.typography.bodySmall, color = HintGray)
                             } else if (url == null) {
-                                Text("The office has not published an approved ${panel?.lowercase()} link in this app. Contact the office for the current document.", style = MaterialTheme.typography.bodySmall, color = DriverMuted)
+                                Text("The office has not published an approved ${panel?.lowercase()} link in this app. Contact the office for the current document.", style = MaterialTheme.typography.bodySmall, color = HintGray)
                             } else {
-                                Text("Open the official ${panel?.lowercase()} in your web browser.", style = MaterialTheme.typography.bodySmall, color = DriverMuted)
+                                Text("Open the official ${panel?.lowercase()} in your web browser.", style = MaterialTheme.typography.bodySmall, color = HintGray)
                                 Button(
                                     onClick = { openUriSafely(url) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = DriverNavy),
-                                    shape = RoundedCornerShape(8.dp)
+                                    colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary),
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("Open ${panel?.lowercase()}")
+                                    Text("Open ${panel?.lowercase()}", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -370,7 +373,7 @@ internal fun CustomerProfile(
         }
         AlertDialog(
             onDismissRequest = { if (!state.busy) editingFieldKey = null },
-            title = { Text(title, fontWeight = FontWeight.Bold, color = DriverNavy) },
+            title = { Text(title, fontWeight = FontWeight.Bold, color = NavyPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (editingFieldKey) {
@@ -381,6 +384,13 @@ internal fun CustomerProfile(
                                 label = { Text("Full Name") },
                                 isError = editError != null,
                                 singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = InputGray,
+                                    unfocusedContainerColor = InputGray,
+                                    focusedBorderColor = NavyPrimary,
+                                    unfocusedBorderColor = BorderGray
+                                ),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { saveEdit() }),
                                 modifier = Modifier.fillMaxWidth()
@@ -395,6 +405,13 @@ internal fun CustomerProfile(
                                 supportingText = { Text("Verification SMS will be sent if changed.") },
                                 isError = editError != null,
                                 singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = InputGray,
+                                    unfocusedContainerColor = InputGray,
+                                    focusedBorderColor = NavyPrimary,
+                                    unfocusedBorderColor = BorderGray
+                                ),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { saveEdit() }),
                                 modifier = Modifier.fillMaxWidth()
@@ -407,6 +424,13 @@ internal fun CustomerProfile(
                                 label = { Text("House / Building / Street") },
                                 isError = editError != null && (editingFieldValue.isBlank() || !CustomerAddressRules.validateStreet(editingFieldValue)),
                                 singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = InputGray,
+                                    unfocusedContainerColor = InputGray,
+                                    focusedBorderColor = NavyPrimary,
+                                    unfocusedBorderColor = BorderGray
+                                ),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.fillMaxWidth()
@@ -417,6 +441,13 @@ internal fun CustomerProfile(
                                 label = { Text("Barangay") },
                                 isError = editingBarangayValue.isNotBlank() && !CustomerAddressRules.validateBarangay(editingBarangayValue),
                                 singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = InputGray,
+                                    unfocusedContainerColor = InputGray,
+                                    focusedBorderColor = NavyPrimary,
+                                    unfocusedBorderColor = BorderGray
+                                ),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.fillMaxWidth()
@@ -427,6 +458,13 @@ internal fun CustomerProfile(
                                 label = { Text("City / Municipality") },
                                 isError = editError != null && (editingCityValue.isBlank() || !CustomerAddressRules.validateCity(editingCityValue)),
                                 singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = InputGray,
+                                    unfocusedContainerColor = InputGray,
+                                    focusedBorderColor = NavyPrimary,
+                                    unfocusedBorderColor = BorderGray
+                                ),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                 modifier = Modifier.fillMaxWidth()
@@ -437,6 +475,13 @@ internal fun CustomerProfile(
                                 label = { Text("Province") },
                                 isError = editingProvinceValue.isNotBlank() && !CustomerAddressRules.validateProvince(editingProvinceValue),
                                 singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = InputGray,
+                                    unfocusedContainerColor = InputGray,
+                                    focusedBorderColor = NavyPrimary,
+                                    unfocusedBorderColor = BorderGray
+                                ),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { saveEdit() }),
                                 modifier = Modifier.fillMaxWidth()
@@ -452,14 +497,15 @@ internal fun CustomerProfile(
                 Button(
                     onClick = saveEdit,
                     enabled = !state.busy,
-                    colors = ButtonDefaults.buttonColors(containerColor = DriverNavy)
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
                 ) {
                     Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { editingFieldKey = null }, enabled = !state.busy) {
-                    Text("Cancel")
+                    Text("Cancel", color = HintGray)
                 }
             }
         )
@@ -468,11 +514,11 @@ internal fun CustomerProfile(
     if (infoDialog != null) {
         AlertDialog(
             onDismissRequest = { infoDialog = null },
-            title = { Text("Profile Information", fontWeight = FontWeight.Bold, color = DriverNavy) },
+            title = { Text("Profile Information", fontWeight = FontWeight.Bold, color = NavyPrimary) },
             text = { Text(infoDialog!!, style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {
                 TextButton(onClick = { infoDialog = null }) {
-                    Text("Close", color = DriverNavy, fontWeight = FontWeight.Bold)
+                    Text("Close", color = NavyPrimary, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -492,7 +538,7 @@ internal fun CustomerProfile(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
+            .background(BackgroundGray)
     ) {
         // ── Top Header Bar ─────────────────────────────────────────────────────────
         Row(
@@ -517,21 +563,21 @@ internal fun CustomerProfile(
                     Icon(
                         imageVector = Icons.Outlined.Notifications,
                         contentDescription = "Notifications",
-                        tint = DriverNavy,
+                        tint = NavyPrimary,
                         modifier = Modifier.size(26.dp)
                     )
                     if (unreadNotifications > 0) {
                         Box(
                             modifier = Modifier
                                 .size(9.dp)
-                                .background(MaterialTheme.colorScheme.secondary, shape = CircleShape)
+                                .background(OrangeAccent, shape = CircleShape)
                                 .align(Alignment.TopEnd)
                         )
                     }
                 }
             }
         }
-        HorizontalDivider(color = DriverLine, thickness = 1.dp)
+        HorizontalDivider(color = BorderGray, thickness = 1.dp)
 
         // ── Scrollable Body ────────────────────────────────────────────────────────
         Column(
@@ -546,8 +592,8 @@ internal fun CustomerProfile(
             Text(
                 text = "My Profile",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = DriverNavy
+                fontWeight = FontWeight.ExtraBold,
+                color = NavyPrimary
             )
 
             // Status Notices (Loading / Error / Success)
@@ -564,15 +610,15 @@ internal fun CustomerProfile(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(88.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(DriverNavy),
+                            .size(86.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(NavyPrimary),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = CustomerProfilePresentation.initials(fullName),
                             fontWeight = FontWeight.Bold,
-                            fontSize = 32.sp,
+                            fontSize = 30.sp,
                             color = Color.White
                         )
                     }
@@ -581,11 +627,11 @@ internal fun CustomerProfile(
                         shape = CircleShape,
                         color = Color.White,
                         shadowElevation = 3.dp,
-                        border = BorderStroke(1.dp, DriverLine),
+                        border = BorderStroke(1.5.dp, BorderGray),
                         modifier = Modifier
                             .offset(x = 6.dp, y = 6.dp)
                             .minimumInteractiveComponentSize()
-                            .size(36.dp)
+                            .size(34.dp)
                             .clickable {
                                 infoDialog = "Profile photos are managed with your office profile. Contact your administrator to update your photo."
                             }
@@ -594,8 +640,8 @@ internal fun CustomerProfile(
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_camera),
                                 contentDescription = "Edit photo",
-                                tint = DriverNavy,
-                                modifier = Modifier.size(18.dp)
+                                tint = NavyPrimary,
+                                modifier = Modifier.size(17.dp)
                             )
                         }
                     }
@@ -607,22 +653,28 @@ internal fun CustomerProfile(
                     text = fullName,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
-                    color = DriverNavy
+                    color = NavyPrimary
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = email,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = DriverMuted
+                    color = HintGray
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = memberSince,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = DriverMuted.copy(alpha = 0.8f),
-                    letterSpacing = 0.8.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = NavyPrimary.copy(alpha = 0.06f)
+                ) {
+                    Text(
+                        text = memberSince,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NavyPrimary,
+                        letterSpacing = 0.6.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // ── Personal Information Section ──────────────────────────────────────────
@@ -631,7 +683,7 @@ internal fun CustomerProfile(
                     Icon(
                         imageVector = Icons.Outlined.Person,
                         contentDescription = null,
-                        tint = DriverNavy,
+                        tint = NavyPrimary,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -639,55 +691,55 @@ internal fun CustomerProfile(
                         text = "Personal Information",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = DriverNavy
+                        color = NavyPrimary
                     )
                 }
 
                 Surface(
                     color = Color.White,
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, DriverLine)
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderGray)
                 ) {
                     Column {
                         CustomerProfileRow(
                             label = "Full Name",
                             value = fullName,
-                            isTinted = false,
                             isLocked = false,
+                            iconVector = Icons.Outlined.Person,
                             onClick = {
                                 editingFieldKey = "full_name"
                                 editingFieldValue = p.value("full_name")
                                 editError = null
                             }
                         )
-                        HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                        HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                         CustomerProfileRow(
                             label = "Email",
                             value = email,
-                            isTinted = true,
                             isLocked = true,
+                            iconVector = Icons.Outlined.Email,
                             onClick = {
                                 infoDialog = "Login email changes require a verified account-change flow. Contact the office; editing profile details does not change your sign-in email."
                             }
                         )
-                        HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                        HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                         CustomerProfileRow(
                             label = "Contact",
                             value = contact,
-                            isTinted = false,
                             isLocked = false,
+                            iconVector = Icons.Outlined.Phone,
                             onClick = {
                                 editingFieldKey = "phone"
                                 editingFieldValue = p.value("phone")
                                 editError = null
                             }
                         )
-                        HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                        HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                         CustomerProfileRow(
                             label = "Default Address",
                             value = defaultAddress,
-                            isTinted = true,
                             isLocked = false,
+                            iconRes = R.drawable.ic_location_pin,
                             onClick = {
                                 editingFieldKey = "address"
                                 editingFieldValue = savedStructuredAddress.streetAddress
@@ -707,7 +759,7 @@ internal fun CustomerProfile(
                     Icon(
                         imageVector = Icons.Outlined.Notifications,
                         contentDescription = null,
-                        tint = DriverNavy,
+                        tint = NavyPrimary,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -715,14 +767,14 @@ internal fun CustomerProfile(
                         text = "SMS Notifications",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = DriverNavy
+                        color = NavyPrimary
                     )
                 }
 
                 Surface(
                     color = Color.White,
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, DriverLine)
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderGray)
                 ) {
                     Row(
                         modifier = Modifier
@@ -733,24 +785,40 @@ internal fun CustomerProfile(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(NavyPrimary.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Notifications,
+                                contentDescription = null,
+                                tint = NavyPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Shipment SMS Alerts",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = DriverNavy
+                                color = NavyPrimary
                             )
                             Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = "Receive SMS updates for dispatch, tracking milestones, and delivery delays.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = DriverMuted
+                                color = HintGray
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Sent to ${p.value("phone").ifBlank { "your verified number" }}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF64748B),
+                                color = HintGray,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -763,9 +831,9 @@ internal fun CustomerProfile(
                             enabled = !state.busy && !state.offline,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
-                                checkedTrackColor = DriverNavy,
-                                uncheckedThumbColor = Color(0xFF94A3B8),
-                                uncheckedTrackColor = Color(0xFFE2E8F0)
+                                checkedTrackColor = NavyPrimary,
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = BorderGray
                             )
                         )
                     }
@@ -775,8 +843,8 @@ internal fun CustomerProfile(
             // ── Menu Section Card ──────────────────────────────────────────────────
             Surface(
                 color = Color.White,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, DriverLine)
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, BorderGray)
             ) {
                 Column {
                     CustomerMenuItemRow(
@@ -784,25 +852,25 @@ internal fun CustomerProfile(
                         text = "My Bookings",
                         onClick = onOpenBookings
                     )
-                    HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                    HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                     CustomerMenuItemRow(
                         iconRes = R.drawable.ic_location_pin,
                         text = "Saved Addresses",
                         onClick = { panel = "Saved Addresses" }
                     )
-                    HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                    HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                     CustomerMenuItemRow(
                         iconRes = R.drawable.ic_shield_lock,
                         text = "Change Password",
                         onClick = { vm.openPasswordChange() }
                     )
-                    HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                    HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                     CustomerMenuItemRow(
                         iconRes = R.drawable.ic_check_circle,
                         text = "Terms of Service",
                         onClick = { panel = "Terms of Service" }
                     )
-                    HorizontalDivider(color = DriverLine, thickness = 0.5.dp)
+                    HorizontalDivider(color = BorderGray, thickness = 0.5.dp)
                     CustomerMenuItemRow(
                         iconVector = Icons.AutoMirrored.Outlined.HelpOutline,
                         text = "Help & Support",
@@ -822,7 +890,7 @@ internal fun CustomerProfile(
                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(50.dp),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Row(
@@ -854,47 +922,68 @@ internal fun CustomerProfile(
 private fun CustomerProfileRow(
     label: String,
     value: String,
-    isTinted: Boolean,
     isLocked: Boolean,
+    iconVector: ImageVector? = null,
+    iconRes: Int? = null,
     onClick: () -> Unit
 ) {
-    val bg = if (isTinted) Color(0xFFF4F6FB) else Color.White
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(bg)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .background(NavyPrimary.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (iconVector != null) {
+                Icon(
+                    imageVector = iconVector,
+                    contentDescription = null,
+                    tint = NavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            } else if (iconRes != null) {
+                Icon(
+                    painter = painterResource(id = iconRes),
+                    contentDescription = null,
+                    tint = NavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = DriverMuted,
+                color = HintGray,
                 fontWeight = FontWeight.Medium
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = DriverNavy
+                fontWeight = FontWeight.SemiBold,
+                color = NavyPrimary
             )
         }
         if (isLocked) {
             Icon(
                 imageVector = Icons.Outlined.Lock,
                 contentDescription = "Locked",
-                tint = DriverMuted.copy(alpha = 0.5f),
+                tint = HintGray.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp)
             )
         } else {
             Icon(
                 imageVector = Icons.Outlined.Edit,
                 contentDescription = "Edit $label",
-                tint = DriverMuted,
+                tint = NavyPrimary,
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -915,33 +1004,40 @@ private fun CustomerMenuItemRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (iconRes != null) {
-            Icon(
-                painter = painterResource(id = iconRes),
-                contentDescription = null,
-                tint = DriverNavy,
-                modifier = Modifier.size(20.dp)
-            )
-        } else if (iconVector != null) {
-            Icon(
-                imageVector = iconVector,
-                contentDescription = null,
-                tint = DriverNavy,
-                modifier = Modifier.size(20.dp)
-            )
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .background(NavyPrimary.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (iconRes != null) {
+                Icon(
+                    painter = painterResource(id = iconRes),
+                    contentDescription = null,
+                    tint = NavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            } else if (iconVector != null) {
+                Icon(
+                    imageVector = iconVector,
+                    contentDescription = null,
+                    tint = NavyPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.width(14.dp))
         Text(
             text = text,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
-            color = DriverNavy,
+            color = NavyPrimary,
             fontWeight = FontWeight.SemiBold
         )
         Icon(
             painter = painterResource(id = R.drawable.ic_chevron_right),
             contentDescription = null,
-            tint = DriverMuted,
+            tint = HintGray,
             modifier = Modifier.size(16.dp)
         )
     }
@@ -950,7 +1046,7 @@ private fun CustomerMenuItemRow(
 @Composable
 private fun CustomerProfileNotices(state: MobileState) {
     if (state.busy) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = DriverNavy)
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = NavyPrimary)
     }
     state.error?.let {
         Surface(
@@ -967,13 +1063,13 @@ private fun CustomerProfileNotices(state: MobileState) {
     }
     state.message?.let {
         Surface(
-            color = DriverNavy.copy(alpha = 0.08f),
+            color = NavyPrimary.copy(alpha = 0.08f),
             shape = RoundedCornerShape(10.dp)
         ) {
             Text(
                 text = it,
                 modifier = Modifier.padding(14.dp),
-                color = DriverNavy,
+                color = NavyPrimary,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )

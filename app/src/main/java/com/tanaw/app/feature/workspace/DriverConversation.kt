@@ -1,5 +1,7 @@
 package com.tanaw.app.feature.workspace
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -91,7 +93,7 @@ internal object ConversationRules {
         if(open && before==null)historyScroll.animateScrollTo(historyScroll.maxValue)
     }
     Surface(modifier=Modifier.fillMaxWidth().then(if(initiallyOpen) Modifier.fillMaxHeight() else Modifier.heightIn(max=680.dp)),
-        color=Color.White,shape=RoundedCornerShape(16.dp)) {
+        color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
         Column {
             if(!initiallyOpen)TextButton(onClick={open=!open},modifier=Modifier.padding(horizontal=8.dp)) {
                 Text("${if(open) "Close" else "Open"} office conversation · ${unread?.let{"$it unread"}?:"Unread unavailable"}")
@@ -99,45 +101,48 @@ internal object ConversationRules {
             if(open) {
                 Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Office",color=DriverNavy,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
-                        if(reference.isNotBlank())Text(reference,style=MaterialTheme.typography.labelMedium,color=DriverMuted,maxLines=1,overflow=TextOverflow.Ellipsis)
-                        Text(if(offline) "Offline" else unread?.let {"$it unread · Delivery updates"} ?: "Unread unavailable",style=MaterialTheme.typography.bodySmall,color=DriverMuted,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text("Office",color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
+                        if(reference.isNotBlank())Text(reference,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(if(offline) "Offline" else unread?.let {"$it unread · Delivery updates"} ?: "Unread unavailable",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
                     }
                     TextButton(onClick={revision++},enabled=!busy && !offline){Text("Retry / refresh messages",fontSize=11.sp)}
                 }
-                HorizontalDivider(color=DriverLine)
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(historyScroll).padding(14.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                    if(offline)Text("Offline · reconnect to read or send messages.",color=DriverMuted)
+                    if(offline)Text("Offline · reconnect to read or send messages.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-                    notice?.let {Text(it,color=DriverNavy,style=MaterialTheme.typography.bodySmall)}
+                    notice?.let {Text(it,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall)}
                     if(before!=null)TextButton(onClick={page=null;before=null},enabled=!busy){Text("Latest messages")}
-                    if(page==null && error==null && !offline)Text("Loading messages…",color=DriverMuted)
+                    if(page==null && error==null && !offline)Text("Loading messages…",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     if(!offline)page?.let {data->
                         if(data.value("has_more")=="true")TextButton(onClick={before=data.rows("messages").first().value("id");page=null},enabled=!busy){Text("Older messages")}
                         if(messages.isEmpty())Column(Modifier.fillMaxWidth().padding(vertical=24.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                            Text("No messages yet.",fontWeight=FontWeight.Bold,color=DriverNavy)
-                            Text("Send the office a delivery update below.",color=DriverMuted,style=MaterialTheme.typography.bodySmall)
+                            Text("No messages yet.",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
+                            Text("Send the office a delivery update below.",color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)
                         }
+                        val isDark = isSystemInDarkTheme()
                         messages.forEach {message->
                             val mine=message.value("sender_role")=="driver"
-                            val textColor=if(mine)Color.White else DriverNavy
+                            val bubbleColor = if (mine) MaterialTheme.colorScheme.primary else if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFF0F3FA)
+                            val textColor = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                            val timeColor = if (mine) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=if(mine)Arrangement.End else Arrangement.Start) {
-                                Surface(color=if(mine)DriverNavy else Color(0xFFF0F3FA),
+                                Surface(color=bubbleColor,
                                     shape=RoundedCornerShape(topStart=16.dp,topEnd=16.dp,bottomEnd=if(mine)4.dp else 16.dp,bottomStart=if(mine)16.dp else 4.dp),
                                     modifier=Modifier.fillMaxWidth(.88f)) {
                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                         Text(if(mine)"You" else "Office",color=textColor,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelMedium)
                                         Text(message.value("body"),color=textColor,style=MaterialTheme.typography.bodyLarge.copy(lineHeight=24.sp))
-                                        Text(ConversationRules.timestamp(message.value("created_at")),color=if(mine)Color(0xFFD5E4F8)else DriverMuted,style=MaterialTheme.typography.labelSmall)
+                                        Text(ConversationRules.timestamp(message.value("created_at")),color=timeColor,style=MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
                         }
                         TextButton(onClick={action {read(messages.map{it.value("id")});notice="Displayed messages marked read.";changed()}},enabled=!busy && messages.isNotEmpty()) {Text("Mark displayed messages read",fontSize=12.sp)}
-                        if(data.value("can_send")!="true")Text("This delivery conversation is read-only.",color=DriverMuted)
+                        if(data.value("can_send")!="true")Text("This delivery conversation is read-only.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                HorizontalDivider(color=DriverLine)
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     if(request!=null)Text("Last send unconfirmed. The message is kept for a safe retry.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
                     val isDraftOverLimit = draft.trim().length > 2000
@@ -160,12 +165,16 @@ internal object ConversationRules {
                         }
                     )
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text("For urgent help, use your emergency contact.",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelSmall,color=DriverMuted)
-                        Button(onClick={action {
-                            val id=request?:UUID.randomUUID().toString().also{request=it}
-                            send(id,draft.trim())
-                            request=null;draft="";notice="Message sent.";before=null;revision++;changed()
-                        }},enabled=!busy && !offline && (request!=null || (page?.value("can_send")=="true" && ConversationRules.valid(draft)))) {
+                        Text("For urgent help, use your emergency contact.",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(
+                            onClick={action {
+                                val id=request?:UUID.randomUUID().toString().also{request=it}
+                                send(id,draft.trim())
+                                request=null;draft="";notice="Message sent.";before=null;revision++;changed()
+                            }},
+                            enabled=!busy && !offline && (request!=null || (page?.value("can_send")=="true" && ConversationRules.valid(draft))),
+                            colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary)
+                        ) {
                             Text(if(busy)"Working…" else if(request!=null)"Retry send" else "Send message")
                         }
                     }

@@ -33,6 +33,14 @@ class DriverRouteStatusTest {
             assertFalse(DriverRouteStatus.eta(JsonObject(status()+mapOf(patch.first to JsonPrimitive(patch.second))),false,now).startsWith("ETA to"))
         }
     }
+    @Test fun loadingStatusShowsLoadingMessageAndBypassesAssignmentMismatch() {
+        val loading = buildJsonObject { put("loading", true) }
+        val shipment = buildJsonObject { put("weight_kg", 6000) }
+        val delivery = buildJsonObject { put("truck_id", "truck") }
+        assertEquals(loading, DriverRouteStatus.forAssignment(loading, shipment, delivery))
+        assertEquals("Loading live route status and ETA…", DriverRouteStatus.eta(loading, false, now))
+        assertEquals("Live ETA unavailable while offline", DriverRouteStatus.eta(loading, true, now))
+    }
     @Test fun refreshedAssignmentCannotDisplayAnOldVerifiedRoute() {
         val shipment=buildJsonObject{put("weight_kg",6000);put("pickup_lat",14.6);put("pickup_lng",120.96);put("dropoff_lat",14.65);put("dropoff_lng",120.98);put("route_geometry",buildJsonObject{})}
         val plan=JsonObject(shipment.filterKeys{it!="weight_kg" && it!="route_geometry"}+mapOf("truck_id" to JsonPrimitive("truck"),"cargo_weight_kg" to JsonPrimitive(6000),"geometry" to buildJsonObject{}))

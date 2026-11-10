@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import java.io.File
 import java.security.KeyStore
@@ -65,5 +67,8 @@ internal class WorkspaceRecoveryStore(context:Context,private val project:String
         val age=System.currentTimeMillis()-(data.value("created").toLongOrNull()?:error("missing date"))
         require(age in 0..maxAge);data
     }.getOrElse {if(!preserveUnreadable)clear(scope);null}
+    suspend fun writeAsync(scope:String,data:JsonObject):Boolean = withContext(Dispatchers.IO) { write(scope,data) }
+    suspend fun readAsync(scope:String,maxAge:Long):JsonObject? = withContext(Dispatchers.IO) { read(scope,maxAge) }
     fun clear(scope:String){file(scope).delete()}
+    suspend fun clearAsync(scope:String) = withContext(Dispatchers.IO) { clear(scope) }
 }

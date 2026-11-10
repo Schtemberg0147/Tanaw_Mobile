@@ -18,7 +18,9 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.*
 import java.time.Instant
@@ -51,19 +53,47 @@ class TrackingQueue(context:Context,databaseName:String="tracking_${URI(BuildCon
 class TripTrackingService:Service(),LocationListener {
  @Inject lateinit var client:SupabaseClient
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+ private val wakeSignal=Channel<Unit>(Channel.CONFLATED)
  private lateinit var locations:LocationManager
  private lateinit var queue:TrackingQueue
  private var owner:String?=null;private var delivery:String?=null;private var loop:Job?=null
  private var lastFix:Long?=null
  private var stoppedReason:String?=null
+ private var cachedStoredSessionUid:String?=null
  private fun fail(message:String) {stoppedReason=message;TripTrackingStatus.state.value=TrackingStatus(message=message);stopSelf()}
+
+ private fun ownerState(uid:String):TrackingOwnerState {
+  val currentAuthUid=client.auth.currentUserOrNull()?.id
+  val isExplicitlyLoggedOut=client.auth.sessionStatus.value is io.github.jan.supabase.auth.status.SessionStatus.NotAuthenticated
+  return TrackingSessionRules.evaluateOwner(
+   expectedUid=uid,
+   currentAuthUid=currentAuthUid,
+   storedSessionUid=cachedStoredSessionUid?:currentAuthUid,
+   isExplicitlyLoggedOut=isExplicitlyLoggedOut
+  )
+ }
+
+ private suspend fun refreshStoredSessionUid() {
+  cachedStoredSessionUid=runCatching {client.auth.sessionManager.loadSession().user?.id}.getOrNull()
+   ?: client.auth.currentUserOrNull()?.id
+ }
+
  override fun onBind(intent:Intent?) = null
- override fun onCreate() {super.onCreate();locations=getSystemService(LocationManager::class.java);queue=TrackingQueue(this)}
+ override fun onCreate() {
+  super.onCreate()
+  locations=getSystemService(LocationManager::class.java)
+  queue=TrackingQueue(this)
+  cachedStoredSessionUid=client.auth.currentUserOrNull()?.id
+  scope.launch { refreshStoredSessionUid() }
+ }
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
   if(intent?.action=="stop") {stopSelf();return START_NOT_STICKY}
   val uid=intent?.getStringExtra("owner");val id=intent?.getStringExtra("delivery")
-  if(uid==null || id==null || client.auth.currentUserOrNull()?.id!=uid || ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {stopSelf();return START_NOT_STICKY}
+  val isOwnerCleared = uid != null && TrackingSessionRules.shouldClearAndStopService(ownerState(uid))
+  val hasLocationPermission = ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+  if(uid==null || id==null || isOwnerCleared || !hasLocationPermission) {stopSelf();return START_NOT_STICKY}
   owner=uid;delivery=id;lastFix=null;stoppedReason=null
+  cachedStoredSessionUid=uid
   val manager=getSystemService(NotificationManager::class.java)
   if(Build.VERSION.SDK_INT>=26)manager.createNotificationChannel(NotificationChannel("active_trip","Active trip location",NotificationManager.IMPORTANCE_LOW))
   val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -73,24 +103,45 @@ class TripTrackingService:Service(),LocationListener {
   try {
    ServiceCompat.startForeground(this,731,notification,if(Build.VERSION.SDK_INT>=29)ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
    locations.removeUpdates(this)
-   val provider=TrackingSafety.provider(locations::isProviderEnabled)
-   locations.requestLocationUpdates(provider,15000,0f,this,Looper.getMainLooper())
+   val providers=TrackingSafety.providers(locations::isProviderEnabled)
+   providers.forEach { provider ->
+    locations.requestLocationUpdates(provider,15000L,0f,this,Looper.getMainLooper())
+   }
   } catch(_:SecurityException) {fail("Precise location permission is required. Allow it, then Resume location sharing.");return START_NOT_STICKY}
   catch(_:RuntimeException) {fail("Location services could not start. Enable location, then Resume location sharing.");return START_NOT_STICKY}
   loop?.cancel()
   loop=scope.launch {
    queue.retain(uid,id)
    while(isActive) {
-    if(client.auth.currentUserOrNull()?.id!=uid) {queue.clearOwner(uid);stopSelf();break}
+    refreshStoredSessionUid()
+    val state=ownerState(uid)
+    if(TrackingSessionRules.shouldClearAndStopService(state)) {
+     queue.clearOwner(uid);stopSelf();break
+    }
+    if(state==TrackingOwnerState.OFFLINE_TOKEN_EXPIRED) {
+     TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",queue.pending(uid,id).size)
+     withTimeoutOrNull(15.seconds) { wakeSignal.receive() }
+     continue
+    }
     try {
-     // Reauthorize even when no location fix arrives; a remote cancellation must stop the service.
-     val data=client.postgrest.rpc("mobile_workspace").decodeAs<JsonObject>()
-     val current=data.rows("deliveries").firstOrNull {it.value("id")==id}
-     if(data.obj("profile").value("role")!="driver" || current==null || current.value("status") !in listOf("assigned","loading","in_transit")) {
-      // Existing server post-delivery window controls final buffered samples.
+     flush(uid,id)
+     val lightweightDelivery = runCatching {
+      client.postgrest.from("deliveries").select(Columns.raw("id,status")) {
+       filter { eq("id", id) }
+      }.decodeList<JsonObject>().firstOrNull()
+     }.getOrNull()
+
+     val isTerminal = if(lightweightDelivery != null) {
+      lightweightDelivery.value("status") !in listOf("assigned","loading","in_transit")
+     } else {
+      val data=client.postgrest.rpc("mobile_workspace").decodeAs<JsonObject>()
+      val current=data.rows("deliveries").firstOrNull {it.value("id")==id}
+      data.obj("profile").value("role")!="driver" || current==null || current.value("status") !in listOf("assigned","loading","in_transit")
+     }
+
+     if(isTerminal) {
       flush(uid,id);queue.clearOwner(uid);stopSelf();break
      }
-     flush(uid,id)
      TripTrackingStatus.state.value=TrackingStatus(id,if(lastFix?.let {System.currentTimeMillis()-it in 0..60000}==true)"Sharing trip location" else "Waiting for fresh accurate GPS · try outdoors",queue.pending(uid,id).size)
     } catch(cancelled:CancellationException) {throw cancelled}
     catch(error:Exception) {
@@ -98,7 +149,7 @@ class TripTrackingService:Service(),LocationListener {
      if(detail.contains("ACTIVE_") || detail.contains("DELIVERY_CLOSED")) {queue.clearOwner(uid);stopSelf();break}
      TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",queue.pending(uid,id).size)
     }
-    delay(15.seconds)
+    withTimeoutOrNull(15.seconds) { wakeSignal.receive() }
    }
   }
   TripTrackingStatus.state.value=TrackingStatus(id,"Waiting for a location fix")
@@ -106,18 +157,26 @@ class TripTrackingService:Service(),LocationListener {
  }
  private suspend fun flush(uid:String,id:String) {
   for((sample,payload,_) in queue.pending(uid,id)) {
-   if(client.auth.currentUserOrNull()?.id!=uid)return
+   if(!TrackingSessionRules.shouldFlushNetwork(ownerState(uid)))return
    try {client.postgrest.rpc("driver_record_position",buildJsonObject {put("p_delivery",id);put("p_sample",sample);put("p_data",Json.parseToJsonElement(payload))});queue.remove(sample)}
    catch(error:Exception) {if(error is CancellationException)throw error;if(error.message.orEmpty().contains("INVALID_POSITION")){queue.remove(sample)}else throw error}
   }
  }
  override fun onLocationChanged(location:Location) {
   val uid=owner?:return;val id=delivery?:return
-  if(client.auth.currentUserOrNull()?.id!=uid || !location.hasAccuracy() || !TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time))return
+  val age=System.currentTimeMillis()-location.time
+  if(!TrackingSessionRules.shouldQueueFix(ownerState(uid)) || !location.hasAccuracy() || !TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,age))return
+  if(lastFix!=null && (location.time - lastFix!!) in 0 until 5_000L) return
   lastFix=location.time
   queue.add(uid,id,location)
+  TripTrackingStatus.state.value=TrackingStatus(id,"Sharing trip location",queue.pending(uid,id).size)
+  wakeSignal.trySend(Unit)
  }
- override fun onProviderDisabled(provider:String) {fail("Location provider disabled. Enable location, then Resume location sharing.")}
+ override fun onProviderDisabled(provider:String) {
+  if(runCatching { TrackingSafety.providers(locations::isProviderEnabled) }.isFailure) {
+   fail("Location provider disabled. Enable location, then Resume location sharing.")
+  }
+ }
  override fun onDestroy() {
   if(::locations.isInitialized) runCatching {locations.removeUpdates(this)}
   scope.cancel();queue.close();TripTrackingStatus.state.value=TrackingStatus(message=stoppedReason?:"Location sharing stopped. Resume it while this trip is active.")

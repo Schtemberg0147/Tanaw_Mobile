@@ -33,6 +33,7 @@ import androidx.core.content.FileProvider
 import com.tanaw.app.R
 import java.io.File
 import java.util.UUID
+import com.tanaw.app.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -44,8 +45,8 @@ import kotlinx.coroutines.withContext
     Dialog(onDismissRequest={if(!busy)close()},properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
         DriverTheme {
             BackHandler {if(!busy)close()}
-            Scaffold(containerColor=DriverBackground,topBar={Column(Modifier.statusBarsPadding()) {DriverPageHeading(title){if(!busy)close()}}},
-                bottomBar={Surface(color=Color.White,shadowElevation=3.dp) {Column(Modifier.navigationBarsPadding().padding(16.dp)) {
+            Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={Column(Modifier.statusBarsPadding()) {DriverPageHeading(title){if(!busy)close()}}},
+                bottomBar={Surface(color=MaterialTheme.colorScheme.surface,shadowElevation=3.dp) {Column(Modifier.navigationBarsPadding().padding(16.dp)) {
                     DriverButton(if(busy)"Submitting…" else label,enabled && !busy,submit)
                 }}}) {padding->
                 Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -99,7 +100,7 @@ import kotlinx.coroutines.withContext
     DriverTransaction("Report an Issue",state.busy || preparingPhotos,close,if(preparingPhotos)"PREPARING PHOTO…" else "Submit Report",
         !preparingPhotos && !state.offline && description.trim().length in 5..2000 && minutes.toIntOrNull() in 0..1440,
         {if(!preparingPhotos)submit(request,category,description,minutes.toInt(),photos)}) {
-        Text("SELECT ISSUE TYPE",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
+        Text("SELECT ISSUE TYPE",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=FontWeight.SemiBold)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf("traffic" to "Traffic/Delay","breakdown" to "Vehicle Issue","accident" to "Safety Concern","weather" to "Weather","other" to "Other").forEach {(value,label)->
                 FilterChip(selected=category==value,onClick={
@@ -110,10 +111,10 @@ import kotlinx.coroutines.withContext
                         persist(c=value,r=nextReq)
                     }
                 },enabled=!state.busy && !preparingPhotos,label={Text(label)},shape=RoundedCornerShape(2.dp),
-                    colors=FilterChipDefaults.filterChipColors(selectedContainerColor=DriverNavy,selectedLabelColor=Color.White))
+                    colors=FilterChipDefaults.filterChipColors(selectedContainerColor=MaterialTheme.colorScheme.primary,selectedLabelColor=MaterialTheme.colorScheme.onPrimary))
             }
         }
-        Text("DESCRIPTION",fontSize=12.sp,color=Color(0xFF536581),fontWeight=FontWeight.SemiBold)
+        Text("DESCRIPTION",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=FontWeight.SemiBold)
         OutlinedTextField(
             value = description,
             onValueChange = {
@@ -161,7 +162,7 @@ import kotlinx.coroutines.withContext
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(2.dp)
         )
-        Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=Color(0xFF536581))
+        Text("ATTACH PHOTOS (Optional)",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         IncidentPhotoPicker(photos,state.busy||state.offline,onPreparingChange={preparingPhotos=it}){
             photos=it
             val nextReq=UUID.randomUUID().toString()
@@ -170,7 +171,7 @@ import kotlinx.coroutines.withContext
         }
         if(state.offline)Text("Reconnect and refresh before submitting an incident. Your current draft is retained.")
         state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-        TextButton(onClick=close,enabled=!state.busy && !preparingPhotos,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=Color(0xFFBA1A1A))}
+        TextButton(onClick=close,enabled=!state.busy && !preparingPhotos,modifier=Modifier.fillMaxWidth()){Text("Cancel",color=MaterialTheme.colorScheme.error)}
     }
 }
 
@@ -261,15 +262,22 @@ import kotlinx.coroutines.withContext
         text={Text("This removes this device's photo, recipient and signature. Uploaded evidence is retained for reconciliation.")},
         confirmButton={TextButton(onClick={store.clear(owner,id);confirmDiscard=false;close()}){Text("Discard draft")}},
         dismissButton={TextButton(onClick={confirmDiscard=false}){Text("Keep draft")}})
+    val isDark = isSystemInDarkTheme()
     if(submitted) {
         DriverTransaction("Delivery proof submitted",false,close,"BACK TO HOME",true,{close();onBackHome()}) {
-            Surface(color=DriverNavy,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(32.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                DriverAsset(R.drawable.figma_driver_966f6,33,24)
-                Text("Proof Submitted!",color=Color.White,fontSize=28.sp,fontWeight=FontWeight.Bold)
-                Text(reference,color=Color.White)
-            }}
+            Surface(
+                color=if(isDark)MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
+                shape=RoundedCornerShape(4.dp),
+                border=if(isDark)BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant) else null
+            ) {
+                Column(Modifier.fillMaxWidth().padding(32.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                    DriverAsset(R.drawable.figma_driver_966f6,33,24)
+                    Text("Proof Submitted!",color=if(isDark)MaterialTheme.colorScheme.onSurface else Color.White,fontSize=28.sp,fontWeight=FontWeight.Bold)
+                    Text(reference,color=if(isDark)MaterialTheme.colorScheme.onSurfaceVariant else Color.White)
+                }
+            }
             Text("Your delivery photo and recipient signature are saved. Refresh your trip for the current office review or correction status.")
-            Text("Final completion and allowance processing are confirmed by the office.",fontSize=12.sp,color=DriverMuted)
+            Text("Final completion and allowance processing are confirmed by the office.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -296,38 +304,43 @@ import kotlinx.coroutines.withContext
             }
         }) {
         if(processing)LinearProgressIndicator(Modifier.fillMaxWidth())
-        Surface(color=Color.White,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("SHIPMENT REFERENCE",fontSize=10.sp,color=Color(0xFF536581));Text(reference,fontSize=18.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
-            Text("Pending Delivery Confirmation",fontSize=14.sp,color=DriverMuted)
-        }}
-        Text(if(draft.frozen)"This attempt is saved and locked while its result is uncertain. Retry checks existing proof before sending again." else "Your draft is saved privately on this device. Back keeps it for this account and delivery.",fontSize=12.sp,color=DriverMuted)
+        Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("SHIPMENT REFERENCE",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(reference,fontSize=18.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
+                Text("Pending Delivery Confirmation",fontSize=14.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Text(if(draft.frozen)"This attempt is saved and locked while its result is uncertain. Retry checks existing proof before sending again." else "Your draft is saved privately on this device. Back keeps it for this account and delivery.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(state.offline)Text("Reconnect and refresh before submitting. Your saved draft is retained.")
         if(restored.isFailure)Text("The saved proof draft cannot be read. Contact the office before submitting another attempt.",color=MaterialTheme.colorScheme.error)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("1. PHOTO OF CARGO", fontSize = 12.sp, color = DriverNavy, fontWeight = FontWeight.SemiBold)
+            Text("1. PHOTO OF CARGO", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+            val photoBg = if(preview!=null) (if(isDark) StatusGreenBgDark else Color(0xFFD6F5E3)) else (if(isDark) MaterialTheme.colorScheme.errorContainer else Color(0xFFFFEDEA))
+            val photoFg = if(preview!=null) (if(isDark) StatusGreenDark else Color(0xFF006C4C)) else (if(isDark) MaterialTheme.colorScheme.onErrorContainer else Color(0xFFBA1A1A))
             Surface(
-                color = if (preview != null) Color(0xFFD6F5E3) else Color(0xFFFFEDEA),
+                color = photoBg,
                 shape = RoundedCornerShape(2.dp)
             ) {
                 Text(
                     text = if (preview != null) "PHOTO ADDED" else "REQUIRED",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    color = if (preview != null) Color(0xFF006C4C) else Color(0xFFBA1A1A),
+                    color = photoFg,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
-        Surface(onClick=::takePhoto,enabled=editable,color=Color(0xFFF0F3FF),border=BorderStroke(1.dp,Color(0xFFC3C6CF))) {
+        Surface(onClick=::takePhoto,enabled=editable,color=MaterialTheme.colorScheme.surfaceContainerHigh,border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().heightIn(min=180.dp).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
                 if(preview!=null)Image(preview!!.asImageBitmap(),"Captured delivery photo",Modifier.fillMaxWidth().height(140.dp))
                 else DriverAsset(R.drawable.figma_driver_ceb65,48,46)
-                Spacer(Modifier.height(12.dp));Text(if(preview!=null)"RETAKE PHOTO" else "TAKE PHOTO",color=DriverNavy,fontSize=12.sp)
-                Text("Capture a clear view of items & labels",fontSize=10.sp,color=DriverMuted)
+                Spacer(Modifier.height(12.dp));Text(if(preview!=null)"RETAKE PHOTO" else "TAKE PHOTO",color=MaterialTheme.colorScheme.primary,fontSize=12.sp)
+                Text("Capture a clear view of items & labels",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         val isRecipientError = draft.recipient.isNotBlank() && draft.recipient.trim().length < 2
-        Text("2. RECIPIENT NAME", fontSize = 12.sp, color = DriverNavy, fontWeight = FontWeight.SemiBold)
+        Text("2. RECIPIENT NAME", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
             value = draft.recipient,
             onValueChange = { persist(draft.changed().copy(recipient = it.take(100))) },
@@ -343,26 +356,31 @@ import kotlinx.coroutines.withContext
             shape = RoundedCornerShape(4.dp)
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("3. DIGITAL SIGNATURE", fontSize = 12.sp, color = DriverNavy, fontWeight = FontWeight.SemiBold)
+            Text("3. DIGITAL SIGNATURE", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+            val sigBg = if(draft.strokes.isNotEmpty()) (if(isDark) StatusGreenBgDark else Color(0xFFD6F5E3)) else (if(isDark) MaterialTheme.colorScheme.errorContainer else Color(0xFFFFEDEA))
+            val sigFg = if(draft.strokes.isNotEmpty()) (if(isDark) StatusGreenDark else Color(0xFF006C4C)) else (if(isDark) MaterialTheme.colorScheme.onErrorContainer else Color(0xFFBA1A1A))
             Surface(
-                color = if (draft.strokes.isNotEmpty()) Color(0xFFD6F5E3) else Color(0xFFFFEDEA),
+                color = sigBg,
                 shape = RoundedCornerShape(2.dp)
             ) {
                 Text(
                     text = if (draft.strokes.isNotEmpty()) "SIGNED" else "REQUIRED",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    color = if (draft.strokes.isNotEmpty()) Color(0xFF006C4C) else Color(0xFFBA1A1A),
+                    color = sigFg,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(160.dp).background(Color.White).border(1.dp,Color(0xFFC3C6CF),RoundedCornerShape(4.dp))) {
-            if(draft.strokes.isEmpty() && current.isEmpty())Text("Tap and draw to sign",Modifier.align(Alignment.Center),fontSize=14.sp,color=Color(0xFF73777F))
+        Box(Modifier.fillMaxWidth().height(160.dp).background(if(isDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White).border(1.dp,MaterialTheme.colorScheme.outlineVariant,RoundedCornerShape(4.dp))) {
+            if(draft.strokes.isEmpty() && current.isEmpty())Text("Tap and draw to sign",Modifier.align(Alignment.Center),fontSize=14.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Canvas(Modifier.fillMaxSize().testTag("proof_signature_canvas").onSizeChanged{canvasSize=it}.pointerInput(editable) {
                 if(editable)detectDragGestures(onDragStart={current=listOf(it)},
                     onDragEnd={if(current.size>1)persist(draft.changed().copy(strokes=draft.strokes+listOf(current.map {SignaturePoint((it.x/canvasSize.width.coerceAtLeast(1)).coerceIn(0f,1f),(it.y/canvasSize.height.coerceAtLeast(1)).coerceIn(0f,1f))})));current=emptyList()},onDragCancel={current=emptyList()}) {change,_->change.consume();if(current.size<2000)current=current+change.position}
-            }) {(draft.strokes.map{line->line.map{Offset(it.x*size.width,it.y*size.height)}}+listOf(current)).forEach {line->line.zipWithNext().forEach {(a,b)->drawLine(Color.Black,a,b,4f)}}}
+            }) {
+                val strokeColor = if(isDark) Color.White else Color.Black
+                (draft.strokes.map{line->line.map{Offset(it.x*size.width,it.y*size.height)}}+listOf(current)).forEach {line->line.zipWithNext().forEach {(a,b)->drawLine(strokeColor,a,b,4f)}}
+            }
         }
         TextButton(onClick={persist(draft.changed().copy(strokes=emptyList()));current=emptyList()},enabled=editable){Text("Clear signature")}
         TextButton(onClick={confirmDiscard=true},enabled=editable){Text("Discard saved draft")}

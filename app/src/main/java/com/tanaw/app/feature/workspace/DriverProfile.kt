@@ -2,6 +2,7 @@ package com.tanaw.app.feature.workspace
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
@@ -18,9 +19,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.ui.theme.*
 import kotlinx.serialization.json.*
 
 @Composable internal fun DriverProfile(data:JsonObject,busy:Boolean,offline:Boolean,refresh:()->Unit,recover:()->Unit,logout:()->Unit,messages:()->Unit) {
+    val isDark = isSystemInDarkTheme()
     var panel by rememberSaveable {mutableStateOf<String?>(null)}
     var linkError by remember {mutableStateOf(false)}
     val uri=LocalUriHandler.current
@@ -35,15 +38,15 @@ import kotlinx.serialization.json.*
         Spacer(Modifier.height(1.dp).bringIntoViewRequester(top))
         if(panel!=null) {
             TextButton(onClick={panel=null}) {Text("← Back to profile")}
-            Text(panel!!,style=MaterialTheme.typography.titleLarge,color=DriverNavy)
+            Text(panel!!,style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onSurface)
             if(linkError)Text("This device could not open the link. Check that a suitable app is installed.",color=MaterialTheme.colorScheme.error)
-            if(offline)Text("Offline · these are saved details. Reconnect to check for updates.",color=DriverMuted)
+            if(offline)Text("Offline · these are saved details. Reconnect to check for updates.",color=MaterialTheme.colorScheme.onSurfaceVariant)
             when(panel) {
                 "Help & Support" -> {
                     ProfileCard("Delivery support") {
                         Text("For pickup instructions, delays or unloading questions, open the conversation for the relevant delivery. Include its tracking reference so the office can identify the trip.")
                         Button(onClick=messages) {Text("Open office messages")}
-                        Text("Messages are in-app and may not be read immediately. For urgent help, use your established emergency contact.",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                        Text("Messages are in-app and may not be read immediately. For urgent help, use your established emergency contact.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     ProfileCard("Profile and documents") {
                         Text("Your personal details, assigned vehicle and compliance records are managed by the administrator. Send the office the field or document that needs correcting. Drivers cannot edit or approve these records here.")
@@ -73,29 +76,33 @@ import kotlinx.serialization.json.*
                         Text("Open the office’s published document in your browser. An internet connection may be required.")
                         Button(onClick={open(url)}){Text("Open ${panel!!.lowercase()}")}
                     }
-                    if(panel=="Privacy")Text("App behavior: trip tracking shares location while tracking is enabled. Delivery proof and conversations use authorized access. This description is not a replacement for the office’s privacy policy.",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                    if(panel=="Privacy")Text("App behavior: trip tracking shares location while tracking is enabled. Delivery proof and conversations use authorized access. This description is not a replacement for the office’s privacy policy.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             OutlinedButton(onClick=refresh,enabled=!busy){Text("Refresh profile information")}
         } else {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
                 Column {
-                    Text("My profile",style=MaterialTheme.typography.headlineSmall,color=DriverNavy)
-                    Text("Your account and delivery credentials",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                    Text("My profile",style=MaterialTheme.typography.headlineSmall,color=MaterialTheme.colorScheme.onSurface)
+                    Text("Your account and delivery credentials",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Surface(color=DriverNavy,shape=RoundedCornerShape(20.dp)) {
+            Surface(
+                color=if(isDark)MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
+                shape=RoundedCornerShape(20.dp),
+                border=if(isDark)BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant) else null
+            ) {
                 Row(Modifier.fillMaxWidth().padding(20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
-                    Surface(color=Color(0xFF244C70),shape=CircleShape) {
+                    Surface(color=if(isDark)MaterialTheme.colorScheme.primaryContainer else Color(0xFF244C70),shape=CircleShape) {
                         Box(Modifier.size(58.dp),contentAlignment=Alignment.Center) {
                             val initials=p.value("full_name").split(' ').filter(String::isNotBlank).take(2).map {it.first().uppercaseChar()}.joinToString("").ifBlank {"D"}
-                            Text(initials,color=Color.White,fontWeight=FontWeight.Bold,fontSize=20.sp)
+                            Text(initials,color=if(isDark)MaterialTheme.colorScheme.onPrimaryContainer else Color.White,fontWeight=FontWeight.Bold,fontSize=20.sp)
                         }
                     }
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                        Text(p.value("full_name").ifBlank {"Name not recorded"},style=MaterialTheme.typography.titleLarge,color=Color.White)
-                        Text("Driver account",color=Color(0xFFDBE8F5),style=MaterialTheme.typography.bodySmall)
-                        Text(if(offline)"Saved information · Offline" else "Managed by your office",color=Color(0xFFDBE8F5),style=MaterialTheme.typography.labelSmall)
+                        Text(p.value("full_name").ifBlank {"Name not recorded"},style=MaterialTheme.typography.titleLarge,color=if(isDark)MaterialTheme.colorScheme.onSurface else Color.White)
+                        Text("Driver account",color=if(isDark)MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFDBE8F5),style=MaterialTheme.typography.bodySmall)
+                        Text(if(offline)"Saved information · Offline" else "Managed by your office",color=if(isDark)MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFDBE8F5),style=MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -113,7 +120,7 @@ import kotlinx.serialization.json.*
                     "loading" -> Text("Loading driver profile…")
                     else -> {Text("Driver profile unavailable. Refresh to retry.",color=MaterialTheme.colorScheme.error);TextButton(onClick=refresh,enabled=!busy){Text("Retry driver profile")}}
                 }
-                Text("Contact your administrator to update personal information.",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                Text("Contact your administrator to update personal information.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProfileCard("Assigned vehicle") {
                 when(DriverRecordPresentation.section(data,"driver_trucks")) {
@@ -121,34 +128,48 @@ import kotlinx.serialization.json.*
                     "loading" -> Text("Loading assigned vehicle…")
                     else -> {
                         val truck=DriverUiRules.truck(data)
-                        if(truck==null)Text(DriverRecordPresentation.vehicleLabel(data,null),color=DriverMuted)
+                        if(truck==null)Text(DriverRecordPresentation.vehicleLabel(data,null),color=MaterialTheme.colorScheme.onSurfaceVariant)
                         else Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                            Surface(color=DriverLine,shape=RoundedCornerShape(12.dp)) {Box(Modifier.size(48.dp),contentAlignment=Alignment.Center){DriverAsset(R.drawable.ic_vehicle,24,tint=DriverNavy)}}
+                            Surface(color=if(isDark)MaterialTheme.colorScheme.surfaceContainerHighest else DriverLine,shape=RoundedCornerShape(12.dp)) {
+                                Box(Modifier.size(48.dp),contentAlignment=Alignment.Center){DriverAsset(R.drawable.ic_vehicle,24,tint=if(isDark)MaterialTheme.colorScheme.onSurface else DriverNavy)}
+                            }
                             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                                Text(truck.value("plate_number").ifBlank {"Plate not recorded"},color=DriverNavy,fontWeight=FontWeight.Bold)
-                                Text(truck.value("model").ifBlank {"Model not recorded"},style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                                Text(truck.value("plate_number").ifBlank {"Plate not recorded"},color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.Bold)
+                                Text(truck.value("model").ifBlank {"Model not recorded"},style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
             }
             ProfileCard("Compliance Status",R.drawable.figma_driver_77550) {
-                Text(DriverProfileRules.policyLabel(data),style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                Text(DriverProfileRules.policyLabel(data),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 if(settings==null || DriverProfileRules.policyLabel(data).contains("invalid"))TextButton(onClick=refresh,enabled=!busy){Text("Retry warning settings")}
                 when(DriverRecordPresentation.section(data,"compliance")) {
                     "error","unavailable" -> {Text("Compliance records unavailable. Refresh or contact the office to verify your documents.",color=MaterialTheme.colorScheme.error);TextButton(onClick=refresh,enabled=!busy){Text("Retry compliance records")}}
                     "loading" -> Text("Loading compliance records…")
-                    "empty" -> Text("No compliance documents were returned for your account.",color=DriverMuted)
+                    "empty" -> Text("No compliance documents were returned for your account.",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     "ready" -> data.rows("compliance").forEach {doc->
                         val label=DriverProfileRules.compliance(doc,settings)
                         val good=label=="VALID"
                         val severe=label in listOf("EXPIRED","REJECTED","CRITICAL")
-                        val tint=if(good)Color(0xFF166534)else if(severe)Color(0xFFB42318)else Color(0xFF8A5800)
-                        val background=if(good)Color(0xFFEAF6EF)else if(severe)Color(0xFFFFEDEB)else Color(0xFFFFF5DD)
-                        Surface(color=Color(0xFFF7F9FD),shape=RoundedCornerShape(12.dp)) {
+                        val tint=if(good) {
+                            if(isDark)StatusGreenDark else Color(0xFF166534)
+                        } else if(severe) {
+                            if(isDark)MaterialTheme.colorScheme.onErrorContainer else Color(0xFFB42318)
+                        } else {
+                            if(isDark)OrangeSpecialTagDark else Color(0xFF8A5800)
+                        }
+                        val background=if(good) {
+                            if(isDark)StatusGreenBgDark else Color(0xFFEAF6EF)
+                        } else if(severe) {
+                            if(isDark)MaterialTheme.colorScheme.errorContainer else Color(0xFFFFEDEB)
+                        } else {
+                            if(isDark)OrangeSpecialTagBgDark else Color(0xFFFFF5DD)
+                        }
+                        Surface(color=if(isDark)MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFF7F9FD),shape=RoundedCornerShape(12.dp)) {
                             Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                                Text(MobilePresentation.status(doc.value("doc_type")).ifBlank {"Document type not recorded"},fontWeight=FontWeight.Bold,color=DriverNavy)
-                                Text("Expiry: ${doc.value("expiry_date").ifBlank {"Not recorded"}}",style=MaterialTheme.typography.bodySmall)
+                                Text(MobilePresentation.status(doc.value("doc_type")).ifBlank {"Document type not recorded"},fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
+                                Text("Expiry: ${doc.value("expiry_date").ifBlank {"Not recorded"}}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                                 Surface(color=background,shape=RoundedCornerShape(6.dp)) {
                                     Text(label,Modifier.padding(horizontal=9.dp,vertical=5.dp),color=tint,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelSmall)
                                 }
@@ -156,7 +177,7 @@ import kotlinx.serialization.json.*
                         }
                     }
                 }
-                Text("Contact your administrator to update compliance documents.",style=MaterialTheme.typography.bodySmall,color=DriverMuted)
+                Text("Contact your administrator to update compliance documents.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProfileCard("Account & support") {
                 OutlinedButton(onClick=recover,enabled=!busy && !offline,modifier=Modifier.fillMaxWidth()){
@@ -168,17 +189,17 @@ import kotlinx.serialization.json.*
                     }
                 }
             }
-            OutlinedButton(onClick=logout,enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),shape=RoundedCornerShape(12.dp),border=BorderStroke(1.dp,Color(0xFFF0C9C5))){Text("LOG OUT",color=MaterialTheme.colorScheme.error)}
+            OutlinedButton(onClick=logout,enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),shape=RoundedCornerShape(12.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.error.copy(alpha=0.5f))){Text("LOG OUT",color=MaterialTheme.colorScheme.error)}
         }
     }
 }
 
 @Composable private fun ProfileCard(title:String,icon:Int?=null,body:@Composable ColumnScope.()->Unit) {
-    Surface(color=Color.White,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,DriverLine)) {
+    Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 icon?.let {DriverAsset(it,20)}
-                Text(title,style=MaterialTheme.typography.titleMedium,color=DriverNavy)
+                Text(title,style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
             }
             body()
         }
@@ -187,9 +208,9 @@ import kotlinx.serialization.json.*
 @Composable private fun ProfileField(label:String,value:String) {
     Column {
         Row(Modifier.fillMaxWidth().padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.Top) {
-            Text(label,Modifier.weight(.36f),style=MaterialTheme.typography.labelSmall,color=DriverMuted)
-            Text(value.ifBlank {"Not recorded"},Modifier.weight(.64f),style=MaterialTheme.typography.bodyMedium,color=DriverNavy)
+            Text(label,Modifier.weight(.36f),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value.ifBlank {"Not recorded"},Modifier.weight(.64f),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface)
         }
-        HorizontalDivider(color=DriverLine)
+        HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
     }
 }

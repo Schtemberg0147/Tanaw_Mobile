@@ -654,11 +654,12 @@ fun AllowanceRow(
     formattedAllowance: String,
     modifier: Modifier = Modifier
 ) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFFEEF2FF))
+            .background(if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFEEF2FF))
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -667,14 +668,14 @@ fun AllowanceRow(
             text = stringResource(R.string.allowance),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = NavyBanner
+            color = MaterialTheme.colorScheme.primary
         )
 
         Text(
             text = formattedAllowance,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
-            color = NavyBanner
+            color = MaterialTheme.colorScheme.primary
         )
     }
 }

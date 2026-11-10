@@ -43,3 +43,10 @@ val HintDark            = Color(0xFF8E97A6)  // Secondary/hint text in dark mode
 val TextLight           = Color(0xFFF0F3F8)  // Primary readable text in dark mode
 val SuccessGreenDark    = Color(0xFF81C784)  // Soft green text for dark banner
 val SuccessBannerBgDark = Color(0xFF1B3322)  // Dark green tint for success banner
+
+// Driver Screen Specific Colors - Dark Theme
+val StatusGreenDark        = Color(0xFF4ADE80)  // Accessible luminous green for dark mode
+val StatusGreenBgDark      = Color(0xFF143823)  // Deep green container background
+val OrangeSpecialTagDark   = Color(0xFFFFB27D)  // Warm readable orange for dark tags
+val OrangeSpecialTagBgDark = Color(0xFF3E2314)  // Dark warm brown container background
+val DriverLineDark         = Color(0xFF2A3346)  // Subtle divider/border for dark surfaces
