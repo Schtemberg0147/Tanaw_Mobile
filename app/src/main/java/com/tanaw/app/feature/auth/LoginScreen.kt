@@ -2,23 +2,33 @@ package com.tanaw.app.feature.auth
 
 import android.content.res.Configuration
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.R
+import com.tanaw.app.feature.workspace.MobileValidation
 import com.tanaw.app.ui.components.*
 import com.tanaw.app.ui.theme.TanawTheme
 
@@ -27,12 +37,12 @@ import com.tanaw.app.ui.theme.TanawTheme
  * LoginScreen
  *
  * State that changes during a login attempt (isLoading, errorMessage) is owned
- * by the parent (TanawNavHost) and passed in as parameters so the composable
- * itself stays stateless and easy to preview/test.
+ * by the parent (TanawNavHost / MobileWorkspaceApp) and passed in as parameters
+ * so the composable itself stays stateless and easy to preview/test.
  *
  * @param onLoginClick        Called with (email, password) when the user taps Login.
  *                            The parent is responsible for validation + navigation.
- * @param onForgotPassword    Navigate to ForgotPasswordScreen
+ * @param onForgotPassword    Open working recovery; omitted when the host has no recovery flow.
  * @param onCreateAccount     Navigate to CreateAccountScreen
  * @param onTermsClick        Open Terms of Service
  * @param onPrivacyClick      Open Privacy Policy
@@ -43,19 +53,39 @@ import com.tanaw.app.ui.theme.TanawTheme
 @Composable
 fun LoginScreen(
     onLoginClick: (email: String, password: String) -> Unit,
-    onForgotPassword: () -> Unit,
+    onForgotPassword: (() -> Unit)? = null,
     onCreateAccount: () -> Unit,
     onTermsClick: () -> Unit = {},
     onPrivacyClick: () -> Unit = {},
     successMessage: String? = null,
     isLoading: Boolean = false,
     errorMessage: String? = null,
+    onGoogleSignIn: (() -> Unit)? = null,
+    allowPhone: Boolean = false,
 ) {
     // Local UI-only state
     var email           by remember { mutableStateOf("") }
+    var emailTouched    by remember { mutableStateOf(false) }
+    var useEmail        by remember(allowPhone) { mutableStateOf(!allowPhone) }
     var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var showBanner      by remember { mutableStateOf(successMessage != null) }
+    val focusManager = LocalFocusManager.current
+
+    val isEmailInvalid = emailTouched && email.isNotBlank() && !MobileValidation.email(email)
+    val isPhoneInvalid = emailTouched && email.isNotBlank() && MobileValidation.phone(email) == null
+    val isInputError = if (useEmail) isEmailInvalid else isPhoneInvalid
+    val inputSupportingText: @Composable (() -> Unit)? = if (isInputError) {
+        {
+            Text(
+                text  = if (useEmail) "Enter a valid email address." else "Enter a Philippine mobile number, e.g. 0912 345 6789.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    } else null
+
+    val isInputValid = if (useEmail) MobileValidation.email(email) else (MobileValidation.phone(email) != null)
+    val canSubmit = isInputValid && password.isNotBlank() && !isLoading
 
     LaunchedEffect(successMessage) {
         showBanner = successMessage != null
@@ -83,6 +113,7 @@ fun LoginScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -92,7 +123,9 @@ fun LoginScreen(
 
                 // ── TANAW Logo ───────────────────────────────────────────────
                 Image(
-                    painter            = painterResource(id = R.drawable.ic_tanaw_logo),
+                    painter            = painterResource(
+                        id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo
+                    ),
                     contentDescription = "TANAW logo",
                     modifier           = Modifier.size(56.dp)
                 )
@@ -107,23 +140,54 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(36.dp))
 
-                // ── Email field ──────────────────────────────────────────────
-                TanawInputLabel(text = "EMAIL ADDRESS")
+                // ── Google Sign In (Optional) ────────────────────────────────
+                onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
+
+                // ── Identifier field ─────────────────────────────────────────
+                TanawInputLabel(text = if (useEmail) "EMAIL ADDRESS" else "PHONE NUMBER")
                 Spacer(modifier = Modifier.height(6.dp))
                 TanawTextField(
                     value         = email,
-                    onValueChange = { email = it },
-                    placeholder   = "email@gmail.com",
+                    onValueChange = {
+                        email = it
+                        emailTouched = true
+                    },
+                    placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
                     leadingIcon   = {
                         Icon(
-                            painter            = painterResource(id = R.drawable.ic_mail_check),
+                            imageVector        = if (useEmail) Icons.Outlined.Email else Icons.Outlined.Phone,
                             contentDescription = null,
-                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier           = Modifier.size(18.dp)
+                            modifier           = Modifier.size(20.dp)
                         )
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone,
+                        imeAction    = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
+                    isError        = isInputError,
+                    supportingText = inputSupportingText,
                 )
+                if (allowPhone) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        TanawTextLink(
+                            text    = if (useEmail) "Use phone number instead" else "Use email address instead",
+                            onClick = {
+                                if (!isLoading) {
+                                    useEmail = !useEmail
+                                    email = ""
+                                    emailTouched = false
+                                }
+                            }
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -136,21 +200,17 @@ fun LoginScreen(
                     placeholder   = "••••••••",
                     leadingIcon   = {
                         Icon(
-                            painter            = painterResource(id = R.drawable.ic_shield_lock),
+                            imageVector        = Icons.Outlined.Lock,
                             contentDescription = null,
-                            tint               = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier           = Modifier.size(18.dp)
+                            modifier           = Modifier.size(20.dp)
                         )
                     },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
-                                painter = painterResource(
-                                    id = if (passwordVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off
-                                ),
+                                imageVector        = if (passwordVisible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
                                 contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                tint     = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
+                                modifier           = Modifier.size(20.dp)
                             )
                         }
                     },
@@ -158,28 +218,36 @@ fun LoginScreen(
                         VisualTransformation.None
                     else
                         PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction    = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            if (canSubmit) onLoginClick(email, password)
+                        }
+                    ),
                 )
 
                 // ── Forgot password ──────────────────────────────────────────
-                Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text       = "Forgot Password?",
-                        color      = MaterialTheme.colorScheme.secondary,
-                        style      = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier   = Modifier
-                            .padding(top = 10.dp)
-                            .clickable { onForgotPassword() }
-                    )
+                onForgotPassword?.let { openRecovery ->
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TanawTextLink(
+                            text       = "Forgot Password?",
+                            onClick    = openRecovery,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier   = Modifier.padding(top = 6.dp)
+                        )
+                    }
                 }
 
                 // ── Inline error ─────────────────────────────────────────────
                 if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text     = errorMessage,
                         color    = MaterialTheme.colorScheme.error,
@@ -188,13 +256,14 @@ fun LoginScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
                 // ── Login button ─────────────────────────────────────────────
                 TanawPrimaryButton(
                     text      = "Login  →",
                     onClick   = { onLoginClick(email, password) },
-                    isLoading = isLoading
+                    isLoading = isLoading,
+                    enabled   = canSubmit
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
@@ -212,7 +281,7 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // ── Terms footer ─────────────────────────────────────────────
+                // ── Terms footer ─────────────────────────────────────
                 TermsFooter(
                     onTermsClick   = onTermsClick,
                     onPrivacyClick = onPrivacyClick

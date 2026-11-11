@@ -18,23 +18,54 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.data.model.Vehicle
+import com.tanaw.app.domain.model.BookingError
 
 @Composable
 fun BookingSummaryScreen(
-    vehicle         : Vehicle,
-    distanceKm      : Int,
-    pickupName      : String,
-    destinationName : String,
-    weightKg        : String,
-    handling        : SpecialHandling,
-    notes           : String,
-    totalFee        : Int,
-    onBack          : () -> Unit,
+    vehicle: Vehicle,
+    distanceKm: Int,
+    pickupName: String,
+    destinationName: String,
+    weightKg: String,
+    handling: SpecialHandling,
+    notes: String,
+    totalFee: Int,
+    uiState: BookingUiState = BookingUiState.Idle,
+    onBack: () -> Unit,
     onConfirmBooking: () -> Unit,
-    isLoading       : Boolean = false,
+    onErrorDismiss: () -> Unit = {}
 ) {
     val deliveryFee = vehicle.computePrice(distanceKm)
     val handlingFee = handling.extraFee
+    val isLoading = uiState is BookingUiState.Submitting
+
+    if (uiState is BookingUiState.Error) {
+        val errorMessage = when (val err = uiState.error) {
+            is BookingError.OutsideOperatingHours -> "Operating hours are 06:00 – 20:00 (Asia/Manila). Next operating window starts at ${err.nextWindowStart ?: "06:00 AM"}."
+            is BookingError.CustomerBlocked -> "Your account is temporarily blocked until ${err.blockedUntil ?: "the end of the strike period"} due to a previous no-show."
+            is BookingError.CustomerSuspended -> "Your account has been permanently suspended due to repeated no-shows. Please contact support."
+            is BookingError.NoPricingRate -> "No active pricing rate found for this vehicle type."
+            is BookingError.OutsideServiceArea -> "The selected pickup or dropoff location is outside our Luzon service area."
+            is BookingError.MissingCoordinates -> "Please select valid pickup and dropoff locations."
+            is BookingError.NoCustomerProfile -> "Customer profile not found. Please contact support."
+            is BookingError.AccountInactive -> "Your account is inactive."
+            is BookingError.InvalidVehicleType -> "Please select a valid vehicle type."
+            is BookingError.InvalidWeight -> "Please enter a valid cargo weight."
+            is BookingError.InvalidSchedule -> "Scheduled departure must be in the future."
+            is BookingError.UnknownError -> err.message
+        }
+
+        AlertDialog(
+            onDismissRequest = onErrorDismiss,
+            title = { Text("Booking Failed", fontWeight = FontWeight.Bold) },
+            text = { Text(errorMessage) },
+            confirmButton = {
+                TextButton(onClick = onErrorDismiss) {
+                    Text("OK", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -57,17 +88,17 @@ fun BookingSummaryScreen(
             }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text       = "Booking Summary",
-                style      = MaterialTheme.typography.titleMedium,
+                text = "Booking Summary",
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color      = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary
             )
         }
 
         LinearProgressIndicator(
-            progress   = { 1f },
-            modifier   = Modifier.fillMaxWidth().height(4.dp),
-            color      = MaterialTheme.colorScheme.primary,
+            progress = { 1f },
+            modifier = Modifier.fillMaxWidth().height(4.dp),
+            color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outline
         )
 
@@ -79,24 +110,24 @@ fun BookingSummaryScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             RouteCard(
-                pickupName      = pickupName,
+                pickupName = pickupName,
                 destinationName = destinationName,
-                distanceKm      = distanceKm,
-                modifier        = Modifier.padding(horizontal = 0.dp)
+                distanceKm = distanceKm,
+                modifier = Modifier.padding(horizontal = 0.dp)
             )
 
             Card(
-                shape     = RoundedCornerShape(14.dp),
-                colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier  = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text       = "Shipment Details",
-                        style      = MaterialTheme.typography.titleMedium,
+                        text = "Shipment Details",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color      = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -153,23 +184,23 @@ fun BookingSummaryScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Oct 24, 2023 · 08:00 AM", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Scheduled Departure: Next Available Window", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
 
             Card(
-                shape     = RoundedCornerShape(14.dp),
-                colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier  = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text       = "Price Breakdown",
-                        style      = MaterialTheme.typography.titleMedium,
+                        text = "Price Breakdown",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color      = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -181,7 +212,7 @@ fun BookingSummaryScreen(
                     if (handlingFee > 0) {
                         Spacer(modifier = Modifier.height(10.dp))
                         PriceRow(
-                            label  = "Special Handling (${handling.label})",
+                            label = "Special Handling (${handling.label})",
                             amount = "+₱${"%,d".format(handlingFee)}"
                         )
                     }
@@ -200,26 +231,26 @@ fun BookingSummaryScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text      = "Price is fixed upon booking confirmation. No hidden charges.",
-                        style     = MaterialTheme.typography.bodySmall,
-                        color     = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "Price is fixed upon booking confirmation. No hidden charges.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier  = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
 
             Card(
-                shape     = RoundedCornerShape(14.dp),
-                colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier  = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text      = "Your booking will be reviewed by our team before a driver is assigned. You will be notified once confirmed.",
-                    style     = MaterialTheme.typography.bodyMedium,
-                    color     = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier  = Modifier.padding(16.dp),
+                    text = "Your booking will be reviewed by our team before a driver is assigned. You will be notified once confirmed.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
                     lineHeight = 20.sp
                 )
             }
@@ -233,32 +264,32 @@ fun BookingSummaryScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Button(
-                onClick  = onConfirmBooking,
-                enabled  = !isLoading,
+                onClick = onConfirmBooking,
+                enabled = !isLoading,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape    = RoundedCornerShape(12.dp),
-                colors   = ButtonDefaults.buttonColors(
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor   = MaterialTheme.colorScheme.onPrimary
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 } else {
                     Text(
-                        text          = "CONFIRM BOOKING",
-                        style         = MaterialTheme.typography.labelLarge,
-                        fontWeight    = FontWeight.Bold,
-                        color         = MaterialTheme.colorScheme.onPrimary,
+                        text = "CONFIRM BOOKING",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         letterSpacing = 1.sp
                     )
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text      = "By confirming you agree to Tanaw's Terms of Service",
-                style     = MaterialTheme.typography.bodySmall,
-                color     = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "By confirming you agree to Tanaw's Terms of Service",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
         }

@@ -1,165 +1,277 @@
 package com.tanaw.app.feature.history
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.tanaw.app.data.model.HistoryBooking
-import com.tanaw.app.data.model.MockData
-import com.tanaw.app.data.model.MockData.computeDistance
-import com.tanaw.app.ui.components.BookingStatus
+import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tanaw.app.R
+import com.tanaw.app.domain.model.BookingItemUi
+import com.tanaw.app.domain.model.BookingTabFilter
 import com.tanaw.app.ui.components.HistoryBookingCard
+import com.tanaw.app.ui.theme.NavyBanner
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
-    onViewPOD: (String) -> Unit,
-    onRebook: (String) -> Unit,
-    onViewDetails: (String, BookingStatus) -> Unit
+    viewModel: BookingsViewModel = hiltViewModel(),
+    onViewPOD: (String) -> Unit = {},
+    onRebook: (BookingItemUi) -> Unit = {},
+    onTrack: (String) -> Unit = {},
+    onViewDetails: (String) -> Unit = {}
 ) {
-    val completedBookings = remember {
-        val pickup = MockData.pickupLocations.first()
-        val destGapan = MockData.recentDestinations.firstOrNull { it.name.contains("Gapan", ignoreCase = true) }
-            ?: MockData.recentDestinations.first()
-        val destTalavera = MockData.recentDestinations.firstOrNull { it.name.contains("Talavera", ignoreCase = true) }
-            ?: MockData.recentDestinations.first()
-        val vehicleClosed = MockData.vehicles.firstOrNull { it.name.contains("Closed Van", ignoreCase = true) }
-            ?: MockData.vehicles.first()
-        val dist1 = computeDistance(pickup, destGapan)
-        val dist2 = computeDistance(pickup, destTalavera)
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-        listOf(
-            HistoryBooking(
-                id = "SHP-NE-7821",
-                pickup = pickup,
-                destination = destTalavera,
-                dateAndVehicle = "Oct 20 · ${vehicleClosed.name}",
-                status = BookingStatus.DELIVERED,
-                vehicle = vehicleClosed,
-                pricePhp = "₱%,d".format(vehicleClosed.computePrice(dist2)),
-                podAvailable = true,
-                currentLocationText = "Delivered at: ${destTalavera.name}"
-            ),
-            HistoryBooking(
-                id = "SHP-NE-7654",
-                pickup = pickup,
-                destination = destGapan,
-                dateAndVehicle = "Oct 15 · ${vehicleClosed.name}",
-                status = BookingStatus.DELIVERED,
-                vehicle = vehicleClosed,
-                pricePhp = "₱%,d".format(vehicleClosed.computePrice(dist1)),
-                podAvailable = true,
-                currentLocationText = "Delivered at: ${destGapan.name}"
-            )
-        )
+    LaunchedEffect(viewModel) {
+        viewModel.sideEffect.collect { effect ->
+            when (effect) {
+                is BookingsSideEffect.NavigateToTrack -> onTrack(effect.shipmentId)
+                is BookingsSideEffect.NavigateToPod -> onViewPOD(effect.shipmentId)
+                is BookingsSideEffect.NavigateToDetails -> onViewDetails(effect.shipmentId)
+                is BookingsSideEffect.PreFillRebookAndNavigate -> {
+                    // Handled in caller or via booking VM
+                }
+                is BookingsSideEffect.ShowToast -> {}
+            }
+        }
     }
 
-    val cancelledBookings = remember {
-        val pickup = MockData.pickupLocations.first()
-        val dest = MockData.recentDestinations.first()
-        val vehicle = MockData.vehicles.first()
-        listOf(
-            HistoryBooking(
-                id = "SHP-NE-7990",
-                pickup = pickup,
-                destination = dest,
-                dateAndVehicle = "Oct 22 · ${vehicle.name}",
-                status = BookingStatus.CANCELLED,
-                vehicle = vehicle,
-                pricePhp = "₱0",
-                podAvailable = false,
-                cancelReason = "Customer no-show",
-                currentLocationText = "Cancelled"
-            )
-        )
+    val tabTitles = listOf("All", "Active", "Completed", "Cancelled")
+    val selectedTabIndex = when (uiState.selectedTab) {
+        BookingTabFilter.ALL -> 0
+        BookingTabFilter.ACTIVE -> 1
+        BookingTabFilter.COMPLETED -> 2
+        BookingTabFilter.CANCELLED -> 3
     }
 
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Completed", "Cancelled")
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.padding(20.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF8FAFC))
+    ) {
+        // Title Section
+        Column(
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp)
+        ) {
             Text(
-                text = "Booking History",
-                style = MaterialTheme.typography.titleLarge
+                text = "My Bookings",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = NavyBanner
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = "Completed and cancelled bookings", style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray))
         }
 
-        TabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
+        // Custom TabRow with Navy Underline Indicator
+        TabRow(
+            selectedTabIndex = selectedTabIndex,
+            containerColor = Color.White,
+            contentColor = NavyBanner,
+            indicator = { tabPositions ->
+                if (selectedTabIndex < tabPositions.size) {
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                        height = 3.dp,
+                        color = NavyBanner
+                    )
+                }
+            },
+            divider = {}
+        ) {
+            tabTitles.forEachIndexed { index, title ->
+                val isSelected = selectedTabIndex == index
                 Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title) }
+                    selected = isSelected,
+                    onClick = { viewModel.onEvent(BookingsEvent.TabSelected(index)) },
+                    text = {
+                        Text(
+                            text = title,
+                            fontSize = 14.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) NavyBanner else Color(0xFF64748B)
+                        )
+                    },
+                    modifier = Modifier.testTag("tab_$title")
                 )
             }
         }
 
-        when (selectedTab) {
-            0 -> CompletedList(
-                bookings = completedBookings,
-                onViewPOD = onViewPOD,
-                onRebook = onRebook,
-                onViewDetails = onViewDetails
-            )
-            1 -> CancelledList(
-                bookings = cancelledBookings,
-                onRebook = onRebook,
-                onViewDetails = onViewDetails
-            )
+        // Content Area with Pull-to-Refresh
+        PullToRefreshBox(
+            isRefreshing = (uiState as? BookingsUiState.Content)?.isRefreshing ?: false,
+            onRefresh = { viewModel.onEvent(BookingsEvent.Refresh) },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            when (val state = uiState) {
+                is BookingsUiState.Loading -> {
+                    BookingsSkeletonList()
+                }
+
+                is BookingsUiState.Error -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = state.message,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { viewModel.onEvent(BookingsEvent.Retry) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NavyBanner),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Retry", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                is BookingsUiState.Empty -> {
+                    val emptyMessage = when (state.selectedTab) {
+                        BookingTabFilter.ACTIVE -> "No active bookings yet. Book your first delivery!"
+                        BookingTabFilter.COMPLETED -> "No completed bookings found."
+                        BookingTabFilter.CANCELLED -> "No cancelled bookings."
+                        BookingTabFilter.ALL -> "No bookings recorded yet."
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = emptyMessage,
+                            fontSize = 15.sp,
+                            color = Color(0xFF64748B),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                is BookingsUiState.Content -> {
+                    val listState = rememberLazyListState()
+
+                    val shouldLoadMore = remember {
+                        derivedStateOf {
+                            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                            val totalItems = listState.layoutInfo.totalItemsCount
+                            lastVisibleItem != null && lastVisibleItem.index >= totalItems - 3
+                        }
+                    }
+
+                    LaunchedEffect(shouldLoadMore.value) {
+                        if (shouldLoadMore.value && state.hasMore && !state.isLoadingMore) {
+                            viewModel.onEvent(BookingsEvent.LoadMore)
+                        }
+                    }
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        items(
+                            items = state.bookings,
+                            key = { it.id },
+                            contentType = { "booking_card" }
+                        ) { booking ->
+                            HistoryBookingCard(
+                                booking = booking,
+                                onTrackClick = { viewModel.onEvent(BookingsEvent.TrackClicked(booking.shipmentId)) },
+                                onViewPODClick = { viewModel.onEvent(BookingsEvent.ViewPodClicked(booking.shipmentId)) },
+                                onRebookClick = {
+                                    onRebook(booking)
+                                    viewModel.onEvent(BookingsEvent.RebookClicked(booking))
+                                },
+                                onCardClick = { viewModel.onEvent(BookingsEvent.CardDetailsClicked(booking.shipmentId)) }
+                            )
+                        }
+
+                        if (state.isLoadingMore) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = NavyBanner,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun CompletedList(
-    bookings: List<HistoryBooking>,
-    onViewPOD: (String) -> Unit,
-    onRebook: (String) -> Unit,
-    onViewDetails: (String, BookingStatus) -> Unit
-) {
-    LazyColumn(
+private fun BookingsSkeletonList() {
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(bookings) { booking ->
-            HistoryBookingCard(
-                booking = booking,
-                showPOD = booking.podAvailable,
-                onViewPOD = { onViewPOD(booking.id) },
-                onRebook = { onRebook(booking.id) },
-                onViewDetails = { onViewDetails(booking.id, booking.status) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun CancelledList(
-    bookings: List<HistoryBooking>,
-    onRebook: (String) -> Unit,
-    onViewDetails: (String, BookingStatus) -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(bookings) { booking ->
-            HistoryBookingCard(
-                booking = booking,
-                showPOD = false,
-                onViewPOD = {},
-                onRebook = { onRebook(booking.id) },
-                onViewDetails = { onViewDetails(booking.id, booking.status) }
+        repeat(3) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFE2E8F0))
             )
         }
     }
