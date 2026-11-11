@@ -28,17 +28,30 @@ internal data class ProofDraft(
 /** Encrypted, atomic, backup-excluded draft, scoped by backend/account/delivery. No tokens or shared paths. */
 internal class ProofDraftStore(context:Context,project:String=BuildConfig.SUPABASE_URL) {
     private val store=WorkspaceRecoveryStore(context,"$project/proof-drafts-v1",16_000_000,preserveUnreadable=true)
+    private var lastPhotoBytes:ByteArray?=null
+    private var lastPhotoEncoded:String?=null
+    private var lastSignatureBytes:ByteArray?=null
+    private var lastSignatureEncoded:String?=null
     private fun scope(owner:String,delivery:String)="proof/$owner/$delivery"
     fun exists(owner:String,delivery:String)=store.contains(scope(owner,delivery))
+    private fun encodePhoto(bytes:ByteArray):String {
+        if(bytes===lastPhotoBytes && lastPhotoEncoded!=null)return lastPhotoEncoded!!
+        return Base64.encodeToString(bytes,Base64.NO_WRAP).also {lastPhotoBytes=bytes;lastPhotoEncoded=it}
+    }
+    private fun encodeSignature(bytes:ByteArray):String {
+        if(bytes===lastSignatureBytes && lastSignatureEncoded!=null)return lastSignatureEncoded!!
+        return Base64.encodeToString(bytes,Base64.NO_WRAP).also {lastSignatureBytes=bytes;lastSignatureEncoded=it}
+    }
     fun save(owner:String,delivery:String,draft:ProofDraft):Boolean {
         require(owner.isNotBlank() && delivery.isNotBlank())
-        val deliveries=store.read("index/$owner",Long.MAX_VALUE)?.get("deliveries")?.jsonArray.orEmpty().map{it.jsonPrimitive.content}.toSet()+delivery
-        return store.write("index/$owner",buildJsonObject {put("created",System.currentTimeMillis());put("deliveries",JsonArray(deliveries.map(::JsonPrimitive)))}) &&
+        val existing=store.read("index/$owner",Long.MAX_VALUE)?.get("deliveries")?.jsonArray.orEmpty().map{it.jsonPrimitive.content}.toSet()
+        val indexSaved=if(delivery in existing) true else store.write("index/$owner",buildJsonObject {put("created",System.currentTimeMillis());put("deliveries",JsonArray((existing+delivery).map(::JsonPrimitive)))})
+        return indexSaved &&
             store.write(scope(owner,delivery),buildJsonObject {
             put("created",System.currentTimeMillis());put("owner",owner);put("delivery",delivery)
             put("attempt",draft.attempt);put("recipient",draft.recipient);put("frozen",draft.frozen)
-            draft.photo?.let {put("photo",Base64.encodeToString(it,Base64.NO_WRAP))}
-            draft.signature?.let {put("signature",Base64.encodeToString(it,Base64.NO_WRAP))}
+            draft.photo?.let {put("photo",encodePhoto(it))}
+            draft.signature?.let {put("signature",encodeSignature(it))}
             put("strokes",buildJsonArray {draft.strokes.forEach {line->add(buildJsonArray {line.forEach {p->add(buildJsonArray {add(p.x);add(p.y)})}})}})
         })
     }

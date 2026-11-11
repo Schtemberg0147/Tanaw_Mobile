@@ -331,7 +331,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                 "Profile" -> {
                     WorkspaceCard { ProfileForm(vm,state,data) }
                     Action("Saved address",!state.busy) { info=data.obj("customer").value("address").ifBlank{"No saved address. Add your address above and save your profile."} }
-                    Action("Help and service information",true) {info="Contact the office with your tracking reference for quotations, dispatch, account activation or changes. Drivers share location during active trips and submit private proof for office review. Chat, payments, profile photos and customer cancellation are not available in this release."}
+                    Action("Help and service information",true) {info="Contact the office with your tracking reference for quotations, dispatch, account activation or changes. Drivers share location during active trips and submit private proof for office review. Chat, payments and profile photos are not available in this release."}
                     Action("Password recovery",!state.busy) {vm.page("recover")}
                     Text("Login email changes require a verified account-change flow. Contact the office; editing profile details does not change your sign-in email.")
                     Action("Sign out",!state.busy,vm::logout)
@@ -422,6 +422,17 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         listOf("assigned_at","route_started_at","pickup_arrived_at","customer_showed_at","departed_at","arrived_at","recipient_name").forEach {key-> if(d.value(key).isNotBlank())Text("${MobilePresentation.status(key)}: ${if(key.endsWith("_at"))MobilePresentation.time(d.value(key)) else d.value(key)}")}
         if(role=="driver") DriverTripActions(d,state,data,vm)
     }
+    if(role=="customer") {
+        CustomerCancellationSection(
+            shipment = s,
+            deliveries = deliveries,
+            state = state,
+            onCancelShipment = { shipmentId, reason, onDone ->
+                vm.cancelShipment(shipmentId, reason, onDone)
+            },
+            onClearError = { vm.clearCancellationError() }
+        )
+    }
     TextButton(onClick={vm.loadDetails(s.value("id"))},enabled=!state.detailLoading) {Text("Refresh timeline and proof")}
     val detail=state.details?.takeIf { it.value("shipment_id")==s.value("id") }
     if(state.detailLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -462,8 +473,11 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         point("Pickup",s.value("pickup_lat"),s.value("pickup_lng"))
         point("Destination",s.value("dropoff_lat"),s.value("dropoff_lng"))
         point("Last recorded vehicle position",position.value("latitude"),position.value("longitude"))
+        val verifiedRouting = routing?.let {
+            DriverRouteStatus.forAssignment(it, s, activeDelivery ?: buildJsonObject {})
+        }
         if(points.isNotEmpty()) {
-            ShipmentMap(points,s["route_geometry"]?.toString())
+            ShipmentMap(points, DriverRouteStatus.resolvedGeometry(s, verifiedRouting))
             SupportingText("Red: pickup · Blue: destination · Green: last recorded vehicle position")
         }
 

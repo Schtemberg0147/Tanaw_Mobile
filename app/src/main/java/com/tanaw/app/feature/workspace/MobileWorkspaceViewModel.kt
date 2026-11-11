@@ -541,6 +541,11 @@ class MobileWorkspaceViewModel @Inject constructor(
             if (WorkspaceSyncRules.shouldAutoResumeTracking(activeDeliveryId, currentTrackingDelivery, hasFineLocation)) {
                 runCatching { TripTrackingService.start(context, id, activeDeliveryId!!) }
             }
+            if (isDriver) {
+                mutable.value.history?.value("period")?.takeIf(String::isNotBlank)?.let { loadedPeriod ->
+                    loadHistory(loadedPeriod, false)
+                }
+            }
         }
     }
     fun refresh() = operation(allowOffline=true) {
@@ -1038,6 +1043,83 @@ class MobileWorkspaceViewModel @Inject constructor(
         onCreated(result.value("id"),result.value("tracking_number"))
         try { load() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { mutable.update { it.copy(error="Request saved. Refresh to reload shipment details.") } }
     }
+
+    fun cancelShipment(shipmentId: String, reason: String, onCancelled: () -> Unit = {}) = operation {
+        val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        require(shipmentId.isNotBlank()) { "INVALID_SHIPMENT" }
+        require(CustomerCancellationRules.validateReason(reason)) { "CANCELLATION_REASON_REQUIRED" }
+        val normalizedReason = CustomerCancellationRules.normalizeReason(reason)
+
+        val currentData = mutable.value.data
+        val allShipments = mutable.value.customerShipments.orEmpty() + currentData?.rows("shipments").orEmpty()
+        val targetShipment = allShipments.firstOrNull { it.value("id") == shipmentId }
+            ?: currentData?.rows("shipments")?.firstOrNull { it.value("id") == shipmentId }
+            ?: error("SHIPMENT_NOT_FOUND")
+
+        val relevantDeliveries = currentData?.rows("deliveries")?.filter { it.value("shipment_id") == shipmentId }.orEmpty()
+
+        when (val eligibility = CustomerCancellationRules.checkCancellationEligibility(targetShipment, relevantDeliveries)) {
+            is CancellationEligibility.Eligible -> Unit
+            is CancellationEligibility.IneligibleStatus -> error("SHIPMENT_NOT_CANCELLABLE")
+            is CancellationEligibility.DriverEnRoute -> error("DRIVER_ALREADY_EN_ROUTE")
+        }
+
+        val version = generation
+        val nowIso = java.time.Instant.now().toString()
+
+        ConfirmedMutation.run(
+            mutate = {
+                client.from("shipments").update(
+                    buildJsonObject {
+                        put("status", "cancelled")
+                        put("cancelled_reason", normalizedReason)
+                        put("cancelled_at", nowIso)
+                    }
+                ) {
+                    filter {
+                        eq("id", shipmentId)
+                        isIn("status", CustomerCancellationRules.CANCELLABLE_SHIPMENT_STATUSES.toList())
+                    }
+                }
+            },
+            current = { version == generation && client.auth.currentUserOrNull()?.id == uid },
+            acknowledge = {
+                mutable.update { state ->
+                    val (updatedData, updatedCustomerShipments) = CustomerCancellationRules.optimisticCancelUpdate(
+                        data = state.data,
+                        customerShipments = state.customerShipments,
+                        shipmentId = shipmentId,
+                        reason = normalizedReason,
+                        nowIso = nowIso,
+                        fallbackShipment = targetShipment
+                    )
+                    state.copy(
+                        data = updatedData ?: state.data,
+                        customerShipments = updatedCustomerShipments ?: state.customerShipments,
+                        message = CustomerCancellationRules.MSG_SHIPMENT_CANCELLED,
+                        error = null
+                    )
+                }
+                onCancelled()
+            },
+            refresh = {
+                reloadWorkspaceAndDetails()
+            },
+            refreshFailed = {
+                mutable.update {
+                    it.copy(
+                        message = CustomerCancellationRules.MSG_SHIPMENT_CANCELLED_REFRESH_FAILED,
+                        error = null,
+                        offline = true
+                    )
+                }
+            }
+        )
+    }
+
+    fun clearCancellationError() {
+        mutable.update { if (it.error != null) it.copy(error = null) else it }
+    }
     private suspend fun reconcileUncertainBooking(data: JsonObject, userId: String) {
         val customerId = data.obj("customer").value("id").ifBlank { userId }
         val draft = bookingDraftStore.readAsync(customerId) ?: return
@@ -1222,6 +1304,9 @@ class MobileWorkspaceViewModel @Inject constructor(
     }
     private suspend fun reloadWorkspaceAndDetails(targetDeliveryId: String? = null) {
         load()
+        if (targetDeliveryId != null && mutable.value.data?.obj("profile")?.value("role") == "driver" && mutable.value.history == null) {
+            loadHistory("This month", false)
+        }
         val shipmentId = WorkspaceSyncRules.resolveShipmentToRefresh(
             currentDetailsShipmentId = mutable.value.details?.value("shipment_id"),
             deliveryId = targetDeliveryId,
@@ -1354,7 +1439,13 @@ class MobileWorkspaceViewModel @Inject constructor(
         })},::current,{
             if(TripTrackingStatus.state.value.delivery==id)TripTrackingService.stop(context)
             proofDraftStore.clear(uid,id)
-            mutable.update {it.copy(message="Proof saved. Refresh for the current office review status.",error=null)}
+            val nowIso=java.time.Instant.now().toString()
+            mutable.update {state->
+                val updatedData=ProofSubmission.applyConfirmedDelivery(state.data,id,recipient,nowIso)
+                val period=state.history?.value("period").orEmpty()
+                val updatedHistory=if(updatedData!=null && period.isNotBlank())DriverHistory.reconcileWithLive(updatedData,state.history,period) else state.history
+                state.copy(data=updatedData?:state.data,history=updatedHistory,message="Proof saved. Refresh for the current office review status.",error=null)
+            }
             try {onSaved()}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){ /* Confirmed proof remains saved. */ }
         },{reloadWorkspaceAndDetails(id)},{mutable.update{it.copy(offline=true,error=null,message="Proof saved. Refresh to reload office review status before another action.")}})
     }

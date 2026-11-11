@@ -87,4 +87,61 @@ class DriverOperationalRecordsTest {
             assertFalse("Expected invalid minutes $minutes", minutes in 0..1440)
         }
     }
+
+    @Test fun reconcileWithLiveUpdatesHistoryWhenDeliveryCompletesToReview() {
+        val today = java.time.LocalDate.of(2026, 10, 25)
+        val history = buildJsonObject {
+            put("period", "This month")
+            put("offset", 0)
+            put("total", 1)
+            put("completed", 0)
+            put("allowance_total", 0)
+            put("allowance_missing", 0)
+            put("on_time_known", 0)
+            put("on_time_count", 0)
+            put("shipments", buildJsonArray {
+                add(buildJsonObject {
+                    put("id", "s1")
+                    put("status", "in_transit")
+                    put("scheduled_departure", "2026-10-20T08:00:00Z")
+                    put("scheduled_arrival", "2026-10-20T12:00:00Z")
+                    put("driver_allowance_php", "1250.50")
+                })
+            })
+            put("driver_deliveries", buildJsonArray {
+                add(buildJsonObject {
+                    put("id", "d1")
+                    put("shipment_id", "s1")
+                    put("status", "in_transit")
+                })
+            })
+        }
+        val liveData = buildJsonObject {
+            put("shipments", buildJsonArray {
+                add(buildJsonObject {
+                    put("id", "s1")
+                    put("status", "review")
+                    put("scheduled_departure", "2026-10-20T08:00:00Z")
+                    put("scheduled_arrival", "2026-10-20T12:00:00Z")
+                    put("actual_delivery_at", "2026-10-20T11:30:00Z")
+                    put("driver_allowance_php", "1250.50")
+                })
+            })
+            put("driver_deliveries", buildJsonArray {
+                add(buildJsonObject {
+                    put("id", "d1")
+                    put("shipment_id", "s1")
+                    put("status", "delivered")
+                    put("proof_review_status", "pending_review")
+                    put("arrived_at", "2026-10-20T11:30:00Z")
+                })
+            })
+        }
+        val reconciled = DriverHistory.reconcileWithLive(liveData, history, "This month", today)!!
+        assertEquals("1", reconciled.value("completed"))
+        assertEquals("review", reconciled.rows("shipments").first().value("status"))
+        assertEquals("delivered", reconciled.rows("driver_deliveries").first().value("status"))
+        assertEquals(MobilePresentation.money("1250.50"), DriverHistory.allowance(reconciled))
+        assertEquals("100% (1 recorded)", DriverHistory.onTime(reconciled))
+    }
 }

@@ -33,20 +33,20 @@ Type: `client` = Android code only | `backend?` = may need backend change, check
 
 ## Wave 3: optional additions (need backend work first)
 
-| ID | Item | FEATURES row | Type |
-|----|------|--------------|------|
-| C09 | Customer-to-office support conversations | #29 | optional, backend |
-| C10 | Edit/withdraw eligible pending requests | #29 | optional, backend |
-| C11 | Accept/reject a versioned quotation | #10 | optional, backend |
+| ID | Item | FEATURES row | Type | Notes |
+|----|------|--------------|------|-------|
+| C09 | Customer-to-office support conversations | #29 | optional, backend | Database table/RPC not yet implemented. |
+| [x] C10 | Edit/withdraw eligible pending requests (customer cancellation) | #29 | client (+ backend request) | Done (`JBranch`). Bug hunt and audit remediation completed (`docs/C10_BUG_FIX_PLAN.md`). Pure-Kotlin `CustomerCancellationRules.kt` (`canCancelShipment`, `isEligibleForCancellation`, `validateCancellationReason`, presets). Pre-transit cancellation modal `CustomerCancellationDialog.kt` integrated into `MobileWorkspaceApp.kt` (`ShipmentDetails`) and `MobileWorkspaceViewModel.kt::cancelShipment`. Bounded status checks (`pending`, `booked`, `assigned` prior to driver route start), atomic optimistic updates, reason validation (10–500 chars), and distinct terminal state error handling. Backend customer UPDATE RLS policy / `mobile_cancel_shipment` RPC requested in `docs/BACKEND-REQUESTS.md` §3 (**⚠ backend unverified**). |
+| C11 | Accept/reject a versioned quotation | #10 | optional, backend | Versioned quotation schema/RPC not yet implemented. |
 
 ## Testing (no code, run on a physical phone / real backend)
 
-| ID | What to test | FEATURES row |
-|----|--------------|--------------|
-| D01 | Full delivery workflow, screen-off GPS, reconnect, process restart | #19 |
-| D05 | Truck routes and moving ETA with confirmed truck measurements | #17 |
-| D06 | Website-to-driver messaging, unread/read sync | #24 |
-| C08 | Shipment/delay SMS delivery, opt-out, duplicate prevention | #7 |
+| ID | What to test | FEATURES row | Status | Notes |
+|----|--------------|--------------|--------|-------|
+| [x] D01 | Full delivery workflow, screen-off GPS, reconnect, process restart | #19 | Code verified, bug hunt completed | Done (`JBranch`, commit `d52054b`). Bug hunt & latency audit remediation completed (`docs/D01_BUG_FINDINGS_AND_PLAN.md` - `D01-B1` to `D01-B6`). Swapped to OkHttp WebSocket engine (`WebSocketCapability` for Supabase Realtime, removing 30-45s latency); parallelized driver data loading; auto-refreshed `state.details` on milestone mutations; conflated 13-table Realtime events; multi-provider fast GPS fix (`fused`/`network`/`gps`) eliminating 20s arrival timeouts; offline token expiry resilience, persistent offline queue retention, and auto-resume tracking across process restarts. |
+| [x] D05 | Truck routes and moving ETA with confirmed truck measurements | #17 | Code verified, bug hunt completed | Done (`JBranch`). Bug hunt & truck restriction audit remediation completed (`docs/D05_BUG_FINDINGS_AND_PLAN.md`, `D05_WP1`–`WP4`). Intermediate HGV corridor waypoints sampling (`DriverDirections.kt`) anchoring external Google Maps to approved truck routes; stage-aware directions button hierarchy; truck physical dimensions, payload utilization, tare/gross vehicle weights, Philippine UVVRP plate number coding, and peak truck ban advisories (`TruckRestrictionRules.kt`, `DriverTruckRestrictionCard`); GeoJSON string/object normalization and verified route plan comparison (`DriverRouteStatus.kt`); live vehicle GPS pin rendering on driver route map (`DriverNavigateOverview.kt`, `ShipmentMap.kt`) with camera stability and freshness expiration guards. |
+| D06 | Website-to-driver messaging, unread/read sync | #24 | Pending testing | Bug hunt audit conducted (`docs/D06_BUG_FINDINGS_AND_PLAN.md`). |
+| C08 | Shipment/delay SMS delivery, opt-out, duplicate prevention | #7 | Pending testing | Physical device/SMS testing required. |
 
 Record results in `docs/TEST-LOG.md` (date, device, pass/fail, notes).
 Bugs found here may change Wave 1/2 priorities.

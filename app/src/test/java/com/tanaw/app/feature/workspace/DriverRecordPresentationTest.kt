@@ -58,4 +58,13 @@ class DriverRecordPresentationTest {
         val data=buildJsonObject {put("profile",obj("id" to "owner","role" to "driver"));put("driver_sections",obj("compliance" to "error"))}
         assertEquals("error",DriverRecordPresentation.section(RecoveryPolicy.workspace(data,"owner")!!,"compliance"))
     }
+    @Test fun historyRetainsReviewShipmentsAndDeliveredRecords() {
+        val live=buildJsonObject {put("shipments",JsonArray(emptyList()));put("driver_deliveries",JsonArray(emptyList()))}
+        val history=buildJsonObject {
+            put("shipments",JsonArray(listOf(obj("id" to "s-review","status" to "review"),obj("id" to "s-active","status" to "in_transit"))))
+            put("driver_deliveries",JsonArray(listOf(obj("id" to "d-review","shipment_id" to "s-review","status" to "delivered"),obj("id" to "d-active","shipment_id" to "s-active","status" to "in_transit"))))
+        }
+        assertEquals(listOf("s-review"),DriverRecordPresentation.shipments(live,history).map {it.value("id")})
+        assertEquals(listOf("d-review"),DriverRecordPresentation.deliveries(live,history).map {it.value("id")})
+    }
 }

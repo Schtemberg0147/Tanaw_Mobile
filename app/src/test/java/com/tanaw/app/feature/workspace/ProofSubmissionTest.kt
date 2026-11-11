@@ -57,4 +57,42 @@ class ProofSubmissionTest {
     @Test fun badIdentityIsRejectedBeforeUpload() {
         assertTrue(runCatching {ProofSubmission.validate("bad","bad","Recipient",byteArrayOf(1),byteArrayOf(2))}.isFailure)
     }
+    @Test fun applyConfirmedDeliveryUpdatesDeliveryShipmentDriverAndTruckStatuses() {
+        val initial=buildJsonObject {
+            put("driver",buildJsonObject {put("id","driver-1");put("status","on_trip")})
+            put("driver_trucks",buildJsonArray {
+                add(buildJsonObject {put("id","truck-1");put("status","in_transit")})
+            })
+            put("shipments",buildJsonArray {
+                add(buildJsonObject {put("id","shipment-1");put("status","in_transit")})
+            })
+            put("driver_deliveries",buildJsonArray {
+                add(buildJsonObject {
+                    put("id","delivery-1")
+                    put("shipment_id","shipment-1")
+                    put("truck_id","truck-1")
+                    put("status","in_transit")
+                })
+            })
+        }
+        val updated=ProofSubmission.applyConfirmedDelivery(
+            data=initial,
+            deliveryId="delivery-1",
+            recipient="  Juan Dela Cruz  ",
+            arrivedAt="2026-10-25T10:15:00Z"
+        )!!
+        val delivery=updated.rows("driver_deliveries").first()
+        val shipment=updated.rows("shipments").first()
+        val truck=updated.rows("driver_trucks").first()
+        val driver=updated.obj("driver")
+
+        assertEquals("delivered",delivery.value("status"))
+        assertEquals("Juan Dela Cruz",delivery.value("recipient_name"))
+        assertEquals("2026-10-25T10:15:00Z",delivery.value("arrived_at"))
+        assertEquals("pending_review",delivery.value("proof_review_status"))
+        assertEquals("review",shipment.value("status"))
+        assertEquals("2026-10-25T10:15:00Z",shipment.value("actual_delivery_at"))
+        assertEquals("available",driver.value("status"))
+        assertEquals("available",truck.value("status"))
+    }
 }

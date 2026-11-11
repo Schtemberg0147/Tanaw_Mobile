@@ -176,8 +176,8 @@ internal val DriverDarkColorScheme = darkColorScheme(
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
     var messageThread by rememberSaveable {mutableStateOf<String?>(null)}
     val shipments=DriverRecordPresentation.shipments(data,state.history)
-    val active=data.rows("shipments").filter {DriverUiRules.isActive(it.value("status"))}
     val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,state.history))))
+    val active=data.rows("shipments").filter {s->DriverUiRules.isActiveAssignment(s,DriverUiRules.delivery(data,s.value("id")))}
     val owner=data.obj("profile").value("id")
     val shipment=shipments.firstOrNull {it.value("id")==selected}
     val delivery=shipment?.let {s->DriverUiRules.delivery(tripData,s.value("id"))}
@@ -249,10 +249,11 @@ internal val DriverDarkColorScheme = darkColorScheme(
                 }
                 selected!=null && tab!="Navigate" && shipment!=null -> {
                     DriverPageHeading("Trip details") {selected=null}
+                    val showComplete=!DriverUiRules.isActive(shipment.value("status")) || delivery?.value("status")=="delivered"
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                        if(!DriverUiRules.isActive(shipment.value("status"))) DriverComplete(shipment,delivery,state.details){selected=null;tab="Home"}
+                        if(showComplete) DriverComplete(shipment,delivery,state.details){selected=null;tab="Home"}
                         else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
-                        if(!DriverUiRules.isActive(shipment.value("status")) && delivery?.value("status")=="delivered")tripActions(shipment,delivery){selected=null;tab="Home"}
+                        if(showComplete && delivery?.value("status")=="delivered")tripActions(shipment,delivery){selected=null;tab="Home"}
                         DriverRecords(shipment,state,onDetails,onProof,onEvidence)
                         delivery?.takeIf{it.value("id").isNotBlank()}?.let {conversation?.invoke(it)}
                     }
@@ -503,24 +504,72 @@ internal val DriverDarkColorScheme = darkColorScheme(
     DriverNavigateOverview(s,d,state,actions,expense,fuel,routePreview)
 }
 
-@Composable internal fun DriverDirectionsButtons(shipment:JsonObject) {
-    val handler=LocalUriHandler.current
-    var error by remember(shipment.value("id")) {mutableStateOf<String?>(null)}
-    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        val trip=DriverDirections.tripUrl(shipment)
-        Button(onClick={
-            error=null
-            try {handler.openUri(requireNotNull(trip))}catch(_:Exception){error="Could not open maps. Check that a browser or maps app is available."}
-        },enabled=trip!=null,modifier=Modifier.fillMaxWidth()) {Text("View pickup-to-destination route")}
-        listOf(false to "Directions to pickup",true to "Directions to destination").forEach {(destination,label)->
-            val url=DriverDirections.url(shipment,destination)
-            OutlinedButton(onClick={
-                error=null
-                try {handler.openUri(requireNotNull(url))}catch(_:Exception){error="Could not open maps. Check that a browser or maps app is available."}
-            },enabled=url!=null,modifier=Modifier.fillMaxWidth()) {Text(label)}
+@Composable internal fun DriverDirectionsButtons(shipment: JsonObject, stage: Int = 0, confirmedGeoJson: String? = null) {
+    val handler = LocalUriHandler.current
+    var error by remember(shipment.value("id")) { mutableStateOf<String?>(null) }
+    val effectiveGeoJson = confirmedGeoJson ?: shipment["route_geometry"]?.takeUnless { it == kotlinx.serialization.json.JsonNull }?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.contentOrNull else it.toString() }
+    val hasWaypoints = remember(effectiveGeoJson) {
+        !DriverDirections.corridorWaypointsParam(effectiveGeoJson).isNullOrBlank()
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val pickupUrl = DriverDirections.url(shipment, false, effectiveGeoJson)
+        val destUrl = DriverDirections.url(shipment, true, effectiveGeoJson)
+        val tripUrl = DriverDirections.tripUrl(shipment, effectiveGeoJson)
+
+        val isPickupPrimary = stage < 4
+        if (isPickupPrimary) {
+            Button(
+                onClick = {
+                    error = null
+                    try { handler.openUri(requireNotNull(pickupUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                },
+                enabled = pickupUrl != null,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Directions to pickup") }
+            OutlinedButton(
+                onClick = {
+                    error = null
+                    try { handler.openUri(requireNotNull(destUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                },
+                enabled = destUrl != null,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Directions to destination") }
+        } else {
+            Button(
+                onClick = {
+                    error = null
+                    try { handler.openUri(requireNotNull(destUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                },
+                enabled = destUrl != null,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Directions to destination") }
+            OutlinedButton(
+                onClick = {
+                    error = null
+                    try { handler.openUri(requireNotNull(pickupUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                },
+                enabled = pickupUrl != null,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Directions to pickup") }
         }
-        Text("Opens external driving directions. Confirm truck restrictions with the office.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+
+        OutlinedButton(
+            onClick = {
+                error = null
+                try { handler.openUri(requireNotNull(tripUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+            },
+            enabled = tripUrl != null,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("View pickup-to-destination route") }
+
+        Text("Opens external driving directions. Confirm truck restrictions with the office.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (hasWaypoints) {
+            Text("Includes office-confirmed HGV corridor waypoints.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (stage >= 4) {
+                Text("If resuming navigation midway, remove past waypoints in Google Maps to avoid backtracking.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -530,9 +579,9 @@ internal val DriverDarkColorScheme = darkColorScheme(
     var showFilter by remember {mutableStateOf(false)}
     val isDark = isSystemInDarkTheme()
     LaunchedEffect(period) {onHistory?.invoke(period,false)}
-    val history=state.history?.takeIf {it.value("period")==period}
+    val history=DriverHistory.reconcileWithLive(data,state.history,period)
+    val recordData=JsonObject((history?:data)+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,history?:state.history))))
     val records=if(onHistory==null)data.rows("shipments").filter {DriverUiRules.inPeriod(it,period)} else history?.rows("shipments").orEmpty()
-    val recordData=history?:data
     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("My Trips",style=MaterialTheme.typography.headlineMedium,color=MaterialTheme.colorScheme.onSurface)
@@ -543,11 +592,11 @@ internal val DriverDarkColorScheme = darkColorScheme(
         }
         DriverCard(accent=MaterialTheme.colorScheme.primary) {
             DriverCaption(if(period=="This month")"MONTHLY TRIPS" else period.uppercase())
-            Text("${history?.value("completed")?:if(onHistory==null)records.count {it.value("status")=="completed"}.toString() else "—"} Completed",fontSize=24.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
+            Text("${history?.value("completed")?:if(onHistory==null)records.count {DriverUiRules.isDriverCompleted(it,DriverUiRules.delivery(recordData,it.value("id")))}.toString() else "—"} Completed",fontSize=24.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("TOTAL ALLOWANCE")
-            Text(history?.let(DriverHistory::allowance)?:if(onHistory==null)DriverUiRules.allowanceTotal(data,records)else "Not loaded",fontSize=24.sp,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+            Text(history?.let(DriverHistory::allowance)?:if(onHistory==null)DriverUiRules.allowanceTotal(recordData,records)else "Not loaded",fontSize=24.sp,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("ON-TIME RATE")
-            Text(history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(data,records)else "Not loaded",fontSize=24.sp,color=if(isDark) StatusGreenDark else Color(0xFF15803D),fontWeight=FontWeight.Bold)
+            Text(history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(recordData,records)else "Not loaded",fontSize=24.sp,color=if(isDark) StatusGreenDark else Color(0xFF15803D),fontWeight=FontWeight.Bold)
         }
         Text(if(onHistory==null)"$period · latest 200 permitted shipment records" else "$period · ${records.size} of ${history?.value("total")?:"—"} trips · totals include the full period",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(onHistory!=null) {
@@ -563,23 +612,25 @@ internal val DriverDarkColorScheme = darkColorScheme(
                 if(filter==f)Box(Modifier.padding(top=10.dp).width(50.dp).height(2.dp).background(MaterialTheme.colorScheme.primary))
             }}
         }
-        val visible=records.filter {DriverUiRules.matches(it.value("status"),filter)}
+        val visible=records.filter {s->DriverUiRules.matches(s,DriverUiRules.delivery(recordData,s.value("id")),filter)}
         if(visible.isEmpty() && !state.historyLoading && state.historyError==null)Text(if(history!=null && records.size<(history.value("total").toIntOrNull()?:0))"No matching trips loaded. Load more to search further." else "No trips in this view.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        visible.forEach {s->Surface(onClick={open(s.value("id"))},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+        visible.forEach {s->
+            val d=DriverUiRules.delivery(recordData,s.value("id"))
+            Surface(onClick={open(s.value("id"))},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column {
                 Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                         Text(s.value("tracking_number"),fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
                         Spacer(Modifier.width(8.dp))
-                        DriverBadge(MobilePresentation.status(s.value("status")))
+                        DriverBadge(DriverUiRules.tripStatusLabel(s,d))
                     }
                     Text("○  ${s.value("pickup_address")}",fontSize=14.sp,color=MaterialTheme.colorScheme.onSurface,maxLines=2,overflow=TextOverflow.Ellipsis)
                     Text("○  ${s.value("dropoff_address")}",fontSize=14.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
                     HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
                     Text(MobilePresentation.time(s.value("scheduled_departure")),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(DriverUiRules.delivery(recordData,s.value("id")).value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
+                    Text(d.value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
                 }
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if(s.value("status")=="completed") (if(isDark) StatusGreenBgDark else Color(0xFFCCF2D9)) else MaterialTheme.colorScheme.outlineVariant))
+                Box(Modifier.fillMaxWidth().height(4.dp).background(if(DriverUiRules.isDriverCompleted(s,d)) (if(isDark) StatusGreenBgDark else Color(0xFFCCF2D9)) else MaterialTheme.colorScheme.outlineVariant))
             }
         }}
         if(onHistory!=null && history!=null && records.size<(history.value("total").toIntOrNull()?:0))
@@ -690,6 +741,28 @@ internal object DriverUiRules {
         return data.rows("driver_trucks").firstOrNull {it.value("assigned_driver_id")==data.obj("driver").value("id")}
     }
     fun isActive(status:String)=status !in listOf("completed","cancelled")
+    fun isCorrectionRequested(delivery:JsonObject?):Boolean =
+        delivery?.value("status")=="delivered" && delivery.value("proof_review_status")=="correction_requested"
+    fun isDriverCompleted(shipment:JsonObject,delivery:JsonObject?=null):Boolean {
+        if(isCorrectionRequested(delivery))return false
+        val shipmentStatus=shipment.value("status")
+        val deliveryStatus=delivery?.value("status").orEmpty()
+        return shipmentStatus in listOf("completed","review","delivered") ||
+            deliveryStatus in listOf("delivered","completed")
+    }
+    fun isActiveAssignment(shipment:JsonObject,delivery:JsonObject?=null):Boolean {
+        val shipmentStatus=shipment.value("status")
+        if(!isActive(shipmentStatus))return false
+        if(isCorrectionRequested(delivery))return true
+        return !isDriverCompleted(shipment,delivery)
+    }
+    fun tripStatusLabel(shipment:JsonObject,delivery:JsonObject?=null):String {
+        val shipmentStatus=shipment.value("status")
+        if(shipmentStatus in listOf("completed","cancelled"))return MobilePresentation.status(shipmentStatus)
+        if(isCorrectionRequested(delivery))return "Correction requested"
+        if(isDriverCompleted(shipment,delivery))return "Delivered"
+        return MobilePresentation.status(shipmentStatus)
+    }
     fun delivery(data:JsonObject,id:String):JsonObject=deliveryRows(data)
         .filter {it.value("shipment_id")==id}.maxByOrNull {it.value("assigned_at")}?:buildJsonObject{}
     fun stage(d:JsonObject)=when {
@@ -700,21 +773,33 @@ internal object DriverUiRules {
         d.value("route_started_at").isNotBlank()->1
         else->0
     }
-    fun matches(status:String,filter:String)=when(filter){"Completed"->status=="completed";"Cancelled"->status=="cancelled";"Ongoing"->isActive(status)||status=="delivered";else->true}
+    fun matches(status:String,filter:String)=when(filter){"Completed"->status in listOf("completed","review","delivered");"Cancelled"->status=="cancelled";"Ongoing","Active"->isActive(status) && status !in listOf("review","delivered");else->true}
+    fun matches(shipment:JsonObject,delivery:JsonObject?,filter:String)=when(filter) {
+        "Completed"->isDriverCompleted(shipment,delivery)
+        "Cancelled"->shipment.value("status")=="cancelled" || delivery?.value("status")=="cancelled"
+        "Ongoing","Active"->isActiveAssignment(shipment,delivery)
+        else->true
+    }
     fun inPeriod(s:JsonObject,period:String,today:LocalDate=LocalDate.now(ZoneId.of("Asia/Manila"))):Boolean {
         if(period=="All records")return true
         val date=runCatching {Instant.parse(s.value("scheduled_departure").ifBlank{s.value("created_at")}).atZone(ZoneId.of("Asia/Manila")).toLocalDate()}.getOrNull()?:return false
         return YearMonth.from(date)==YearMonth.from(if(period=="Last month")today.minusMonths(1)else today)
     }
     fun allowanceTotal(data:JsonObject,records:List<JsonObject>):String {
-        val completed=records.filter {it.value("status")=="completed"}
-        val amounts=completed.map {delivery(data,it.value("id")).value("driver_allowance").toBigDecimalOrNull()}
+        val completed=records.filter {isDriverCompleted(it,delivery(data,it.value("id")))}
+        val amounts=completed.map {
+            val d=delivery(data,it.value("id"))
+            (d.value("driver_allowance").ifBlank{it.value("driver_allowance_php")}).toBigDecimalOrNull()
+        }
         if(amounts.any {it==null})return "Not fully recorded"
         return MobilePresentation.money(amounts.filterNotNull().fold(java.math.BigDecimal.ZERO,java.math.BigDecimal::add).toString())
     }
     fun onTime(data:JsonObject,records:List<JsonObject>):String {
-        val outcomes=records.filter{it.value("status")=="completed"}.mapNotNull {s->runCatching {
-            !Instant.parse(delivery(data,s.value("id")).value("arrived_at")).isAfter(Instant.parse(s.value("estimated_arrival")))
+        val outcomes=records.filter{isDriverCompleted(it,delivery(data,it.value("id")))}.mapNotNull {s->runCatching {
+            val d=delivery(data,s.value("id"))
+            val arrived=d.value("arrived_at").ifBlank{s.value("actual_delivery_at")}
+            val scheduled=s.value("scheduled_arrival").ifBlank{s.value("estimated_arrival")}
+            !Instant.parse(arrived).isAfter(Instant.parse(scheduled))
         }.getOrNull()}
         return if(outcomes.isEmpty())"Not recorded" else "${outcomes.count {it}*100/outcomes.size}% (${outcomes.size} recorded)"
     }

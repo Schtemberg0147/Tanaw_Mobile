@@ -121,6 +121,27 @@ class MobileErrorClassifierTest {
     }
 
     @Test
+    fun cancellationFriendlyMessagesMatchDomainCodes() {
+        val enRouteError = IllegalStateException("DRIVER_ALREADY_EN_ROUTE")
+        assertEquals(
+            "Cannot cancel shipment because the driver is already on the way.",
+            MobileErrorClassifier.friendlyMessage(enRouteError)
+        )
+
+        val reasonError = IllegalArgumentException("CANCELLATION_REASON_REQUIRED")
+        assertEquals(
+            "Please enter a valid cancellation reason.",
+            MobileErrorClassifier.friendlyMessage(reasonError)
+        )
+
+        val notCancellableError = IllegalStateException("SHIPMENT_NOT_CANCELLABLE")
+        assertEquals(
+            "This shipment can no longer be cancelled. Contact the office for assistance.",
+            MobileErrorClassifier.friendlyMessage(notCancellableError)
+        )
+    }
+
+    @Test
     fun nullHandlingIsSafe() {
         assertEquals(ErrorCategory.UNKNOWN, MobileErrorClassifier.classify(null))
         assertFalse(MobileErrorClassifier.isNetworkError(null))

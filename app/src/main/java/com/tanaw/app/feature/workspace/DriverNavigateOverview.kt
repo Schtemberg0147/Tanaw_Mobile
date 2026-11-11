@@ -16,6 +16,8 @@ import kotlinx.serialization.json.*
 import org.maplibre.android.geometry.LatLng
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 
 @Composable internal fun DriverTripSection(title:String,subtitle:String?=null,content:@Composable ColumnScope.()->Unit) {
     Surface(Modifier.fillMaxWidth(),color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
@@ -34,15 +36,61 @@ internal fun driverStopPins(s:JsonObject):List<Pair<String,LatLng>> =
         if(lat!=null && lng!=null && lat.isFinite() && lng.isFinite() && lat in -90.0..90.0 && lng in -180.0..180.0)label to LatLng(lat,lng) else null
     }
 
+internal fun driverMapPins(s: JsonObject, details: JsonObject?, now: Instant = Instant.now()): List<Pair<String, LatLng>> {
+    val stops = driverStopPins(s)
+    val matchDetails = details?.takeIf { it.value("shipment_id").isBlank() || it.value("shipment_id") == s.value("id") }
+    val pos = matchDetails?.obj("position") ?: return stops
+    val lat = pos.value("latitude").toDoubleOrNull()
+    val lng = pos.value("longitude").toDoubleOrNull()
+    if (lat == null || lng == null || !lat.isFinite() || !lng.isFinite() || lat !in -90.0..90.0 || lng !in -180.0..180.0) {
+        return stops
+    }
+    val freshness = TrackingFreshnessRules.evaluatePositionFreshness(
+        pos.value("recorded_at"),
+        pos.value("accuracy_m"),
+        now
+    )
+    if (freshness.status !in listOf(PositionFreshnessStatus.FRESH, PositionFreshnessStatus.RECENT)) {
+        return stops
+    }
+    if (stops.isNotEmpty()) {
+        val nearStop = stops.any { (_, stop) ->
+            kotlin.math.abs(stop.latitude - lat) <= 5.0 && kotlin.math.abs(stop.longitude - lng) <= 5.0
+        }
+        if (!nearStop) return stops
+    } else {
+        if (lat !in 4.5..21.5 || lng !in 116.0..127.0) return stops
+    }
+    return stops + ("Vehicle" to LatLng(lat, lng))
+}
+
+internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (element) {
+    null, is JsonNull -> null
+    is JsonPrimitive -> element.contentOrNull?.trim()?.takeIf {
+        it.startsWith("{") && it.endsWith("}") && it.contains("\"type\"")
+    }
+    is JsonObject -> element.takeIf { it.isNotEmpty() && it.containsKey("type") }?.toString()
+    else -> null
+}
+
 @Composable internal fun DriverNavigateOverview(s:JsonObject,d:JsonObject,state:MobileState,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit,fuel:(()->Unit)?=null,routePreview:(suspend (String,LatLng,LatLng)->RoutePreview)?=null) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15.seconds)
+            now = Instant.now()
+        }
+    }
     val stage=DriverUiRules.stage(d)
     val headings=listOf("Ready to start route","Heading to Pick-up","Waiting for Customer","Waiting to Load Cargo","Heading to Destination","Delivery submitted")
     val next=listOf("Start your route when you are ready to leave.","Go to the pickup, then confirm your arrival.","Confirm when the customer is present.","Confirm when all cargo has been loaded.","Go to the destination, then submit delivery proof.","The office will review your delivery proof.")
     var mapOpen by rememberSaveable(s.value("id")){mutableStateOf(false)}
     var progressOpen by rememberSaveable(d.value("id")){mutableStateOf(false)}
     val points=driverStopPins(s)
+    val mapPoints=driverMapPins(s,state.details,now)
     val pinIdentity=points.map{Triple(it.first,it.second.latitude,it.second.longitude)}
-    val savedGeometry=s["route_geometry"]?.takeUnless{it==JsonNull}?.toString()
+    val verifiedRouting = state.details?.takeIf { it.value("shipment_id") == s.value("id") }?.obj("routing")?.let { DriverRouteStatus.forAssignment(it, s, d) }
+    val savedGeometry = normalizeRouteGeoJson(s["route_geometry"]) ?: verifiedRouting?.takeIf { it["route_verified"] == JsonPrimitive(true) }?.obj("plan")?.let { normalizeRouteGeoJson(it["geometry"]) }
     var preview by remember(s.value("id"),d.value("id"),d.value("driver_id"),pinIdentity){mutableStateOf<RoutePreview?>(null)}
     var previewError by remember(s.value("id"),d.value("id"),pinIdentity){mutableStateOf<String?>(null)}
     var previewLoading by remember {mutableStateOf(false)}
@@ -87,7 +135,7 @@ internal fun driverStopPins(s:JsonObject):List<Pair<String,LatLng>> =
             Text(s.value("pickup_address").ifBlank{"Not recorded"},fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
             Text("DESTINATION",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text(s.value("dropoff_address").ifBlank{"Not recorded"},fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
-            DriverDirectionsButtons(s)
+            DriverDirectionsButtons(s,stage,savedGeometry)
             val routing=state.details?.takeIf{it.value("shipment_id")==s.value("id")}?.obj("routing")
                 ?: if(state.detailLoading && !state.offline) buildJsonObject{put("loading",true)} else buildJsonObject{}
             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
@@ -95,6 +143,16 @@ internal fun driverStopPins(s:JsonObject):List<Pair<String,LatLng>> =
             if(s.value("scheduled_departure").isNotBlank())Text("Scheduled departure: ${MobilePresentation.time(s.value("scheduled_departure"))}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Office planned arrival: ${MobilePresentation.time(s.value("estimated_arrival"))}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Recorded distance: ${MobilePresentation.number(s.value("distance_km"),"km")} · duration: ${MobilePresentation.number(s.value("route_duration_minutes"),"min")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(s.value("weight_kg").isNotBlank())Text("Cargo weight: ${MobilePresentation.number(s.value("weight_kg"),"kg")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            val truck = DriverUiRules.truck(state.data ?: buildJsonObject {})
+            val truckSpec = TruckRestrictionRules.evaluateTruckSpecs(truck, s, verifiedRouting?.obj("plan"))
+            val banAdvisory = TruckRestrictionRules.evaluateBanAdvisory(
+                truckSpec.plateNumber,
+                s.value("scheduled_departure"),
+                s.value("estimated_arrival"),
+                now
+            )
+            DriverTruckRestrictionCard(truckSpec, banAdvisory)
             if(points.isEmpty())Text("This assignment has no saved map pins. Use address directions and confirm the entrance with the office.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             else {
                 OutlinedButton(onClick={mapOpen=!mapOpen},modifier=Modifier.fillMaxWidth()){Text(if(mapOpen)"Hide route map" else "Show route map")}
@@ -107,9 +165,23 @@ internal fun driverStopPins(s:JsonObject):List<Pair<String,LatLng>> =
                         if(previewError!=null)OutlinedButton(onClick={previewRevision++},enabled=!state.offline && !previewLoading){Text("Retry road preview")}
                         preview?.let{Text("Preview road distance: ${it.distanceKm} km",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                     }
-                    ShipmentMap(points,savedGeometry?:preview?.geometry)
-                    Text("Saved pickup and destination locations. Vehicle GPS is not shown on this preview.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    if(savedGeometry==null && preview==null && !previewLoading)Text("Showing saved stops only until a road preview is available.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    ShipmentMap(mapPoints,savedGeometry?:preview?.geometry)
+                    Text(
+                        if(mapPoints.any{it.first=="Vehicle"})"Saved pickup, destination, and your fresh vehicle GPS position."
+                        else "Saved pickup and destination locations. Vehicle GPS is not shown on this preview.",
+                        fontSize=12.sp,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if(savedGeometry==null && preview==null && !previewLoading) {
+                        Text(
+                            if(mapPoints.any{it.first=="Vehicle"})
+                                "Showing saved stops and your vehicle GPS until a road preview is available."
+                            else
+                                "Showing saved stops only until a road preview is available.",
+                            fontSize=12.sp,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

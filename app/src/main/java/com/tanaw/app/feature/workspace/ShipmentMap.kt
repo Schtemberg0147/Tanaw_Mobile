@@ -134,13 +134,19 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
    }.toString()
    style.getSourceAs<GeoJsonSource>("shipment-stops")?.setGeoJson(pins) ?: style.addSource(GeoJsonSource("shipment-stops",pins))
    if(style.getLayer("shipment-stop-pins")==null)style.addLayer(SymbolLayer("shipment-stop-pins","shipment-stops").withProperties(iconImage(Expression.get("icon")),iconAnchor("bottom"),iconAllowOverlap(true),iconIgnorePlacement(true)))
+   val isVehicleLabel:(String)->Boolean={it=="Vehicle" || it=="Last recorded vehicle position"}
+   val stopSignature=signature.filter{!isVehicleLabel(it.first)}
+   val oldStopSignature=old?.filter{!isVehicleLabel(it.first)}
+   val isInitialOrStopsChanged=old.isNullOrEmpty() || oldStopSignature!=stopSignature
    val moved=signature.lastOrNull{it !in old.orEmpty()}
    view.doOnLayout {
     if(!attached[0])return@doOnLayout
-    if(callback==null && locations.map{it.second}.distinct().size>=2) {
-     val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(locations.map{it.second}).build()
-     map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
-    } else if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
+    if(isInitialOrStopsChanged) {
+     if(callback==null && locations.map{it.second}.distinct().size>=2) {
+      val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(locations.map{it.second}).build()
+      map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
+     } else if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
+    }
    }
    previous=signature
   }

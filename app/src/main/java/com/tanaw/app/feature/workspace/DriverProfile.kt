@@ -136,6 +136,21 @@ import kotlinx.serialization.json.*
                             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                 Text(truck.value("plate_number").ifBlank {"Plate not recorded"},color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.Bold)
                                 Text(truck.value("model").ifBlank {"Model not recorded"},style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                                val spec = TruckRestrictionRules.evaluateTruckSpecs(truck)
+                                Text(
+                                    TruckRestrictionRules.formatSpecLine(spec),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                val coding = TruckRestrictionRules.codingDayForPlate(truck.value("plate_number"))
+                                if (coding != null) {
+                                    val dayName = coding.second.name.lowercase(java.util.Locale.US).replaceFirstChar { it.titlecase(java.util.Locale.US) }
+                                    Text(
+                                        "Number coding day: $dayName (plate ends in ${coding.first})",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

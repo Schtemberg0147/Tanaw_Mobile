@@ -50,11 +50,12 @@ internal object DriverRecordPresentation {
         }
         return MobilePresentation.money(total.toPlainString())
     }
+    private val HISTORICAL_STATUSES = setOf("completed","cancelled","review","delivered")
     fun shipments(data:JsonObject,history:JsonObject?):List<JsonObject> =
-        (data.rows("shipments")+history?.rows("shipments").orEmpty().filter {it.value("status") in listOf("completed","cancelled")}).distinctBy{it.value("id")}
+        (data.rows("shipments")+history?.rows("shipments").orEmpty().filter {it.value("status") in HISTORICAL_STATUSES}).distinctBy{it.value("id")}
     fun deliveries(data:JsonObject,history:JsonObject?):List<JsonObject> {
         val liveIds=data.rows("shipments").map{it.value("id")}.toSet()
-        val terminalIds=history?.rows("shipments").orEmpty().filter{it.value("status") in listOf("completed","cancelled")}.map{it.value("id")}.toSet()
+        val terminalIds=history?.rows("shipments").orEmpty().filter{it.value("status") in HISTORICAL_STATUSES}.map{it.value("id")}.toSet()
         val live=DriverUiRules.deliveryRows(data)
         return (live+history?.rows("driver_deliveries").orEmpty().filter{it.value("shipment_id") !in liveIds && it.value("shipment_id") in terminalIds}).distinctBy{it.value("id")}
     }

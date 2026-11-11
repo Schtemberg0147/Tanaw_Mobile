@@ -68,4 +68,27 @@ class DriverUiRulesTest {
         }
         assertEquals("trip",DriverUiRules.truck(data)?.value("id"))
     }
+    @Test fun deliveredAndReviewShipmentsCountAsDriverCompletedUnlessCorrectionRequested() {
+        val reviewShipment=obj("id" to "s1","status" to "review","driver_allowance_php" to "500","scheduled_arrival" to "2026-10-25T10:00:00Z")
+        val delivered=obj("id" to "d1","shipment_id" to "s1","status" to "delivered","proof_review_status" to "pending_review","arrived_at" to "2026-10-25T09:30:00Z")
+        val correctionRequested=obj("id" to "d1","shipment_id" to "s1","status" to "delivered","proof_review_status" to "correction_requested","arrived_at" to "2026-10-25T09:30:00Z")
+
+        assertTrue(DriverUiRules.isDriverCompleted(reviewShipment,delivered))
+        assertFalse(DriverUiRules.isActiveAssignment(reviewShipment,delivered))
+        assertTrue(DriverUiRules.matches(reviewShipment,delivered,"Completed"))
+        assertFalse(DriverUiRules.matches(reviewShipment,delivered,"Active"))
+        assertFalse(DriverUiRules.matches(reviewShipment,delivered,"Ongoing"))
+        assertEquals("Delivered",DriverUiRules.tripStatusLabel(reviewShipment,delivered))
+
+        assertFalse(DriverUiRules.isDriverCompleted(reviewShipment,correctionRequested))
+        assertTrue(DriverUiRules.isActiveAssignment(reviewShipment,correctionRequested))
+        assertFalse(DriverUiRules.matches(reviewShipment,correctionRequested,"Completed"))
+        assertTrue(DriverUiRules.matches(reviewShipment,correctionRequested,"Active"))
+        assertTrue(DriverUiRules.matches(reviewShipment,correctionRequested,"Ongoing"))
+        assertEquals("Correction requested",DriverUiRules.tripStatusLabel(reviewShipment,correctionRequested))
+
+        val data=buildJsonObject {put("driver_deliveries",buildJsonArray {add(delivered)})}
+        assertEquals(MobilePresentation.money("500"),DriverUiRules.allowanceTotal(data,listOf(reviewShipment)))
+        assertEquals("100% (1 recorded)",DriverUiRules.onTime(data,listOf(reviewShipment)))
+    }
 }

@@ -264,7 +264,8 @@ import kotlinx.coroutines.withContext
         dismissButton={TextButton(onClick={confirmDiscard=false}){Text("Keep draft")}})
     val isDark = isSystemInDarkTheme()
     if(submitted) {
-        DriverTransaction("Delivery proof submitted",false,close,"BACK TO HOME",true,{close();onBackHome()}) {
+        val exitSubmitted={close();onBackHome()}
+        DriverTransaction("Delivery proof submitted",false,exitSubmitted,"BACK TO HOME",true,exitSubmitted) {
             Surface(
                 color=if(isDark)MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
                 shape=RoundedCornerShape(4.dp),
@@ -374,9 +375,17 @@ import kotlinx.coroutines.withContext
         }
         Box(Modifier.fillMaxWidth().height(160.dp).background(if(isDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White).border(1.dp,MaterialTheme.colorScheme.outlineVariant,RoundedCornerShape(4.dp))) {
             if(draft.strokes.isEmpty() && current.isEmpty())Text("Tap and draw to sign",Modifier.align(Alignment.Center),fontSize=14.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            fun commitStroke(points:List<Offset>) {
+                if(points.size>1) {
+                    val w=canvasSize.width.coerceAtLeast(1)
+                    val h=canvasSize.height.coerceAtLeast(1)
+                    persist(draft.changed().copy(strokes=draft.strokes+listOf(points.map {SignaturePoint((it.x/w).coerceIn(0f,1f),(it.y/h).coerceIn(0f,1f))})))
+                }
+            }
             Canvas(Modifier.fillMaxSize().testTag("proof_signature_canvas").onSizeChanged{canvasSize=it}.pointerInput(editable) {
                 if(editable)detectDragGestures(onDragStart={current=listOf(it)},
-                    onDragEnd={if(current.size>1)persist(draft.changed().copy(strokes=draft.strokes+listOf(current.map {SignaturePoint((it.x/canvasSize.width.coerceAtLeast(1)).coerceIn(0f,1f),(it.y/canvasSize.height.coerceAtLeast(1)).coerceIn(0f,1f))})));current=emptyList()},onDragCancel={current=emptyList()}) {change,_->change.consume();if(current.size<2000)current=current+change.position}
+                    onDragEnd={val pts=current;current=emptyList();commitStroke(pts)},
+                    onDragCancel={val pts=current;current=emptyList();commitStroke(pts)}) {change,_->change.consume();if(current.size<2000)current=current+change.position}
             }) {
                 val strokeColor = if(isDark) Color.White else Color.Black
                 (draft.strokes.map{line->line.map{Offset(it.x*size.width,it.y*size.height)}}+listOf(current)).forEach {line->line.zipWithNext().forEach {(a,b)->drawLine(strokeColor,a,b,4f)}}
