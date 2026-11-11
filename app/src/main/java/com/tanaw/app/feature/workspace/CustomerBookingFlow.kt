@@ -725,46 +725,12 @@ internal fun CustomerBookingHomeContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Top Header: TANAW Logo (dark-mode aware) + Notification Bell + Refresh
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    TanawBrandLogo(modifier = Modifier.size(40.dp))
-                    Text(
-                        text = "TANAW",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onRefresh, enabled = !busy) {
-                        Text("Refresh")
-                    }
-                    IconButton(onClick = onOpenAlerts) {
-                        BadgedBox(
-                            badge = {
-                                if (unreadCount > 0) {
-                                    Badge(containerColor = MaterialTheme.colorScheme.secondary) {
-                                        Text(unreadCount.coerceAtMost(99).toString())
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Notifications,
-                                contentDescription = stringResource(R.string.notifications),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                    }
-                }
-            }
+            CustomerTopBar(
+                unreadAlertsCount = unreadCount,
+                isBusy = busy,
+                onRefresh = onRefresh,
+                onOpenAlerts = onOpenAlerts,
+            )
 
             if (busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

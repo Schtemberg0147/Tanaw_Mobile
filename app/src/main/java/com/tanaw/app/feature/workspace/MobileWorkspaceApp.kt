@@ -162,12 +162,13 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     val isCustomerHome = role == "customer" && tab == "Home" && detail == null
     val isCustomerProfile = role == "customer" && tab == "Profile" && detail == null
     BackHandler(detail!=null) { detail=null }
+    val unreadAlertsCount = remember(data) { data.rows("notifications").count { it.value("read_at").isBlank() } }
     Scaffold(containerColor=MaterialTheme.colorScheme.background,bottomBar={
         if (!(isCustomerHome && fullScreenBookingStep)) {
             NavigationBar(containerColor=MaterialTheme.colorScheme.surface) {
                 val icons=listOf(Icons.Outlined.Home,Icons.Outlined.LocalShipping,Icons.Outlined.History,Icons.Outlined.Notifications,Icons.Outlined.Person)
                 listOf("Home","Active","History","Alerts","Profile").forEachIndexed { index,label ->
-                    val unreadAlerts = if (label == "Alerts") data.rows("notifications").count { it.value("read_at").isBlank() } else 0
+                    val unreadAlerts = if (label == "Alerts") unreadAlertsCount else 0
                     NavigationBarItem(
                         selected=tab==label,
                         onClick={tab=label;detail=null},
@@ -217,13 +218,12 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
             }
         } else {
         Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
-                    TanawBrandLogo(modifier=Modifier.size(36.dp))
-                    Column { Text("TANAW",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);SupportingText("${role.replaceFirstChar(Char::uppercase)} workspace") }
-                }
-                TextButton(onClick=vm::refresh,enabled=!state.busy) { Text("Refresh") }
-            }
+            CustomerTopBar(
+                unreadAlertsCount = unreadAlertsCount,
+                isBusy = state.busy,
+                onRefresh = vm::refresh,
+                onOpenAlerts = { tab = "Alerts"; detail = null },
+            )
             Notices(state)
             if(detail!=null) {
                 TextButton(onClick={detail=null}) { Text("← Back") }
