@@ -12,7 +12,10 @@ class PhoneSignupUiTest {
  @Test fun phoneSignupRecordsContactDetailsAndExplainsSms() {
   compose.setContent {TanawTheme {CreateAccountScreen(onVerifyAndContinue={_,_,_,_,_,_->},onSignIn={},phoneSignup=true)}}
   compose.onNodeWithText("EMAIL ADDRESS").assertExists()
-  compose.onNodeWithText("LOCATION ADDRESS").assertExists()
+  compose.onNodeWithText("STREET / BUILDING ADDRESS").assertExists()
+  compose.onNodeWithText("BARANGAY").assertExists()
+  compose.onNodeWithText("CITY / MUNICIPALITY").assertExists()
+  compose.onNodeWithText("PROVINCE").assertExists()
   compose.onNodeWithText("CONTACT NUMBER").assertExists()
   compose.onNodeWithText("We will text a verification code to your contact number.").assertExists()
  }

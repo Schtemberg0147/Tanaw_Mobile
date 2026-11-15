@@ -65,7 +65,7 @@ object TrackingFreshnessRules {
             )
         }
 
-        val recordedInstant = runCatching { Instant.parse(recordedAt) }.getOrNull()
+        val recordedInstant = MobilePresentation.parseInstant(recordedAt)
         if (recordedInstant == null) {
             return PositionFreshness(
                 status = PositionFreshnessStatus.UNAVAILABLE,

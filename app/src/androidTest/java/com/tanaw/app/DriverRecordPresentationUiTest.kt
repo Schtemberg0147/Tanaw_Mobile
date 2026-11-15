@@ -26,7 +26,7 @@ class DriverRecordPresentationUiTest {
         put("driver",obj("id" to "driver","status" to "available"))
         put("driver_trucks",JsonArray(emptyList()))
         put("compliance",JsonArray(emptyList()))
-        put("shipments",JsonArray(ids.map {obj("id" to it,"tracking_number" to "REF-$it","status" to status,"created_at" to "2026-10-28T00:00:00Z")}))
+        put("shipments",JsonArray(ids.map {obj("id" to it,"tracking_number" to "REF-$it","status" to status,"created_at" to java.time.Instant.now().toString())}))
         put("driver_deliveries",JsonArray(ids.map {obj("id" to "delivery-$it","shipment_id" to it,"status" to if(status=="completed")"delivered" else status)}))
     }
     @Composable private fun RecordScreen(data:JsonObject,state:MobileState=MobileState(),details:(String)->Unit={},refresh:()->Unit={}) {

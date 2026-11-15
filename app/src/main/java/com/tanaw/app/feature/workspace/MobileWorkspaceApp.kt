@@ -432,7 +432,8 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     Text("Quoted amount: ${MobilePresentation.money(s.value("quoted_amount"))}")
     Text("Final amount: ${MobilePresentation.money(s.value("final_amount"))}")
     SupportingText("Amounts in PHP · Philippine time")
-    val deliveries=data.rows("deliveries").filter{it.value("shipment_id")==s.value("id")}
+    val shipmentDeliveries = data.rows("deliveries").filter { it.value("shipment_id") == s.value("id") }
+    val deliveries = ShipmentDeliveryRules.displayDeliveries(s, shipmentDeliveries)
     if(deliveries.isEmpty()) Text("No delivery assignment has been recorded.")
     deliveries.forEach { d ->
         Text("Delivery: ${d.value("status").replace('_',' ')}",fontWeight=FontWeight.Bold)
@@ -442,7 +443,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     if(role=="customer") {
         CustomerCancellationSection(
             shipment = s,
-            deliveries = deliveries,
+            deliveries = shipmentDeliveries,
             state = state,
             onCancelShipment = { shipmentId, reason, onDone ->
                 vm.cancelShipment(shipmentId, reason, onDone)
@@ -455,7 +456,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     if(state.detailLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
     if(detail!=null) {
         val position=detail.obj("position")
-        val activeDelivery=deliveries.firstOrNull { it.value("status") in listOf("assigned","loading","in_transit") } ?: deliveries.firstOrNull()
+        val activeDelivery=ShipmentDeliveryRules.primaryDelivery(deliveries)
         val routing=detail.obj("routing").takeIf { it.isNotEmpty() }
         val freshness=TrackingFreshnessRules.evaluatePositionFreshness(position.value("recorded_at"),position.value("accuracy_m"),now)
         val eta=TrackingFreshnessRules.customerEtaSummary(s,activeDelivery,routing,freshness,state.offline,now)

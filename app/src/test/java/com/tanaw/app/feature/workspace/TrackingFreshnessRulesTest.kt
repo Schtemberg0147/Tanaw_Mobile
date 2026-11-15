@@ -195,4 +195,13 @@ class TrackingFreshnessRulesTest {
         assertEquals("Live route ETA unavailable", result.liveEta)
         assertEquals("Live route ETA unavailable · relying on scheduled arrival", result.liveEtaDetail)
     }
+
+    @Test
+    fun evaluatePositionFreshnessSupportsOffsetTimestamp() {
+        val thirtySecAgoOffset = "2026-10-28T19:59:30+08:00"
+        val result = TrackingFreshnessRules.evaluatePositionFreshness(thirtySecAgoOffset, "12", now)
+        assertEquals(PositionFreshnessStatus.FRESH, result.status)
+        assertEquals(30L, result.ageSeconds)
+        assertEquals("Updated 30s ago", result.relativeText)
+    }
 }
