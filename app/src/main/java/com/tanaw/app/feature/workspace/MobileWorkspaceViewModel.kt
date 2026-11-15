@@ -129,6 +129,8 @@ class MobileWorkspaceViewModel @Inject constructor(
     private var customerShipmentsVersion = 0
     private var notificationsJob: Job? = null
     private var notificationsVersion = 0
+    private var customerAlertsScreenOpen = false
+    private var markNotificationsReadJob: Job? = null
     private var pendingBackgroundRefresh = false
     private val refreshMutex = Mutex()
     private var liveSubscribedUid: String? = null
@@ -143,6 +145,9 @@ class MobileWorkspaceViewModel @Inject constructor(
         customerShipmentsJob = null
         notificationsJob?.cancel()
         notificationsJob = null
+        markNotificationsReadJob?.cancel()
+        markNotificationsReadJob = null
+        customerAlertsScreenOpen = false
         pendingBackgroundRefresh = false
         liveSubscribedUid = null
         if (stopTracking) {
@@ -355,7 +360,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                             val stopTracking = WorkspaceSyncRules.shouldStopTrackingOnUserTransition(loadedUser, id)
                             stopLive(stopTracking = stopTracking)
                             generation++
-                            mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null) }
+                            mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null) }
                             loadedUser = id
                             if(id!=null){restoreWorkspace(id);startLive(id)}
                         }
@@ -369,7 +374,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                         loadedUser?.let {recoveryStore.clear(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
                         mutable.update { if(changing)MobileState(page="login",message="Sign in again to manage your password.") else
-                            it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
+                            it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
                     }
                     is SessionStatus.RefreshFailure -> {
                         stopLive(stopTracking = false)
@@ -497,12 +502,38 @@ class MobileWorkspaceViewModel @Inject constructor(
             data = JsonObject(data + smsPrefs)
         }
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
+            val role = data.obj("profile").value("role")
+            var autoMarkedIso: String? = null
+            if (NotificationReadRules.shouldAutoMarkRead(customerAlertsScreenOpen, role, isOffline = false) &&
+                NotificationReadRules.hasUnread(data.rows("notifications"))
+            ) {
+                val nowIso = java.time.Instant.now().toString()
+                val marked = try {
+                    client.from("notifications").update(
+                        buildJsonObject { put("read_at", nowIso) }
+                    ) {
+                        filter {
+                            eq("user_id", id)
+                            exact("read_at", null)
+                        }
+                    }
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                if (marked) {
+                    autoMarkedIso = nowIso
+                    data = NotificationReadRules.markAllReadInData(data, nowIso) ?: data
+                }
+            }
             val savedAt=java.time.Instant.now().toString()
             val snapshot=RecoveryPolicy.workspace(data,id)
             val cached=snapshot==null || recoveryStore.writeAsync(id,buildJsonObject {put("created",System.currentTimeMillis());put("saved_at",savedAt);put("data",snapshot)})
             val pending=pendingPasswordChange
             val user=client.auth.currentUserOrNull()
-            val restoreChange=pending!=null && user!=null && PasswordChangePolicy.isAllowedRole(data.obj("profile").value("role")) && PasswordChangePolicy.canRestore(pending,id,user.phone,user.email)
+            val restoreChange=pending!=null && user!=null && PasswordChangePolicy.isAllowedRole(role) && PasswordChangePolicy.canRestore(pending,id,user.phone,user.email)
             if(pending!=null) {
                 pendingPasswordChange=null
                 if(restoreChange)recoveryPhone=MobileValidation.phone(pending.value("target")) else clearPasswordChallenge()
@@ -513,7 +544,15 @@ class MobileWorkspaceViewModel @Inject constructor(
                 recoveryStore.clear("phone_change_challenge")
             }
             mutable.update { state ->
-                var s = state.copy(page="workspace",data=data,error=null,offline=false,lastSync=savedAt,message=if(cached)state.message else "Offline copy could not be saved on this device.",
+                val basePage = autoMarkedIso?.let { iso ->
+                    state.notificationsPage?.let { NotificationReadRules.markRowsRead(it, iso) }
+                } ?: state.notificationsPage
+                val syncedNotificationsPage = if (role != "driver") {
+                    NotificationReadRules.syncNotificationsPage(basePage, data.rows("notifications"))
+                } else {
+                    state.notificationsPage
+                }
+                var s = state.copy(page="workspace",data=data,notificationsPage=syncedNotificationsPage,error=null,offline=false,lastSync=savedAt,message=if(cached)state.message else "Offline copy could not be saved on this device.",
                     passwordChangeOwner=if(restoreChange)id else state.passwordChangeOwner,passwordChangeCodeSent=restoreChange || state.passwordChangeCodeSent,
                     email=if(restoreChange)pending!!.value("target") else state.email)
                 if (restorePhoneChange && phoneChallenge != null) {
@@ -684,6 +723,64 @@ class MobileWorkspaceViewModel @Inject constructor(
             }
         }
     }
+    fun onCustomerAlertsOpened() {
+        val role = mutable.value.data?.obj("profile")?.value("role").orEmpty()
+        if (role == "driver") return
+        customerAlertsScreenOpen = true
+        val uid = client.auth.currentUserOrNull()?.id ?: return
+        val accountVersion = generation
+        markNotificationsReadJob?.cancel()
+        markNotificationsReadJob = viewModelScope.launch {
+            if (!mutable.value.offline) {
+                val nowIso = java.time.Instant.now().toString()
+                mutable.update { state ->
+                    state.copy(
+                        data = NotificationReadRules.markAllReadInData(state.data, nowIso) ?: state.data,
+                        notificationsPage = state.notificationsPage?.let { NotificationReadRules.markRowsRead(it, nowIso) }
+                    )
+                }
+                var updatedOnServer = false
+                try {
+                    client.from("notifications").update(
+                        buildJsonObject { put("read_at", nowIso) }
+                    ) {
+                        filter {
+                            eq("user_id", uid)
+                            exact("read_at", null)
+                        }
+                    }
+                    updatedOnServer = true
+                } catch (cancelled: CancellationException) {
+                    if (!updatedOnServer && accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
+                        mutable.update { state ->
+                            state.copy(
+                                data = NotificationReadRules.revertOptimisticReadInData(state.data, nowIso) ?: state.data,
+                                notificationsPage = state.notificationsPage?.let { NotificationReadRules.revertOptimisticRead(it, nowIso) }
+                            )
+                        }
+                    }
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
+                        mutable.update { state ->
+                            state.copy(
+                                data = NotificationReadRules.revertOptimisticReadInData(state.data, nowIso) ?: state.data,
+                                notificationsPage = state.notificationsPage?.let { NotificationReadRules.revertOptimisticRead(it, nowIso) }
+                            )
+                        }
+                    }
+                }
+            }
+            if (customerAlertsScreenOpen && accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
+                loadNotifications(loadMore = false)
+            }
+        }
+    }
+
+    fun onCustomerAlertsClosed() {
+        customerAlertsScreenOpen = false
+    }
+
     fun loadNotifications(loadMore: Boolean = false) {
         val uid = client.auth.currentUserOrNull()?.id ?: return
         val version = ++notificationsVersion
@@ -728,11 +825,40 @@ class MobileWorkspaceViewModel @Inject constructor(
                     range(offset.toLong(), (offset + pageSize - 1).toLong())
                 }.decodeAs<JsonArray>().filterIsInstance<JsonObject>()
 
+                val role = mutable.value.data?.obj("profile")?.value("role").orEmpty()
+                var effectiveRows = rows
+                var autoMarkedIso: String? = null
+                if (NotificationReadRules.shouldAutoMarkRead(customerAlertsScreenOpen, role, mutable.value.offline) &&
+                    NotificationReadRules.hasUnread(rows)
+                ) {
+                    val nowIso = java.time.Instant.now().toString()
+                    val marked = try {
+                        client.from("notifications").update(
+                            buildJsonObject { put("read_at", nowIso) }
+                        ) {
+                            filter {
+                                eq("user_id", uid)
+                                exact("read_at", null)
+                            }
+                        }
+                        true
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (marked) {
+                        effectiveRows = NotificationReadRules.markRowsRead(rows, nowIso)
+                        autoMarkedIso = nowIso
+                    }
+                }
+
                 if (version == notificationsVersion && accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
-                    val merged = CustomerPaginationRules.mergePage(previousList, rows, reset = !loadMore)
+                    val merged = CustomerPaginationRules.mergePage(previousList, effectiveRows, reset = !loadMore)
                     val hasMore = CustomerPaginationRules.hasMore(rows.size, pageSize)
-                    mutable.update {
-                        it.copy(
+                    mutable.update { state ->
+                        state.copy(
+                            data = autoMarkedIso?.let { NotificationReadRules.markAllReadInData(state.data, it) } ?: state.data,
                             notificationsPage = merged,
                             notificationsLoading = false,
                             notificationsHasMore = hasMore,

@@ -37,6 +37,9 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @Composable
 fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
@@ -297,8 +300,23 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     }
                 }
                 "Alerts" -> {
-                    LaunchedEffect(Unit) {
-                        if (state.notificationsPage == null) vm.loadNotifications(loadMore = false)
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            when (event) {
+                                Lifecycle.Event.ON_RESUME -> vm.onCustomerAlertsOpened()
+                                Lifecycle.Event.ON_PAUSE -> vm.onCustomerAlertsClosed()
+                                else -> Unit
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                            vm.onCustomerAlertsOpened()
+                        }
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                            vm.onCustomerAlertsClosed()
+                        }
                     }
                     Text("Notifications",style=MaterialTheme.typography.headlineSmall)
                     val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
@@ -314,7 +332,6 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                         WorkspaceCard {
                             if(n.value("read_at").isBlank()) StatusBadge("unread")
                             Text(n.value("title"),fontWeight=FontWeight.SemiBold);SupportingText(n.value("body"));SupportingText(MobilePresentation.time(n.value("created_at")))
-                            if(n.value("read_at").isBlank()) TextButton(onClick={vm.markRead(n.value("id"))},enabled=!state.busy) {Text("Mark read")}
                             if(allShipments.any{it.value("id")==n.value("shipment_id")}) TextButton(onClick={detail=n.value("shipment_id")}) {Text("Open shipment")}
                         }
                     }
