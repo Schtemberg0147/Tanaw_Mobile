@@ -43,7 +43,8 @@ class PublicNavigationTest {
         val token = "abcdef1234567890abcdef1234567890"
         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("tanaw://auth/callback?token_hash=$token&type=recovery"))
         compose.activityRule.scenario.onActivity { activity ->
-            activity.onNewIntent(intent)
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .callActivityOnNewIntent(activity, intent)
         }
         compose.waitUntil(10000) {
             compose.onAllNodesWithText("Recovery link opened", substring = true).fetchSemanticsNodes().isNotEmpty()
