@@ -135,7 +135,7 @@ internal val DriverDarkColorScheme = darkColorScheme(
 @Composable fun DriverWorkspace(vm:MobileWorkspaceViewModel,state:MobileState,data:JsonObject) {
     DriverTheme {
         DriverWorkspaceScreen(state,data,vm::refresh,vm::logout,vm::openPasswordChange,vm::markRead,vm::loadDetails,
-            {s,d,home->DriverTripActions(d,state,data,vm,reference=s.value("tracking_number"),onBackHome=home)},
+            {s,d,home->DriverTripActions(d,state,data,vm,reference=s.value("tracking_number"),onBackHome=home,shipment=s)},
             {shipment,document->vm.viewProof(shipment,document)},
             {delivery,request,category,amount,receipt,close->vm.addExpense(delivery,request,category,amount,receipt,close)},
             {period,more->vm.loadHistory(period,more)},

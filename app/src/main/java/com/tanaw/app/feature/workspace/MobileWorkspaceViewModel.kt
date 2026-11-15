@@ -1072,8 +1072,10 @@ class MobileWorkspaceViewModel @Inject constructor(
                     }
                     val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, currentUid)
                     recoveryPhone = null
-                    val email = result.email ?: mutable.value.email
-                    viewModelScope.launch { saveChallenge("recover_code", email) }
+                    val email = (result.email ?: mutable.value.email).trim()
+                    if (email.length in 3..254) {
+                        viewModelScope.launch { saveChallenge("recover_code", email) }
+                    }
                     mutable.update {
                         it.copy(
                             page = if (isOwnerChanging) "workspace" else "recover_code",

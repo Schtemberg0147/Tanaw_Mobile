@@ -437,7 +437,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     deliveries.forEach { d ->
         Text("Delivery: ${d.value("status").replace('_',' ')}",fontWeight=FontWeight.Bold)
         listOf("assigned_at","route_started_at","pickup_arrived_at","customer_showed_at","departed_at","arrived_at","recipient_name").forEach {key-> if(d.value(key).isNotBlank())Text("${MobilePresentation.status(key)}: ${if(key.endsWith("_at"))MobilePresentation.time(d.value(key)) else d.value(key)}")}
-        if(role=="driver") DriverTripActions(d,state,data,vm)
+        if(role=="driver") DriverTripActions(d,state,data,vm,shipment=s)
     }
     if(role=="customer") {
         CustomerCancellationSection(

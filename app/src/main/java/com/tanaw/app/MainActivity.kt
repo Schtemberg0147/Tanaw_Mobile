@@ -94,7 +94,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
         intent.dataString?.let { uri -> viewModel.handleDeepLink(uri) }
     }
 }

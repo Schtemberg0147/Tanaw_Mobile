@@ -49,9 +49,10 @@ class PublicNavigationTest {
             compose.onAllNodesWithText("Recovery link opened", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Recovery link opened", substring = true).assertExists()
-        compose.onNodeWithText("Reset password").assertExists()
-        compose.onNodeWithText(token).assertExists()
-        compose.onNodeWithText("Back to sign in").performClick()
+        compose.onNodeWithText("Verify Code").assertExists()
+        compose.onNodeWithText("Update password").performScrollTo().assertExists()
+        compose.onNodeWithText(token).performScrollTo().assertExists()
+        compose.onNodeWithText("Back to sign in").performScrollTo().performClick()
         compose.onAllNodesWithText("Create Account", substring = true).onFirst().assertExists()
     }
 }
