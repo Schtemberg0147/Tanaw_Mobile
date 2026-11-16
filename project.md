@@ -1,220 +1,267 @@
 # Tanaw Android App — System Architecture & Progress Reference
 
 ## Overview
-Tanaw is a native Android logistics, freight, and shipping booking application built with Kotlin, Jetpack Compose, Hilt Dependency Injection, and Supabase (Auth + Postgrest Database).
+Tanaw is a native Android logistics, freight booking, and fleet delivery application for **Mabutol Trucking** (Luzon, Philippines), built with Kotlin, Jetpack Compose (Material 3), Dagger Hilt, MapLibre Native, and Supabase (`Auth`, `Postgrest`, `Realtime`, `Storage`, and Edge Functions) over an OkHttp client engine.
+
+The active application runs through a **single state-driven workspace architecture** (`MainActivity` → `MobileWorkspaceApp` → `MobileWorkspaceViewModel`), serving both **Customer** and **Driver** roles from a shared Supabase backend (`mabutol-trucking-react`, Tanaw Dev `wrcrxsvppehuaqennrla.supabase.co`).
+
+> **Note on Legacy Code:** An earlier per-screen `TanawNavHost` + `Repository` implementation (`feature/booking/*`, `feature/history/*`, `feature/tracking/*`, `feature/profile/*`, `feature/notifications/*`, `feature/driver/*Screen`, `data/repository/*Impl`, `data/service/DriverLocationService`) remains compiled in the codebase for reference, but is **never invoked** by `MainActivity.kt`. Only `feature/driver/components/AddTripExpenseSheet.kt` and the active `feature/auth/` UI/rules are reused by `MobileWorkspaceApp`.
 
 ---
 
 ## 1. System Architecture
 
-The application strictly follows the **MVVM (Model-View-ViewModel)** architectural pattern and Clean Architecture principles:
+The active app uses a **single-ViewModel, state-driven workspace** backed by pure-Kotlin domain rule objects (`*Rules.kt`, `*Policy.kt`), encrypted local recovery/draft stores, a durable SQLite GPS queue, and direct Supabase RPC/Postgrest/Realtime/Storage integration:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             PRESENTATION LAYER                              │
-│  ┌───────────────────────┐                    ┌──────────────────────────┐  │
-│  │   Jetpack Compose UI   │◄──(collectState)──┤      Hilt ViewModel      │  │
-│  │  (Screens & Components)│                    │  (UiState & StateFlows)  │  │
-│  └───────────────────────┘                    └────────────┬─────────────┘  │
-└────────────────────────────────────────────────────────────┼────────────────┘
-                                                             │
-┌────────────────────────────────────────────────────────────▼────────────────┐
-│                                 DATA LAYER                                  │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                          UserRepository / AuthRepository               │  │
-│  │                       (SupabaseUserRepositoryImpl / AuthImpl)          │  │
-│  └───────────────────────────────────┬───────────────────────────────────┘  │
-└──────────────────────────────────────┼──────────────────────────────────────┘
-                                       │
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                             REMOTE / BACKEND LAYER                          │
-│  ┌───────────────────────────┐                ┌──────────────────────────┐  │
-│  │       Supabase Auth       │                │  Supabase Postgrest DB   │  │
-│  │   (auth.users & Session)  │                │ (users & customers tables)│  │
-│  └───────────────────────────┘                └──────────────────────────┘  │
+│  MainActivity (singleTask + tanaw://auth/callback deep-link handler)        │
+│    └─► MobileWorkspaceApp (state.page routing)                              │
+│          ├── Auth & Recovery: LoginScreen, CreateAccountScreen,             │
+│          │     RecoveryScreens, verify / verify_phone,                      │
+│          │     PasswordChangeDialog, PhoneChangeDialog                      │
+│          ├── Customer Workspace: CustomerBookingFlow (map picker, details,  │
+│          │     summary, submitted), ShipmentList, ShipmentDetails,          │
+│          │     CustomerCancellationDialog, CustomerProfile, Alerts          │
+│          └── Driver Workspace: DriverWorkspace (Home, Navigate, Trips,      │
+│                Profile, Messages, Alerts), DriverNavigateOverview,          │
+│                DriverTripActions, DriverFlowDialogs (POD, Incident),        │
+│                DriverFuelForm, AddTripExpenseSheet                          │
+└──────────────────────────────────▲──────────────────────────────────────────┘
+                                   │ StateFlow<MobileState> (JsonObject data)
+┌──────────────────────────────────┴──────────────────────────────────────────┐
+│                     VIEWMODEL, DOMAIN RULES & LOCAL PERSISTENCE             │
+│  MobileWorkspaceViewModel                                                   │
+│   ├── Pure-Kotlin Rules & Policies (core/ & feature/workspace/*/rules/):    │
+│   │     DeepLinkParser, MobileErrorClassifier, WorkspaceAutoRefreshRules,   │
+│   │     WorkspaceSyncRules, MobileValidation, ConfirmedMutation,            │
+│   │     CustomerAddressRules, CustomerBookingRules, CustomerPaginationRules,│
+│   │     CustomerCancellationRules, CustomerProfileRules, PhoneChangePolicy, │
+│   │     PasswordChangePolicy, DriverDatabaseData, DriverGeofenceRules,      │
+│   │     DriverDirections, TrackingFreshnessRules, TruckRestrictionRules,    │
+│   │     NotificationReadRules                                               │
+│   ├── Connectivity & Background Services:                                   │
+│   │     WorkspaceNetworkMonitor (ConnectivityManager default callback)      │
+│   │     TripTrackingService (ForegroundService, 15s LocationManager +       │
+│   │       SQLite TrackingQueue)                                             │
+│   └── Encrypted Local Stores (SharedPreferences / Android Keystore):        │
+│         WorkspaceRecoveryStore (challenges & driver offline snapshot),      │
+│         BookingDraftStore, ProofDraftStore, IncidentDraftStore,             │
+│         ExpenseDraftStore                                                   │
+└──────────────────────────────────┬──────────────────────────────────────────┘
+                                   │ OkHttp + Ktor + Hilt DI
+┌──────────────────────────────────▼──────────────────────────────────────────┐
+│                        REMOTE / BACKEND LAYER (Supabase)                    │
+│  ├── Auth: Phone/Email/Google ID token, SMS/Email OTP, Phone Change OTP     │
+│  ├── Postgrest & RPCs: mobile_workspace, mobile_create_request,             │
+│  │     mobile_save_profile, mobile_shipment_details, driver_milestone /     │
+│  │     mobile_driver_action, driver_arrive_at_pickup, driver_submit_pod,    │
+│  │     driver_report_incident_evidence, driver_record_position,             │
+│  │     mobile_driver_history, mobile_driver_log_fuel, conversations, etc.   │
+│  ├── Realtime: 13-table postgresChangeFlow channel ("mobile-<uid>")         │
+│  │     with 350ms event batching & 30s fallback polling                     │
+│  ├── Storage: Private "delivery-documents" bucket (POD, receipts, incidents)│
+│  └── Edge Functions: mobile-email-login, delivery-routing, calculate-route, │
+│        textbee-auth, textbee-worker, create-driver-user                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Architectural Layers:
-- **Presentation Layer**: Jetpack Compose Composable screens observing read-only `StateFlow<UiState>` emitted by Hilt-injected ViewModels.
-- **Domain & Repository Layer**: Interfaces (`UserRepository`, `AuthRepository`) implemented by Supabase repositories (`SupabaseUserRepositoryImpl`, `SupabaseAuthRepositoryImpl`).
-- **Dependency Injection**: Hilt `SingletonComponent` modules (`SupabaseModule`, `RepositoryModule`).
-- **Database Synchronization**: Leverages Supabase Auth metadata together with Postgrest database triggers for 1:1 user and customer profile creation.
+### Key Architectural Highlights
+- **DI & Session Scoping (`di/`)**: `SupabaseModule` configures `SupabaseClient` with the `OkHttp` engine (for low-latency WebSocket Realtime), `Auth` (`ProjectSessionManager` scoping sessions to the active Supabase host), `Postgrest`, `Storage`, and `Realtime`.
+- **Resilient Sync & Error Classification (`core/`)**: `MobileErrorClassifier` isolates network transport failures (`offline = true`) from auth errors (401/403) and server/contract errors (5xx / SQLSTATE). `WorkspaceNetworkMonitor` triggers automatic `backgroundRefresh()` when connectivity returns, and `WorkspaceSyncRules` batches 13-table Realtime events into targeted workspace or detail-only reloads.
+- **Map & Geocoding Stack (`ui/components/ShipmentMap.kt`)**: Uses MapLibre Native (`13.7.1`) with OpenFreeMap Liberty tiles, MapTiler forward/reverse geocoding (`MAPTILER_KEY`, falling back to built-in Luzon suggestions and Android `Geocoder`), HGV route GeoJSON polylines, and distinct Pickup (red), Destination (blue), and Vehicle (green truck badge) pins.
 
 ---
 
 ## 2. Visual Architecture & Flow Diagrams
 
-### Diagram A: User Profile Data Resolution Flow
+### Diagram A: Role-Based Workspace & Profile Data Resolution Flow
 
-```
-[ User Signs Up / Logs In ]
-           │
-           ▼
- [ Supabase auth.users ] ────────► (Trigger: trg_users_updated)
-           │
-           ▼
-  [ public.users Table ] ────────► (Trigger: trg_users_create_customer)
-           │
-           ▼
-[ public.customers Table ]
-           │
-           ▼
- ┌───────────────────────────────────────────────────────────────┐
- │                   APP DATA RESOLUTION FLOW                    │
- │                                                               │
- │  1. Query public.customers by user_id = auth_uid              │
- │      │                                                        │
- │      ├───────► [ Found ] ────► Return Customer Profile        │
- │      │                                                        │
- │      └───────► [ Not Found / unlinked user_id ]               │
- │                     │                                         │
- │                     ▼                                         │
- │  2. Query public.customers by email = auth_email              │
- │      │                                                        │
- │      ├───────► [ Found ] ────► Return Customer Profile        │
- │      │                                                        │
- │      └───────► [ Not Found ]                                  │
- │                     │                                         │
- │                     ▼                                         │
- │  3. Fallback to auth.users Metadata                           │
- └───────────────────────────────────────────────────────────────┘
-```
-
-#### Mermaid Syntax (for Mermaid-enabled renderers)
 ```mermaid
 flowchart TD
-    A["User Signs Up / Logged In"] --> B["Supabase Auth (auth.users)"]
-    B -->|"trg_users_updated Trigger"| C["public.users Table"]
-    C -->|"trg_users_create_customer Trigger"| D["public.customers Table"]
-    
-    subgraph App Data Resolution
-        D -->|"1. Query by user_id"| E{"Customer Found?"}
-        E -- "Yes" --> F["Return Customer Details (Name, Phone, City, Address)"]
-        E -- "No" --> G["2. Fallback Query by Email"]
-        G -->|"Found by Email"| F
-        G -->|"Not Found"| H["3. Fallback to auth.users Metadata"]
+    A["App Launch / Session Restore (MainActivity)"] --> B{"Supabase Auth Session?"}
+    B -- "None" --> C["Login / Signup / Recovery Pages"]
+    B -- "Authenticated" --> D["RPC: mobile_workspace()"]
+    D --> E{"profile.role"}
+    E -- "customer" --> F["Async: readSmsPreferences() + reconcileUncertainBooking()"]
+    F --> G{"Valid E.164 Phone?"}
+    G -- "No" --> H["Complete Your Profile Gate"]
+    G -- "Yes" --> I["Customer Workspace (Home / Active / History / Alerts / Profile)"]
+    E -- "driver" --> J["Async Parallel: DriverDatabaseData.load() + delivery_conversation_unread()"]
+    J --> K["Auto-resume TripTrackingService if active delivery & FINE_LOCATION granted"]
+    K --> L["Driver Workspace (Home / Navigate / Trips / Profile / Messages / Alerts)"]
+```
+
+#### Customer Profile Edit & Verified Phone Change Flow (`C02`, `C03`, `C05`)
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Customer
+    participant ProfileUI as CustomerProfile
+    participant VM as MobileWorkspaceViewModel
+    participant Store as WorkspaceRecoveryStore
+    participant Auth as Supabase Auth / TextBee
+    participant RPC as mobile_save_profile
+
+    Customer->>ProfileUI: Edit Name / Structured Address (Street, Brgy, City, Province) / Phone
+    alt Phone Number Unchanged
+        ProfileUI->>VM: profile(name, phone, address, city)
+        VM->>RPC: Invoke mobile_save_profile(p_name, p_phone, p_address, p_city)
+        RPC-->>VM: Success
+        VM->>VM: Optimistic profile update + reload workspace
+        VM-->>ProfileUI: "Profile saved." (preserved even if reload fails)
+    else Phone Number Changed
+        ProfileUI->>VM: requestPhoneChange(name, newPhone, address, city)
+        VM->>Auth: auth.updateUser(phone = newPhone)
+        Auth-->>Customer: Deliver 6-digit SMS OTP via TextBee Send SMS hook
+        VM->>Store: Persist 15-min encrypted "phone_change_challenge"
+        VM-->>ProfileUI: Open PhoneChangeDialog
+        Customer->>ProfileUI: Enter 6-digit OTP
+        ProfileUI->>VM: verifyPhoneChange(code)
+        VM->>Auth: verifyPhoneOtp(PHONE_CHANGE, newPhone, code)
+        Auth-->>VM: auth.users.phone updated
+        VM->>RPC: Invoke mobile_save_profile(name, newPhone, address, city)
+        RPC-->>VM: public.users.phone & public.customers.phone synced
+        VM->>Store: Clear challenge & refresh workspace
     end
 ```
 
 ---
 
-### Diagram B: Change Password & Identity Verification Flow
+### Diagram B: Password Recovery, Deep-Link Callback & Signed-In Change Password (`D07`, `C07`)
 
-```
-  User              ProfileScreen            ProfileViewModel          SupabaseAuth
-   │                      │                         │                        │
-   ├─► Click Change Pass ─┤                         │                        │
-   │                      ├─► Choose SMS / Email ──►│                        │
-   │                      │                         ├─► Fetch Customer Phone │
-   │                      │                         ├─► Send OTP Code ──────►│
-   │                      │◄── Show OTP Input ──────┤                        │
-   │                      │                         │                        │
-   ├─► Enter 6-Digit OTP ─┤                         │                        │
-   │                      ├─► Verify OTP Code ─────►├─► Verify OTP Token ───►│
-   │                      │                         │◄─ Verification Success │
-   │                      │◄── Show New Pass Dialog ┤                        │
-   │                      │                         │                        │
-   ├─► Enter New Pass ────┤                         │                        │
-   │                      ├─► Save New Password ───►├─► Update User Pass ───►│
-   │                      │                         │◄─ Pass Updated ────────┤
-   │                      │◄── Top Success Banner ──┤                        │
-```
-
-#### Mermaid Syntax (for Mermaid-enabled renderers)
 ```mermaid
 sequenceDiagram
     autonumber
     actor User
-    participant ProfileScreen
-    participant ProfileViewModel
-    participant UserRepository
-    participant AuthRepository
-    participant SupabaseAuth
+    participant DeepLink as MainActivity / DeepLinkParser
+    participant UI as Recovery / PasswordChangeDialog
+    participant VM as MobileWorkspaceViewModel
+    participant Store as WorkspaceRecoveryStore
+    participant Auth as Supabase Auth
 
-    User->>ProfileScreen: Click "Change Password"
-    ProfileScreen->>ProfileScreen: Open Verification Method Dialog
-    
-    alt Select Phone (SMS) Verification
-        User->>ProfileScreen: Choose "SMS Phone Verification"
-        ProfileScreen->>ProfileViewModel: sendPhoneVerificationOtp()
-        ProfileViewModel->>UserRepository: getUserProfile()
-        UserRepository-->>ProfileViewModel: Return phone from public.customers
-        ProfileViewModel->>AuthRepository: resendPhoneOtp(formattedPhone)
-        AuthRepository->>SupabaseAuth: resendPhone(SMS)
-        SupabaseAuth-->>ProfileViewModel: OTP Sent / Error
-        ProfileViewModel-->>ProfileScreen: Transition to OTP Input Step
-    else Select Email Verification
-        User->>ProfileScreen: Choose "Email Verification"
-        ProfileScreen->>ProfileViewModel: sendEmailVerificationOtp()
-        ProfileViewModel->>AuthRepository: resendEmailOtp(email)
-        AuthRepository->>SupabaseAuth: resendEmail()
-        ProfileViewModel-->>ProfileScreen: Transition to OTP Input Step
+    alt Signed-Out Recovery (Phone SMS or Email)
+        User->>UI: Tap "Forgot password?" on LoginScreen
+        UI->>VM: resetEmail(phoneOrEmail)
+        VM->>Auth: resetPasswordForEmail / SMS recovery OTP (redirectTo = tanaw://auth/callback)
+        VM->>Store: Save encrypted 15-min challenge (target, page, timestamp)
+        Auth-->>User: Send SMS OTP or Email Recovery Link
+        opt User taps tanaw://auth/callback link
+            DeepLink->>VM: handleDeepLink(uri) -> extract token_hash / session tokens
+            VM-->>UI: Prefill recoveryCode & open VerifyRecoveryCodeScreen
+        end
+        User->>UI: Enter code + new password
+        UI->>VM: recover(code, newPassword, confirmPassword)
+        VM->>Auth: Verify OTP/token_hash & updateUser(password)
+    else Signed-In Change Password (Customer & Driver)
+        User->>UI: Tap "Change Password" inside Profile
+        UI->>VM: openPasswordChange()
+        VM-->>UI: Show PasswordChangeDialog over active Profile
+        UI->>VM: resetEmail(userPhoneOrEmail) -> send verification OTP
+        User->>UI: Enter OTP + new password
+        UI->>VM: recover(code, newPassword, confirmPassword)
+        VM->>Auth: Verify OTP & updateUser(password)
+        VM->>Store: Clear challenge, retain workspace state
     end
+```
 
-    User->>ProfileScreen: Enter 6-Digit OTP Code
-    ProfileScreen->>ProfileViewModel: verifyOtp(method, destination, token)
-    ProfileViewModel->>AuthRepository: verifyPhoneOtp / verifyEmailOtp
-    AuthRepository->>SupabaseAuth: verifyOtp()
-    SupabaseAuth-->>ProfileViewModel: Verification Success
+---
 
-    ProfileScreen-->>ProfileScreen: Transition to Set New Password Step
-    User->>ProfileScreen: Enter New Password & Confirm Password
-    ProfileScreen->>ProfileViewModel: changePassword(newPassword)
-    ProfileViewModel->>AuthRepository: changePassword(newPassword)
-    AuthRepository->>SupabaseAuth: updateUser(password)
-    SupabaseAuth-->>ProfileViewModel: Password Updated
-    ProfileViewModel-->>ProfileScreen: Show Success Toast Notification at Top
+### Diagram C: Driver Delivery Execution, 50m Geofence & Foreground GPS Queue (`D01`, `D05`)
+
+```
+[ Assigned Delivery ]
+         │
+         ▼
+  Start Route (mobile_driver_action "start")
+         ├─► Starts TripTrackingService (LocationManager 15s + SQLite TrackingQueue)
+         ├─► Fetches delivery-routing HGV ETA & GeoJSON + TruckRestrictionRules advisories
+         │
+         ▼
+  Arrive at Pickup (DriverGeofenceRules <= 50m fresh GPS -> driver_arrive_at_pickup RPC)
+         │
+         ▼
+  Wait for Customer (1s tick grace timer gates No-Show Review vs Customer Showed)
+         │
+         ▼
+  Cargo Loaded (mobile_driver_action "loaded")
+         │
+         ▼
+  Deliver at Destination (DriverGeofenceRules <= 50m fresh GPS)
+         ├─► DriverProofDialog: Camera Photo + Recipient Name + Digital Signature Pad
+         ├─► Off-UI-thread JPEG/PNG encoding + ProofDraftStore encrypted persistence
+         └─► Upload to private "delivery-documents" bucket -> driver_submit_pod RPC
 ```
 
 ---
 
 ## 3. Project Progress & Feature Roadmap
 
-### Completed Features ✅
-- **MVVM Architecture & Hilt DI**: Fully configured with `RepositoryModule` and `SupabaseModule`.
-- **Authentication**: Login screen and Account Creation connected to Supabase Auth (`Email`).
-- **Database Profile Synchronization**:
-  - `SupabaseUserRepositoryImpl` retrieves user and customer details across `public.users` and `public.customers`.
-  - Automatic fallback queries by `user_id` and `email`.
-  - Automatic E.164 phone formatting (`09995130476` → `+639995130476`).
-- **Profile UI & Dark Mode**:
-  - Scrollable profile layout with non-squished bottom navigation layering.
-  - Theme colors and bottom navigation bar adapt seamlessly to system dark mode.
-  - Interactive profile field editing (saves to Supabase Auth metadata and database tables).
-- **Change Password Flow**:
-  - Multi-step identity verification dialog (SMS OTP / Email OTP UI -> OTP Code -> Set Password).
-  - Success toast banner notification at the top of the screen.
+> Authoritative per-feature status and backend caveats are maintained in [`docs/FEATURES.md`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/docs/FEATURES.md) and [`docs/BACKLOG.md`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/docs/BACKLOG.md).
 
----
+### Build & Environment Baseline
+- **Toolchain**: AGP `9.4.0`, Kotlin `2.4.10`, Compose BOM `2026.08.00`, Material 3 `1.4.0`, Hilt `2.60.1`, Supabase BOM `3.8.0`, Ktor OkHttp `3.6.0`, MapLibre `13.7.1`, `compileSdk = 37`, `targetSdk = 37`, `minSdk = 24`.
+- **Configuration**: `client-config.properties` supplies the public **Tanaw Dev** Supabase URL and publishable key (`verifyPhoneSignup` and `verifyDriverLogin` Gradle tasks validate backend Auth provider configuration). `local.properties` optionally provides `MAPTILER_KEY` and `GOOGLE_WEB_CLIENT_ID`.
 
-### In Progress / Pending Features 🔄
+### Completed & Implemented Features ✅
+- **Authentication & Recovery**:
+  - Phone/password and email/password login, plus customer contact-email alias fallback (`mobile-email-login`).
+  - Customer signup with SMS OTP verification (`verify_phone`) routed through Supabase Auth + TextBee Send SMS hook (`TEXTBEE_SETUP.md`).
+  - Role-based session routing (`customer` vs `driver`) with project-scoped session storage (`ProjectSessionManager`).
+  - Signed-out recovery and signed-in Change Password for both drivers and customers (`C07`), with 15-minute encrypted challenge persistence (`WorkspaceRecoveryStore`).
+  - Deep-link callback handling (`D07`) via `tanaw://auth/callback` (`DeepLinkParser` + `MainActivity.onNewIntent`).
+- **Customer Booking, Profile & Tracking**:
+  - Multi-step `CustomerBookingFlow`: MapLibre + OpenFreeMap/MapTiler location picker with target-ring cursor, reverse geocoding, Luzon bounds, pickup schedule bottom sheet (`Now` vs `Schedule`), vehicle capacity selection, road route preview (`calculate-route`), and idempotent `mobile_create_request` RPC submission.
+  - Encrypted booking draft persistence and cold-restart reconciliation for uncertain submissions (`C04` / `BookingDraftStore`).
+  - Structured Philippine addresses (`C03` / `CustomerAddressRules`: street, barangay, city, province) with backward-compatible RPC formatting and booking quick-chip.
+  - Profile synchronization (`C02`) with optimistic confirmation and verified single-tier SMS OTP phone number changes (`C05` / `PhoneChangePolicy`).
+  - SMS notification preferences (`shipment_status`, `delay`) stored in `public.notification_preferences`.
+  - Paginated shipment history & search beyond 200 rows (`C01`), paginated alerts with auto-mark-as-read while Alerts is open, POD/evidence image viewer (`delivery-documents` bucket), and live tracking with distinct Emerald Green vehicle marker + 15s auto-refreshing GPS freshness badge separating Scheduled Arrival from Live ETA (`C06`).
+  - Customer pre-transit self-service cancellation (`C10` / `CustomerCancellationRules` + `CustomerCancellationDialog`) for `pending`, `booked`, and unstarted `assigned` shipments.
+- **Driver Operations, Telemetry & Compliance**:
+  - Driver Home dashboard (`mobile_workspace` + parallel `DriverDatabaseData` reads) with roster identity, assigned truck, active assignments, and per-section error retries.
+  - HGV route overview (`DriverNavigateOverview`), office-confirmed route status & 120s-freshness-gated live ETA (`DriverRouteStatus`), intermediate HGV waypoints for external Google Maps (`DriverDirections`), and truck physical/UVVRP/peak-ban advisories (`D05` / `TruckRestrictionRules`).
+  - Delivery milestones with client-side 50m fresh-GPS pickup & destination geofence (`DriverGeofenceRules`), grace timer for no-show review vs customer-showed, and cargo-loaded progression.
+  - Foreground GPS `TripTrackingService` with 15s `LocationManager` updates, multi-provider fast fix, durable SQLite `TrackingQueue`, and auto-resume across restarts (`D01`).
+  - POD capture (camera photo, recipient name, digital signature pad), incident reporting (up to 3 private photos), trip expense submission (`AddTripExpenseSheet`), and per-trip fuel logging (`DriverFuelForm`), with off-UI-thread bitmap processing (`D04`) and encrypted local drafts (`D02` / `ProofDraftStore`, `IncidentDraftStore`, `ExpenseDraftStore`).
+  - Driver-dispatcher in-app conversations (`Messages` tab & per-trip thread with unread counts) and paginated "My Trips" history (`mobile_driver_history`) with recorded event timelines.
+  - Driver Profile & compliance status badges driven by `system_settings` warning thresholds (`compliance_thresholds`).
+- **Workspace Reliability & UX (`D03`, `C12`)**:
+  - Error classification separating transport offline states from auth and backend/contract errors (`MobileErrorClassifier`), plus automatic reconnection refresh (`WorkspaceNetworkMonitor`).
+  - Encrypted driver offline workspace cache (`WorkspaceRecoveryStore`).
+  - Cross-cutting small-screen layouts, keyboard `ImeAction`/types, 48dp touch targets, and inline field validation (`C12`).
 
-1. **Email & Phone Verification**:
-   - 🔄 **Status**: UI verification flows and OTP handlers implemented.
-   - ⚠️ **Action Needed**: Configure domain SMTP for Email Auth and enable Phone Provider in Supabase Dashboard (**Authentication → Providers → Phone**).
+### Partial / External Configuration & Backend Caveats ⚠️
+- **External Backend Verification (`⚠ backend unverified`)**: Canonical migrations, RLS policies, and several RPCs/Edge Functions live in the separate `mabutol-trucking-react` repository (`supabase/README.md`). Client calls to `driver_arrive_at_pickup`, `driver_submit_pod`, `driver_report_incident_evidence`, `driver_record_position`, `mobile_driver_history`, `mobile_driver_log_fuel`, `mobile_driver_fuel_history`, `mobile_driver_evidence`, `mobile_delivery_evidence_file`, `delivery_conversation*`, `send_delivery_message`, `read_delivery_messages`, `delivery_expenses`, `mobile-email-login`, `delivery-routing`, and `calculate-route` cannot be verified from this repo alone.
+- **Google Sign-In**: Credential Manager flow is implemented (`GoogleSignIn.kt`), but `GOOGLE_WEB_CLIENT_ID` is optional/unconfigured by default and requires external Google Cloud + Supabase OAuth setup (`GOOGLE_AUTH_SETUP.md`).
+- **Email OTP Signup Branch**: Active signup routes exclusively to `verify_phone` (TextBee SMS); the `verify` email-signup branch in `MobileWorkspaceApp` is currently unreachable.
+- **Dynamic Pricing (`public.pricing_rates`)**: Active bookings submit as `"Awaiting office quotation"` and display office `quoted_amount` / `final_amount`; client-side rate computation exists only in dormant legacy code.
+- **Unpublished Legal/Support Content (`D08`) & Offline Scope**: Driver Terms/Privacy/Support links display explicit unpublished notices until configured in `public.system_settings`. Encrypted cold-start offline workspace snapshots currently cover `driver` accounts only.
+- **Customer Cancellation Backend Policy (`C10`)**: Client executes pre-transit cancellation directly on `public.shipments`; production deployment of the proposed customer `UPDATE` RLS policy or atomic `mobile_cancel_shipment` RPC is tracked in `docs/BACKEND-REQUESTS.md` §3.
 
-2. **Maps Integration on Booking Screen**:
-   - 🔄 **Status**: UI location pickers implemented.
-   - ⚠️ **Action Needed**: Integrate Google Maps / Map SDK into location picker and map view on `HomeScreen` / `LocationPickerScreen`.
-
-3. **Database Pricing Integration**:
-   - 🔄 **Status**: Vehicle rate calculation currently uses `MockData`.
-   - ⚠️ **Action Needed**: Query and calculate rates dynamically from `public.pricing_rates` database table.
-
-4. **Live GPS Tracking**:
-   - 🔄 **Status**: Track detail screen layouts created.
-   - ⚠️ **Action Needed**: Connect real-time delivery tracking logs (`public.tracking_logs`) via Supabase Realtime.
+### Pending / Future Roadmap 🔄
+1. **Backend Enhancements (`docs/BACKEND-REQUESTS.md`)**:
+   - `C03`: Add native `barangay` column to `public.customers` and extend `mobile_workspace()` / `mobile_save_profile()`.
+   - `D05`: Add HGV physical dimensions (`height_m`, `width_m`, `length_m`, `tare_weight_kg`, `gross_weight_kg`, `axle_count`) to `public.trucks` / `public.vehicle_types` and `mobile_workspace()`.
+   - `C10`: Deploy customer pre-transit cancellation RLS policy / `mobile_cancel_shipment` RPC.
+2. **Physical Device Acceptance Testing (`docs/BACKLOG.md`)**:
+   - `D06`: End-to-end website-to-driver messaging and unread/read Realtime sync.
+   - `C08`: Live TextBee shipment/delay SMS delivery, opt-out, and duplicate prevention.
+3. **Optional Wave 3 Additions** (require backend design first):
+   - `C09`: Customer-to-office support conversations.
+   - `C11`: Customer accept/reject versioned quotations.
+4. **Codebase Hygiene**: Eventual removal of dormant `TanawNavHost` legacy screens and consolidation of `app/build.gradle.kts` hardcoded dependency versions into `gradle/libs.versions.toml` (explicit separate tasks).
 
 ---
 
 ## 4. Database Schema Reference
 
-The database consists of 27 tables organized into 8 functional domain modules:
+The canonical PostgreSQL dump (`supabase/migrations/live_schema_dump.sql`) defines **28 base tables** organized into 8 functional domain modules (with additional runtime tables/extensions such as `delivery_expenses`, `shipment_events`, `delivery_messages`, and `incident_attachments` managed in `mabutol-trucking-react`):
 
 1. [User & Identity Management](#1-user--identity-management) (`users`, `customers`, `drivers`, `helpers`)
 2. [Fleet & Cargo Management](#2-fleet--cargo-management) (`vehicle_types`, `cargo_categories`, `trucks`, `truck_cargo_categories`, `location_vehicle_types`)
-3. [Locations & Pricing Rates](#3-locations--pricing-rates) (`locations`, `pricing_rates`)
+3. [Locations, Tolls & Pricing Rates](#3-locations-tolls--pricing-rates) (`locations`, `pricing_rates`, `toll_gate_rates`)
 4. [Shipment & Delivery Operations](#4-shipment--delivery-operations) (`shipments`, `deliveries`, `delivery_helpers`, `shipment_status_history`, `delivery_incidents`)
 5. [Tracking & Documents](#5-tracking--documents) (`tracking_logs`, `delivery_documents`)
 6. [Financials & Fuel](#6-financials--fuel) (`payments`, `fuel_logs`)
@@ -232,7 +279,7 @@ The database consists of 27 tables organized into 8 functional domain modules:
 | `email` | `text` | NOT NULL, UNIQUE | User email address |
 | `full_name` | `text` | NOT NULL, DEFAULT `''` | User full name |
 | `phone` | `text` | NULLABLE | Primary phone contact |
-| `role` | `user_role` | NOT NULL, DEFAULT `'customer'` | User role (`customer`, `driver`, `admin`, etc.) |
+| `role` | `user_role` | NOT NULL, DEFAULT `'customer'` | User role (`customer`, `driver`, `admin`, `staff`) |
 | `is_active` | `boolean` | NOT NULL, DEFAULT `true` | Account active flag |
 | `avatar_url` | `text` | NULLABLE | URL to user profile image |
 | `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Timestamp created |
@@ -248,8 +295,8 @@ The database consists of 27 tables organized into 8 functional domain modules:
 | `contact_person` | `text` | NULLABLE | Contact person name |
 | `email` | `text` | NULLABLE | Customer email address |
 | `phone` | `text` | NULLABLE | Customer phone number |
-| `address` | `text` | NULLABLE | Delivery street address |
-| `city` | `text` | NULLABLE | City / Municipality |
+| `address` | `text` | NULLABLE | Street address (active client formats `"<street>, Brgy. <barangay>"`) |
+| `city` | `text` | NULLABLE | City / Municipality (active client formats `"<city>, <province>"`) |
 | `province` | `text` | DEFAULT `'Nueva Ecija'` | Province |
 | `notes` | `text` | NULLABLE | Administrative notes |
 | `is_active` | `boolean` | NOT NULL, DEFAULT `true` | Customer active flag |
@@ -333,7 +380,7 @@ The database consists of 27 tables organized into 8 functional domain modules:
 
 ---
 
-### 3. Locations & Pricing Rates
+### 3. Locations, Tolls & Pricing Rates
 
 #### `public.locations`
 | Column | Type | Constraints / Default | Description |
@@ -368,6 +415,17 @@ The database consists of 27 tables organized into 8 functional domain modules:
 | `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Timestamp created |
 | `updated_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Timestamp updated |
 
+#### `public.toll_gate_rates`
+| Column | Type | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `uuid` | PK, DEFAULT `gen_random_uuid()` | Toll gate rate ID |
+| `gate_name` | `text` | NOT NULL | Toll gate / plaza name |
+| `highway` | `text` | NOT NULL | Expressway / highway corridor |
+| `vehicle_class` | `text` | NOT NULL, DEFAULT `'Class 2'` | Vehicle toll class |
+| `fee` | `numeric(12,2)` | NOT NULL, CHECK `(>= 0)` | Toll fee amount |
+| `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Timestamp created |
+| `updated_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Timestamp updated |
+
 ---
 
 ### 4. Shipment & Delivery Operations
@@ -379,7 +437,7 @@ The database consists of 27 tables organized into 8 functional domain modules:
 | `tracking_number` | `text` | NOT NULL, UNIQUE, DEFAULT `'SHP-NE-YY-...'` | Unique shipment tracking number |
 | `customer_id` | `uuid` | NOT NULL, FK → `public.customers(id)` | Booking customer ID |
 | `billing_customer_id` | `uuid` | FK → `public.customers(id)` | Customer billed for shipment |
-| `status` | `shipment_status` | NOT NULL, DEFAULT `'booked'` | Status (`booked`, `assigned`, `in_transit`, `delivered`, `cancelled`) |
+| `status` | `shipment_status` | NOT NULL, DEFAULT `'booked'` | Status (`pending`, `booked`, `assigned`, `in_transit`, `delivered`, `cancelled`, etc.) |
 | `booking_source` | `text` | NOT NULL, DEFAULT `'web'`, CHECK `web/mobile/phone` | Channel where booking originated |
 | `cargo_category_id` | `uuid` | FK → `public.cargo_categories(id)` | Cargo category |
 | `cargo_description` | `text` | NULLABLE | Description of cargo |
@@ -413,7 +471,7 @@ The database consists of 27 tables organized into 8 functional domain modules:
 | `shipment_id` | `uuid` | NOT NULL, FK → `public.shipments(id)` | Related shipment ID |
 | `truck_id` | `uuid` | NOT NULL, FK → `public.trucks(id)` | Assigned vehicle ID |
 | `driver_id` | `uuid` | NOT NULL, FK → `public.drivers(id)` | Assigned driver ID |
-| `status` | `delivery_status` | NOT NULL, DEFAULT `'assigned'` | Status (`assigned`, `en_route`, `arrived`, `completed`, `failed`) |
+| `status` | `delivery_status` | NOT NULL, DEFAULT `'assigned'` | Status (`assigned`, `loading`, `in_transit`, `delivered`, `cancelled`, etc.) |
 | `assigned_by` | `uuid` | FK → `public.users(id)` | Dispatcher user ID |
 | `assigned_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Assignment timestamp |
 | `departed_at` / `arrived_at` | `timestamptz` | NULLABLE | Actual trip execution timestamps |
@@ -480,9 +538,9 @@ The database consists of 27 tables organized into 8 functional domain modules:
 | `shipment_id` | `uuid` | NOT NULL, FK → `public.shipments(id)` | Shipment ID |
 | `delivery_id` | `uuid` | FK → `public.deliveries(id)` | Delivery trip ID |
 | `kind` | `document_kind` | NOT NULL, DEFAULT `'proof_of_delivery'` | Document type classification |
-| `storage_path` | `text` | NOT NULL | Supabase Storage bucket object path |
+| `storage_path` | `text` | NOT NULL | Supabase Storage bucket (`delivery-documents`) path |
 | `file_name` | `text` | NULLABLE | Original filename |
-| `mime_type` | `text` | NULLABLE | Document MIME type (e.g. image/jpeg, application/pdf) |
+| `mime_type` | `text` | NULLABLE | Document MIME type (e.g. image/jpeg, image/png) |
 | `recipient_name` | `text` | NULLABLE | Recipient signature name |
 | `notes` | `text` | NULLABLE | Document remarks |
 | `uploaded_by` | `uuid` | FK → `public.users(id)` | Uploader user ID |
@@ -609,16 +667,24 @@ The database consists of 27 tables organized into 8 functional domain modules:
 #### `public.system_settings`
 | Column | Type | Constraints / Default | Description |
 | :--- | :--- | :--- | :--- |
-| `key` | `text` | PK | Configuration setting key |
+| `key` | `text` | PK | Configuration setting key (e.g., `compliance_thresholds`, `driver_app_content`) |
 | `value` | `jsonb` | NOT NULL | Setting JSON payload |
 | `description` | `text` | NULLABLE | Setting description |
 | `updated_by` | `uuid` | FK → `public.users(id)` | Staff user who last updated setting |
 | `updated_at` | `timestamptz` | NOT NULL, DEFAULT `now()` | Last modification timestamp |
 
+### Active Mobile Contract Additions (Canonical Repo `mabutol-trucking-react`)
+Beyond the historical 28-table dump above, the active Android workspace interacts with shared tables, RPCs, Storage, and Edge Functions managed in `mabutol-trucking-react`:
+- **Additional Tables / Realtime Subscriptions**: `delivery_expenses`, `shipment_events`, `delivery_messages`, `incident_attachments`, plus `route_geometry` / `route_duration_minutes` / `client_request_id` on `shipments` and `route_started_at` / `pickup_arrived_at` / `customer_showed_at` on `deliveries`.
+- **RPCs Defined in This Repo (`supabase/migrations/`)**: `mobile_workspace`, `mobile_create_request`, `mobile_save_profile`, `mobile_shipment_details`, and early `mobile_driver_action` wrapper.
+- **RPCs Defined Externally (`mabutol-trucking-react`)**: `driver_arrive_at_pickup`, `driver_submit_pod`, `driver_report_incident_evidence`, `driver_record_position`, `mobile_driver_history`, `mobile_driver_log_fuel`, `mobile_driver_fuel_history`, `mobile_driver_evidence`, `mobile_delivery_evidence_file`, `delivery_conversation`, `delivery_conversation_unread`, `send_delivery_message`, `read_delivery_messages`.
+- **Edge Functions**: `mobile-email-login`, `delivery-routing`, `calculate-route`, `create-driver-user`, `textbee-auth`, `textbee-worker`.
+- **Private Storage Bucket**: `delivery-documents` (POD photos, digital signatures, expense receipts, incident attachments).
+
 ---
 
 <details>
-<summary><b>Click to expand raw PostgreSQL DDL Reference Schema</b></summary>
+<summary><b>Click to expand raw PostgreSQL DDL Reference Schema (28 Base Tables)</b></summary>
 
 ```sql
 CREATE TABLE public.users (
@@ -757,6 +823,17 @@ CREATE TABLE public.pricing_rates (
   CONSTRAINT pricing_rates_pkey PRIMARY KEY (id),
   CONSTRAINT pricing_rates_vehicle_type_id_fkey FOREIGN KEY (vehicle_type_id) REFERENCES public.vehicle_types(id),
   CONSTRAINT pricing_rates_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
+
+CREATE TABLE public.toll_gate_rates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  gate_name text NOT NULL,
+  highway text NOT NULL,
+  vehicle_class text NOT NULL DEFAULT 'Class 2'::text,
+  fee numeric(12,2) NOT NULL CHECK (fee >= 0::numeric),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT toll_gate_rates_pkey PRIMARY KEY (id)
 );
 
 CREATE TABLE public.shipments (
@@ -1061,11 +1138,21 @@ CREATE TABLE public.location_vehicle_types (
 
 ---
 
-## 5. Key File Locations
+## 5. Key Active File Locations
 
-- **Navigation & Host**: [`MainActivity.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw/app/src/main/java/com/tanaw/app/MainActivity.kt)
-- **Profile Screen**: [`ProfileScreen.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw/app/src/main/java/com/tanaw/app/feature/profile/ProfileScreen.kt)
-- **Profile ViewModel**: [`ProfileViewModel.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw/app/src/main/java/com/tanaw/app/feature/profile/ProfileViewModel.kt)
-- **User Repository**: [`SupabaseUserRepositoryImpl.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw/app/src/main/java/com/tanaw/app/data/repository/SupabaseUserRepositoryImpl.kt)
-- **Auth Repository**: [`SupabaseAuthRepositoryImpl.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw/app/src/main/java/com/tanaw/app/data/repository/SupabaseAuthRepositoryImpl.kt)
-- **Bottom Navigation Bar**: [`BottomNavigationBar.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw/app/src/main/java/com/tanaw/app/ui/components/BottomNavigationBar.kt)
+### Entry Point, DI & Core Infrastructure
+- **Entry & Deep-Link Host**: [`MainActivity.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/MainActivity.kt)
+- **Supabase & Session DI**: [`SupabaseModule.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/di/SupabaseModule.kt), [`ProjectSessionManager.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/di/ProjectSessionManager.kt)
+- **Deep-Link Parser**: [`DeepLinkParser.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/core/deeplink/DeepLinkParser.kt)
+- **Error Classification & Sync**: [`MobileErrorClassifier.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/core/error/MobileErrorClassifier.kt), [`WorkspaceNetworkMonitor.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/core/network/WorkspaceNetworkMonitor.kt), [`WorkspaceAutoRefreshRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/core/network/WorkspaceAutoRefreshRules.kt), [`WorkspaceSyncRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/core/sync/WorkspaceSyncRules.kt)
+- **Map & Geocoding**: [`ShipmentMap.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/ui/components/ShipmentMap.kt)
+
+### Active Workspace (`feature/workspace/`)
+- **Shell & State**: [`MobileWorkspaceApp.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/screens/MobileWorkspaceApp.kt), [`MobileWorkspaceViewModel.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/viewmodel/MobileWorkspaceViewModel.kt), [`MobileState.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/state/MobileState.kt), [`WorkspaceRecoveryStore.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/store/WorkspaceRecoveryStore.kt)
+- **Customer Flow**: [`CustomerBookingFlow.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/screens/CustomerBookingFlow.kt), [`FullScreenLocationPicker.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/screens/FullScreenLocationPicker.kt), [`CustomerProfileScreen.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/screens/CustomerProfileScreen.kt), [`BookingDraftStore.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/store/BookingDraftStore.kt), [`CustomerAddressRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/rules/CustomerAddressRules.kt), [`CustomerCancellationRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/rules/CustomerCancellationRules.kt), [`CustomerPaginationRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/customer/rules/CustomerPaginationRules.kt)
+- **Driver Flow**: [`DriverWorkspace.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/screens/DriverWorkspace.kt), [`DriverNavigateOverview.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/screens/DriverNavigateOverview.kt), [`DriverProfile.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/screens/DriverProfile.kt), [`DriverTripActions.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/components/DriverTripActions.kt), [`DriverRouteStatus.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/components/DriverRouteStatus.kt), [`DriverFlowDialogs.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/dialogs/DriverFlowDialogs.kt), [`DriverGeofenceRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/rules/DriverGeofenceRules.kt), [`TruckRestrictionRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/rules/TruckRestrictionRules.kt), [`ProofDraftStore.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/store/ProofDraftStore.kt), [`DriverDraftStore.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/driver/store/DriverDraftStore.kt)
+- **Tracking & Freshness**: [`TripTrackingService.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/tracking/TripTrackingService.kt), [`TrackingFreshnessRules.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/tracking/TrackingFreshnessRules.kt)
+
+### Shared Auth UI & Policies (`feature/auth/`)
+- **Screens & Dialogs**: [`LoginScreen.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/screens/LoginScreen.kt), [`CreateAccountScreen.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/screens/CreateAccountScreen.kt), [`RecoveryScreens.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/screens/RecoveryScreens.kt), [`PasswordChangeDialog.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/dialogs/PasswordChangeDialog.kt), [`PhoneChangeDialog.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/dialogs/PhoneChangeDialog.kt)
+- **Policies**: [`PasswordChangePolicy.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/rules/PasswordChangePolicy.kt), [`PhoneChangePolicy.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/rules/PhoneChangePolicy.kt), [`GoogleSignIn.kt`](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/auth/components/GoogleSignIn.kt)

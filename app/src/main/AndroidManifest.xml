@@ -37,7 +37,7 @@
                     android:pathPrefix="/callback" />
             </intent-filter>
         </activity>
-        <service android:name=".feature.workspace.TripTrackingService" android:exported="false" android:foregroundServiceType="location" />
+        <service android:name=".feature.workspace.tracking.TripTrackingService" android:exported="false" android:foregroundServiceType="location" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.proof" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/proof_paths" />
         </provider>
