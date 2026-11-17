@@ -16,7 +16,7 @@ class DriverRouteStatusUiTest {
         val status=buildJsonObject {put("route_verified",true);put("leg","pickup");put("calculated_at",now.toString());put("position_at",now.minusSeconds(10).toString());put("expires_at",now.plusSeconds(100).toString());put("eta_at",now.plusSeconds(600).toString())}
         compose.setContent {DriverTheme {Column {DriverRouteStatusCard(status,false)}}}
         compose.onNodeWithText("ETA to pickup:",substring=true).assertExists()
-        compose.onNodeWithText("OpenRouteService HGV",substring=true).assertExists()
+        compose.onNodeWithText("Truck dimensions and weight limits applied",substring=true).assertExists()
         compose.onNodeWithText("Calculated",substring=true).assertExists()
         compose.onNodeWithText("Google Maps may recalculate",substring=true).assertExists()
     }

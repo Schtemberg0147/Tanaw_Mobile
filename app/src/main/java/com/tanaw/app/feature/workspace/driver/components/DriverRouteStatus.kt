@@ -1,8 +1,10 @@
 package com.tanaw.app.feature.workspace.driver.components
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.tanaw.app.feature.workspace.driver.screens.DriverTheme
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.rules.TruckBanAdvisory
 import com.tanaw.app.feature.workspace.rules.TruckRestrictionRules
@@ -16,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
@@ -129,7 +132,7 @@ internal object DriverRouteStatus {
             }
             if (isVerified) {
                 Text(
-                    "OpenRouteService HGV · vehicle limits applied · no live traffic",
+                    "Truck dimensions and weight limits applied · live traffic not included",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -193,6 +196,39 @@ internal fun DriverTruckRestrictionCard(
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                 }
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Route Status Light")
+@Composable
+private fun DriverRouteStatusCardLightPreview() {
+    val now = Instant.now()
+    DriverTheme(darkTheme = false) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            DriverRouteStatusCard(
+                routing = buildJsonObject {
+                    put("route_verified", true)
+                    put("leg", "destination")
+                    put("calculated_at", now.toString())
+                    put("position_at", now.minusSeconds(15).toString())
+                    put("expires_at", now.plusSeconds(90).toString())
+                    put("eta_at", now.plusSeconds(1800).toString())
+                },
+                offline = false
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Route Status Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun DriverRouteStatusCardDarkPreview() {
+    DriverTheme(darkTheme = true) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DriverRouteStatusCard(routing = buildJsonObject {}, offline = false)
             }
         }
     }

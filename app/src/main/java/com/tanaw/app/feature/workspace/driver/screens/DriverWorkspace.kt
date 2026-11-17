@@ -1,6 +1,7 @@
 package com.tanaw.app.feature.workspace.driver.screens
 
 import android.app.Activity
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -8,6 +9,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,9 +24,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -111,6 +117,22 @@ internal val DriverDarkColorScheme = DarkColorScheme
     }
 }
 
+private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject): String? {
+    if (active.isEmpty()) return null
+    val inProgress = active.filter { s ->
+        val d = DriverUiRules.delivery(data, s.value("id"))
+        d.value("route_started_at").isNotBlank() ||
+            d.value("status") in listOf("loading", "in_transit") ||
+            DriverUiRules.isCorrectionRequested(d)
+    }
+    return when {
+        inProgress.size == 1 -> inProgress.first().value("id")
+        active.size == 1 -> active.first().value("id")
+        else -> null
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun DriverWorkspaceScreen(
     state:MobileState,data:JsonObject,onRefresh:()->Unit,onLogout:()->Unit,onRecovery:()->Unit,
     onRead:(String)->Unit,onDetails:(String)->Unit,
@@ -127,7 +149,10 @@ internal val DriverDarkColorScheme = DarkColorScheme
 ) {
     var tab by rememberSaveable {mutableStateOf(if(state.passwordChangeOwner!=null)"Profile" else "Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
+    var chooseTripRequested by rememberSaveable {mutableStateOf(false)}
+    var navigateChatOpen by rememberSaveable(selected) {mutableStateOf(false)}
     var messageThread by rememberSaveable {mutableStateOf<String?>(null)}
+    var profileSubPanelOpen by rememberSaveable {mutableStateOf(false)}
     val shipments=DriverRecordPresentation.shipments(data,state.history)
     val tripData=JsonObject(data+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,state.history))))
     val active=data.rows("shipments").filter {s->DriverUiRules.isActiveAssignment(s,DriverUiRules.delivery(data,s.value("id")))}
@@ -137,86 +162,68 @@ internal val DriverDarkColorScheme = DarkColorScheme
     var expense by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
     var fuel by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
     val request=rememberSaveable(delivery?.value("id"),expense){UUID.randomUUID().toString()}
+    LaunchedEffect(tab) {
+        if(tab!="Profile") profileSubPanelOpen=false
+        if(tab!="Navigate") {
+            chooseTripRequested=false
+            navigateChatOpen=false
+        }
+    }
+    LaunchedEffect(tab, selected, chooseTripRequested, active) {
+        if (tab == "Navigate" && selected == null && !chooseTripRequested) {
+            autoSelectNavigateTripId(active, data)?.let { selected = it }
+        }
+    }
     LaunchedEffect(shipment?.value("id"),tab) {if(shipment!=null)onDetails(shipment.value("id"))}
-    BackHandler(tab!="Home" || selected!=null) {if(tab=="Messages" && messageThread!=null)messageThread=null else if(selected!=null)selected=null else tab="Home"}
-    Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
-        Surface(color=MaterialTheme.colorScheme.surface) {
-            Column(Modifier.statusBarsPadding()) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min=64.dp).padding(
-                        start=if(tab=="Navigate" && shipment!=null) 4.dp else 16.dp,
-                        end=16.dp
-                    ),
-                    verticalAlignment=Alignment.CenterVertically,
-                    horizontalArrangement=Arrangement.SpaceBetween
-                ) {
-                    if(tab=="Navigate" && shipment!=null) {
-                        Row(
-                            modifier=Modifier.weight(1f),
-                            verticalAlignment=Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick={selected=null},
-                                modifier=Modifier.size(48.dp)
-                            ) {
-                                Icon(
-                                    imageVector=Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription="Switch trip",
-                                    tint=MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Text(
-                                text=shipment.value("tracking_number").ifBlank {"Navigate"},
-                                style=MaterialTheme.typography.titleMedium,
-                                color=MaterialTheme.colorScheme.onSurface,
-                                maxLines=1,
-                                overflow=TextOverflow.Ellipsis,
-                                modifier=Modifier.weight(1f)
-                            )
-                        }
-                    } else {
-                        DriverAsset(R.drawable.figma_driver_fac2b,46)
-                    }
-                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                        if(conversation!=null) {
-                            val unreadCount = if(state.offline || state.conversationUnread==null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}
-                            TextButton(
-                                onClick={tab="Messages";selected=null;messageThread=null},
-                                modifier=Modifier.heightIn(min=48.dp),
-                                contentPadding=PaddingValues(horizontal=8.dp,vertical=4.dp)
-                            ) {
-                                Text(
-                                    text=if(unreadCount!=null && unreadCount>0) "Messages ($unreadCount)" else "Messages",
-                                    maxLines=1,
-                                    overflow=TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                        val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
-                        IconButton(
-                            onClick={tab="Alerts";selected=null},
-                            modifier=Modifier.size(48.dp)
-                        ) {
-                            BadgedBox(
-                                badge = {
-                                    if (unreadAlerts > 0) {
-                                        Badge { Text("$unreadAlerts") }
-                                    }
-                                }
-                            ) {
-                                DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications",tint=MaterialTheme.colorScheme.onSurface)
-                            }
-                        }
-                    }
-                }
-                if(state.busy) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
+    BackHandler(tab!="Home" || selected!=null) {
+        when {
+            tab=="Messages" && messageThread!=null -> messageThread=null
+            tab=="Navigate" && selected!=null -> {
+                if (active.size > 1) {
+                    chooseTripRequested = true
+                    selected = null
                 } else {
-                    HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant,thickness=1.dp)
+                    selected = null
+                    tab = "Home"
                 }
             }
+            selected!=null -> selected=null
+            else -> tab="Home"
         }
-    },bottomBar={DriverBottomBar(tab,state.busy) {tab=it;selected=null}}) {padding->
+    }
+    Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
+        val unreadCount = if(state.offline || state.conversationUnread==null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}
+        val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
+        DriverTopAppBar(
+            trackingNumber = if(tab=="Navigate") shipment?.value("tracking_number") else null,
+            showMessages = conversation!=null,
+            unreadMessagesCount = unreadCount,
+            unreadAlertsCount = unreadAlerts,
+            isBusy = state.busy,
+            onSwitchTrip = {
+                if (tab == "Navigate" && active.size > 1) {
+                    chooseTripRequested = true
+                    selected = null
+                } else if (tab == "Navigate") {
+                    selected = null
+                    tab = "Home"
+                } else {
+                    selected = null
+                }
+            },
+            onOpenMessages = {tab="Messages";selected=null;messageThread=null},
+            onOpenAlerts = {tab="Alerts";selected=null},
+            onRefresh = onRefresh
+        )
+    },bottomBar={
+        if(!(tab=="Profile" && profileSubPanelOpen)) {
+            DriverBottomBar(tab,state.busy) { nextTab ->
+                tab = nextTab
+                selected = null
+                chooseTripRequested = false
+            }
+        }
+    }) {padding->
         Column(Modifier.fillMaxSize().padding(padding).imePadding().then(if(tab=="Messages" && messageThread!=null) Modifier else Modifier.verticalScroll(rememberScrollState()))) {
             state.error?.let {DriverNotice(it,true)}
             state.message?.let {DriverNotice(it)}
@@ -224,7 +231,6 @@ internal val DriverDarkColorScheme = DarkColorScheme
                 DriverNotice("Offline · saved ${state.lastSync.ifBlank {"at an unknown time"}}. Records may have changed. Reconnect and refresh before making changes.")
                 TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry connection")}
             }
-            if(onClearOffline!=null && tab=="Profile")TextButton(onClick=onClearOffline,enabled=!state.busy){Text("Clear saved offline workspace")}
             data.value("driver_read_error").takeIf(String::isNotBlank)?.let {DriverNotice(it,true)}
             when {
                 selected!=null && shipment==null -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -261,21 +267,28 @@ internal val DriverDarkColorScheme = DarkColorScheme
                                     DriverAsset(R.drawable.figma_driver_e588e,17,12,tint=MaterialTheme.colorScheme.onPrimary);Spacer(Modifier.width(8.dp));Text("New Trip Assigned!",color=MaterialTheme.colorScheme.onPrimary,fontWeight=FontWeight.ExtraBold)
                                 }
                             }
-                        active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){selected=s.value("id");tab="Navigate"}}
+                        active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){chooseTripRequested=false;selected=s.value("id");tab="Navigate"}}
                     }
-                    TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Refresh")}
                 }
                 tab=="Navigate" && shipment!=null -> {
-                    DriverNavigation(shipment,delivery?:buildJsonObject{},state,{s,d->tripActions(s,d){selected=null;tab="Home"}},expense={expense=true},
-                        fuel=if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))({fuel=true})else null,routePreview=routePreview)
-                    Column(Modifier.padding(16.dp)) {DriverRecords(shipment,state,onDetails,onProof,onEvidence)}
-                    delivery?.takeIf{it.value("id").isNotBlank()}?.let {Column(Modifier.padding(16.dp)){conversation?.invoke(it)}}
+                    val hasConversation = conversation != null && !delivery?.value("id").isNullOrBlank()
+                    DriverNavigation(
+                        s = shipment,
+                        d = delivery ?: buildJsonObject {},
+                        state = state,
+                        actions = { s, d -> tripActions(s, d) { selected = null; tab = "Home" } },
+                        expense = { expense = true },
+                        fuel = if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))({fuel=true})else null,
+                        routePreview = routePreview,
+                        onMessageOffice = if (hasConversation) ({ navigateChatOpen = true }) else null,
+                        tripLogsContent = { DriverRecords(shipment, state, onDetails, onProof, onEvidence) }
+                    )
                 }
                 tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Choose a trip to navigate")
                     DriverHomeReadNotices(data,state.busy,onRefresh)
                     if(active.isEmpty())DriverEmpty(data)
-                    else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){selected=s.value("id")}}
+                    else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){chooseTripRequested=false;selected=s.value("id")}}
                 }
                 tab=="Messages" -> Column(Modifier.then(if(messageThread!=null) Modifier.weight(1f) else Modifier).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     val threads=(state.conversationUnread?.filterIsInstance<JsonObject>().orEmpty().map {JsonObject(it+mapOf("id" to JsonPrimitive(it.value("delivery_id"))))}+
@@ -285,16 +298,18 @@ internal val DriverDarkColorScheme = DarkColorScheme
                     if(messageThread!=null) {
                         if(opened==null) {
                             DriverNotice("This conversation is no longer available. Refresh to check your delivery access.",true)
-                            TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh message inbox")}
+                            TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry message inbox")}
                         } else key(opened.value("id"),opened.value("driver_id")) {
                             conversation?.invoke(JsonObject(opened+mapOf("inbox_open" to JsonPrimitive(true))))
                         }
                     } else {
-                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-                            Text("Your delivery conversations",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.weight(1f))
-                            TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh message inbox")}
+                        Text("Your delivery conversations",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        if(state.offline || state.conversationUnread==null) {
+                            DriverNotice(if(state.offline) "Reconnect to view current unread counts." else "Unread messages unavailable. Refresh to retry.")
+                            if (!state.offline) {
+                                TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry unread messages")}
+                            }
                         }
-                        if(state.offline || state.conversationUnread==null)DriverNotice(if(state.offline) "Reconnect to view current unread counts." else "Unread messages unavailable. Refresh to retry.")
                         if(threads.isEmpty())Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
                             Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Text("No conversations yet",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
@@ -320,8 +335,17 @@ internal val DriverDarkColorScheme = DarkColorScheme
                 }
                 tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
                 tab=="Profile" -> {
-                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh driver profile")}
-                    DriverProfile(data,state.busy,state.offline,onRefresh,onRecovery,onLogout) {tab="Messages";messageThread=null;selected=null}
+                    DriverProfile(
+                        data = data,
+                        busy = state.busy,
+                        offline = state.offline,
+                        refresh = onRefresh,
+                        recover = onRecovery,
+                        logout = onLogout,
+                        messages = {tab="Messages";messageThread=null;selected=null},
+                        onClearOffline = onClearOffline,
+                        onSubPanelChanged = {profileSubPanelOpen=it}
+                    )
                 }
                 tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                     DriverPageHeading("Notifications") {tab="Home"}
@@ -334,8 +358,8 @@ internal val DriverDarkColorScheme = DarkColorScheme
                     if(state.notificationsLoading && state.notificationsPage == null) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
-                    if(state.notificationsError != null) {
-                        DriverNotice(state.notificationsError!!, true)
+                    state.notificationsError?.let {
+                        DriverNotice(it, true)
                     }
                     if(DriverRecordPresentation.section(data,"notifications") in listOf("error","unavailable") && displayedNotifications.isEmpty()) {
                         DriverNotice("Notifications unavailable. Refresh to retry.",true)
@@ -362,6 +386,27 @@ internal val DriverDarkColorScheme = DarkColorScheme
     if(expense && delivery!=null)AddTripExpenseSheet(delivery.value("id"),shipment.value("tracking_number"),state.busy,state.error,
         onDismiss={if(!state.busy)expense=false},onSubmit={category,amount,receipt->onExpense(delivery.value("id"),request,category,amount,receipt){expense=false}},offline=state.offline,owner=owner)
     if(fuel && delivery!=null && onFuel!=null)DriverFuelForm(delivery.value("id"),state,{fuel=false}) {fuelRequest,entry,close->onFuel(delivery.value("id"),fuelRequest,entry,close)}
+    if(navigateChatOpen && tab=="Navigate" && shipment!=null && delivery!=null && !delivery.value("id").isNullOrBlank() && conversation!=null) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { navigateChatOpen = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f)
+                    .imePadding()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp)
+            ) {
+                key(delivery.value("id"), delivery.value("driver_id")) {
+                    conversation(JsonObject(delivery + mapOf("inbox_open" to JsonPrimitive(true))))
+                }
+            }
+        }
+    }
 }
 
 @Composable private fun DriverBottomBar(tab:String,busy:Boolean,onTab:(String)->Unit) {
@@ -514,13 +559,24 @@ internal val DriverDarkColorScheme = DarkColorScheme
     }
 }
 
-@Composable private fun DriverNavigation(s:JsonObject,d:JsonObject,state:MobileState,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit,fuel:(()->Unit)?=null,routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null) {
-    DriverNavigateOverview(s,d,state,actions,expense,fuel,routePreview)
+@Composable private fun DriverNavigation(
+    s: JsonObject,
+    d: JsonObject,
+    state: MobileState,
+    actions: @Composable (JsonObject, JsonObject) -> Unit,
+    expense: () -> Unit,
+    fuel: (() -> Unit)? = null,
+    routePreview: (suspend (String, org.maplibre.android.geometry.LatLng, org.maplibre.android.geometry.LatLng) -> RoutePreview)? = null,
+    onMessageOffice: (() -> Unit)? = null,
+    tripLogsContent: (@Composable () -> Unit)? = null
+) {
+    DriverNavigateOverview(s, d, state, actions, expense, fuel, routePreview, onMessageOffice, tripLogsContent)
 }
 
 @Composable internal fun DriverDirectionsButtons(shipment: JsonObject, stage: Int = 0, confirmedGeoJson: String? = null) {
     val handler = LocalUriHandler.current
     var error by remember(shipment.value("id")) { mutableStateOf<String?>(null) }
+    var showMoreOptions by rememberSaveable(shipment.value("id")) { mutableStateOf(false) }
     val effectiveGeoJson = confirmedGeoJson ?: shipment["route_geometry"]?.takeUnless { it == kotlinx.serialization.json.JsonNull }?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.contentOrNull else it.toString() }
     val hasWaypoints = remember(effectiveGeoJson) {
         !DriverDirections.corridorWaypointsParam(effectiveGeoJson).isNullOrBlank()
@@ -531,55 +587,55 @@ internal val DriverDarkColorScheme = DarkColorScheme
         val tripUrl = DriverDirections.tripUrl(shipment, effectiveGeoJson)
 
         val isPickupPrimary = stage < 4
-        if (isPickupPrimary) {
-            FilledTonalButton(
-                onClick = {
-                    error = null
-                    try { handler.openUri(requireNotNull(pickupUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
-                },
-                enabled = pickupUrl != null,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) { Text("Directions to pickup") }
-            OutlinedButton(
-                onClick = {
-                    error = null
-                    try { handler.openUri(requireNotNull(destUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
-                },
-                enabled = destUrl != null,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) { Text("Directions to destination") }
-        } else {
-            FilledTonalButton(
-                onClick = {
-                    error = null
-                    try { handler.openUri(requireNotNull(destUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
-                },
-                enabled = destUrl != null,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) { Text("Directions to destination") }
-            OutlinedButton(
-                onClick = {
-                    error = null
-                    try { handler.openUri(requireNotNull(pickupUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
-                },
-                enabled = pickupUrl != null,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) { Text("Directions to pickup") }
-        }
+        val primaryLabel = if (isPickupPrimary) "Directions to pickup" else "Directions to destination"
+        val primaryUrl = if (isPickupPrimary) pickupUrl else destUrl
+        val secondaryLabel = if (isPickupPrimary) "Directions to destination" else "Directions to pickup"
+        val secondaryUrl = if (isPickupPrimary) destUrl else pickupUrl
 
-        OutlinedButton(
+        FilledTonalButton(
             onClick = {
                 error = null
-                try { handler.openUri(requireNotNull(tripUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                try { handler.openUri(requireNotNull(primaryUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
             },
-            enabled = tripUrl != null,
+            enabled = primaryUrl != null,
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-        ) { Text("View pickup-to-destination route") }
+        ) { Text(primaryLabel) }
+
+        TextButton(
+            onClick = { showMoreOptions = !showMoreOptions },
+            modifier = Modifier.heightIn(min = 48.dp)
+        ) {
+            Text(if (showMoreOptions) "Hide route options" else "More route options")
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = if (showMoreOptions) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        if (showMoreOptions) {
+            OutlinedButton(
+                onClick = {
+                    error = null
+                    try { handler.openUri(requireNotNull(secondaryUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                },
+                enabled = secondaryUrl != null,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) { Text(secondaryLabel) }
+
+            OutlinedButton(
+                onClick = {
+                    error = null
+                    try { handler.openUri(requireNotNull(tripUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
+                },
+                enabled = tripUrl != null,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) { Text("View pickup-to-destination route") }
+        }
 
         Text("Opens external driving directions. Confirm truck restrictions with the office.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (hasWaypoints) {
@@ -632,7 +688,9 @@ internal val DriverDarkColorScheme = DarkColorScheme
             history?.value("as_of")?.let {Text("Updated ${MobilePresentation.time(it)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(state.historyLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
             state.historyError?.let {Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}
-            TextButton(onClick={onHistory(period,false)},enabled=!state.historyLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Refresh trip history")}
+            if(state.historyError != null || (history == null && !state.historyLoading)) {
+                TextButton(onClick={onHistory(period,false)},enabled=!state.historyLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Retry trip history")}
+            }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf("All","Completed","Ongoing","Cancelled").forEach {f->
@@ -693,18 +751,24 @@ internal val DriverDarkColorScheme = DarkColorScheme
 
 @Composable private fun DriverRecords(s:JsonObject,state:MobileState,load:(String)->Unit,proof:(String,String)->Unit,evidence:((String,String,String)->Unit)?) {
     DriverTripSection("Saved trip records","Fuel purchases, expenses and recorded updates for this trip.") {
-    TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Refresh trip records")}
     if(state.detailLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
-    state.details?.takeIf {it.value("shipment_id")==s.value("id")}?.let {details->
+    val matchingDetails = state.details?.takeIf {it.value("shipment_id")==s.value("id")}
+    matchingDetails?.let {details->
         DriverEvidenceRecords(s.value("id"),details,state.busy || state.offline,evidence)
-        details.value("fuel_error").takeIf(String::isNotBlank)?.let {Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}
+        details.value("fuel_error").takeIf(String::isNotBlank)?.let {
+            Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+            TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Retry trip records")}
+        }
         if(details.containsKey("fuel_logs")) {
             DriverFuelRecords(details.rows("fuel_logs"))
         }
         DriverRecordedTimeline(details)
         details.rows("documents").forEach {doc->TextButton(onClick={proof(s.value("id"),doc.value("id"))},modifier=Modifier.heightIn(min=48.dp)){Text("View ${MobilePresentation.status(doc.value("kind"))}")}}
     }
-    if(state.details?.value("shipment_id")!=s.value("id") && !state.detailLoading)Text("Refresh to view this trip's saved records.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    if(matchingDetails == null && !state.detailLoading) {
+        Text("Trip records not yet loaded.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Retry trip records")}
+    }
     }
 }
 
@@ -851,5 +915,225 @@ internal object DriverUiRules {
     }
     fun compliance(doc:JsonObject,today:LocalDate=LocalDate.now(ZoneId.of("Asia/Manila"))):String {
         return DriverProfileRules.compliance(doc,JsonArray(emptyList()),today)
+    }
+}
+
+@Composable
+internal fun DriverTopAppBar(
+    trackingNumber: String?,
+    showMessages: Boolean,
+    unreadMessagesCount: Int?,
+    unreadAlertsCount: Int,
+    isBusy: Boolean,
+    onSwitchTrip: () -> Unit,
+    onOpenMessages: () -> Unit,
+    onOpenAlerts: () -> Unit,
+    modifier: Modifier = Modifier,
+    onRefresh: (() -> Unit)? = null
+) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.statusBarsPadding()) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(
+                    start = if (trackingNumber != null) 4.dp else 16.dp,
+                    end = 16.dp
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (trackingNumber != null) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onSwitchTrip,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = "Switch trip",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = trackingNumber.ifBlank { "Navigate" },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                } else {
+                    DriverAsset(
+                        id = if (isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.figma_driver_fac2b,
+                        width = 46,
+                        description = "TANAW logo"
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (showMessages) {
+                        TextButton(
+                            onClick = onOpenMessages,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (unreadMessagesCount != null && unreadMessagesCount > 0) "Messages ($unreadMessagesCount)" else "Messages",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    if (onRefresh != null) {
+                        IconButton(
+                            onClick = onRefresh,
+                            enabled = !isBusy,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = stringResource(id = R.string.refresh),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onOpenAlerts,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (unreadAlertsCount > 0) {
+                                    Badge { Text("$unreadAlertsCount") }
+                                }
+                            }
+                        ) {
+                            DriverAsset(R.drawable.figma_driver_90918, 24, 28, "Notifications", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+            if (isBusy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
+            } else {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Driver Top Bar Light")
+@Composable
+private fun DriverTopAppBarLightPreview() {
+    DriverTheme(darkTheme = false) {
+        DriverTopAppBar(
+            trackingNumber = null,
+            showMessages = true,
+            unreadMessagesCount = 2,
+            unreadAlertsCount = 1,
+            isBusy = false,
+            onSwitchTrip = {},
+            onOpenMessages = {},
+            onOpenAlerts = {},
+            onRefresh = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Driver Top Bar Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun DriverTopAppBarDarkPreview() {
+    DriverTheme(darkTheme = true) {
+        DriverTopAppBar(
+            trackingNumber = null,
+            showMessages = true,
+            unreadMessagesCount = 2,
+            unreadAlertsCount = 1,
+            isBusy = false,
+            onSwitchTrip = {},
+            onOpenMessages = {},
+            onOpenAlerts = {},
+            onRefresh = {}
+        )
+    }
+}
+
+private fun previewDriverWorkspaceData() = buildJsonObject {
+    put("profile", buildJsonObject {
+        put("id", "driver-1")
+        put("role", "driver")
+        put("full_name", "Mateo Reyes")
+    })
+    put("driver", buildJsonObject {
+        put("id", "driver-row-1")
+        put("status", "available")
+    })
+    put("driver_trucks", buildJsonArray {
+        add(buildJsonObject {
+            put("id", "truck-1")
+            put("model", "Isuzu Giga Wing Van")
+            put("plate_number", "NCV 4821")
+            put("assigned_driver_id", "driver-row-1")
+        })
+    })
+    put("shipments", buildJsonArray {
+        add(buildJsonObject {
+            put("id", "ship-1")
+            put("tracking_number", "TNW-2026-0412")
+            put("status", "assigned")
+            put("cargo_description", "Palletized Beverage Crates")
+            put("weight_kg", "6200")
+            put("pickup_address", "Cabanatuan City Warehouse Hub")
+            put("dropoff_address", "Valenzuela Distribution Center")
+            put("scheduled_departure", "2026-10-29T00:00:00Z")
+            put("created_at", "2026-10-28T09:00:00Z")
+            put("distance_km", "94")
+            put("route_duration_minutes", "135")
+        })
+    })
+    put("driver_deliveries", buildJsonArray {
+        add(buildJsonObject {
+            put("id", "del-1")
+            put("shipment_id", "ship-1")
+            put("truck_id", "truck-1")
+            put("status", "assigned")
+            put("assigned_at", "2026-10-28T09:30:00Z")
+            put("driver_allowance", "1250")
+        })
+    })
+}
+
+@Preview(showBackground = true, name = "Driver Home Light")
+@Composable
+private fun DriverHomeLightPreview() {
+    val data = previewDriverWorkspaceData()
+    DriverTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                DriverIdentity(data)
+                DriverAssignment(
+                    data.rows("shipments").first(),
+                    DriverUiRules.delivery(data, "ship-1")
+                ) {}
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Driver Trips Light")
+@Composable
+private fun DriverTripsLightPreview() {
+    val data = previewDriverWorkspaceData()
+    DriverTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            DriverTrips(
+                data = data,
+                state = MobileState(),
+                onHistory = null,
+                open = {}
+            )
+        }
     }
 }

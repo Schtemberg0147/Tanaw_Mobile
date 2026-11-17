@@ -1,6 +1,7 @@
 package com.tanaw.app.feature.workspace.customer.screens
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CustomerProfilePresentationTest {
@@ -17,10 +18,10 @@ class CustomerProfilePresentationTest {
 
     @Test
     fun memberSinceFormatsDateCorrectly() {
-        assertEquals("MEMBER SINCE JANUARY 2025", CustomerProfilePresentation.memberSince(null))
-        assertEquals("MEMBER SINCE JANUARY 2025", CustomerProfilePresentation.memberSince(""))
+        assertNull(CustomerProfilePresentation.memberSince(null))
+        assertNull(CustomerProfilePresentation.memberSince(""))
         assertEquals("MEMBER SINCE OCTOBER 2024", CustomerProfilePresentation.memberSince("2024-10-15T08:00:00Z"))
         assertEquals("MEMBER SINCE MARCH 2023", CustomerProfilePresentation.memberSince("2023-03-01"))
-        assertEquals("MEMBER SINCE JANUARY 2025", CustomerProfilePresentation.memberSince("invalid-date"))
+        assertNull(CustomerProfilePresentation.memberSince("invalid-date"))
     }
 }

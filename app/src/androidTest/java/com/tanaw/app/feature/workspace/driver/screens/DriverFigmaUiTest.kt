@@ -65,6 +65,7 @@ class DriverFigmaUiTest {
         compose.onNodeWithText("UI-DRIVER-001").performClick()
         compose.onNodeWithText("This assignment has no saved map pins",substring=true).performScrollTo().assertExists()
         compose.onNodeWithText("Directions to pickup").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("More route options").performScrollTo().performClick()
         compose.onNodeWithText("Directions to destination").performScrollTo().assertIsEnabled()
         compose.onNodeWithText("View pickup-to-destination route").performScrollTo().assertIsEnabled()
     }

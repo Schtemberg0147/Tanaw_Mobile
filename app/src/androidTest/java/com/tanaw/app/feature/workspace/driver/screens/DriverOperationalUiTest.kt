@@ -94,7 +94,7 @@ class DriverOperationalUiTest {
         compose.onNodeWithText("TRIPS").performClick()
         compose.onNodeWithText("History unavailable").assertExists()
         compose.onNodeWithText("0 Completed").assertDoesNotExist()
-        compose.onNodeWithText("Refresh trip history").performScrollTo().performClick()
+        compose.onNodeWithText("Retry trip history").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(2,calls.size)}
     }
 }

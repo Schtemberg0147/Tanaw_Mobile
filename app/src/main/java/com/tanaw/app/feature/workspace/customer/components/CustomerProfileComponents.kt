@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -47,7 +50,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
@@ -57,6 +62,7 @@ import com.tanaw.app.feature.workspace.driver.rules.DriverProfileRules
 import com.tanaw.app.feature.workspace.state.MobileState
 import com.tanaw.app.feature.workspace.viewmodel.value
 import com.tanaw.app.ui.components.TanawSubScreenTopBar
+import com.tanaw.app.ui.theme.TanawTheme
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
@@ -64,7 +70,7 @@ import kotlinx.serialization.json.JsonObject
 internal fun CustomerProfileHeader(
     fullName: String,
     email: String,
-    memberSince: String,
+    memberSince: String?,
     onEditPhotoClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -96,7 +102,7 @@ internal fun CustomerProfileHeader(
                     .offset(x = 12.dp, y = 12.dp)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onEditPhotoClick),
+                    .clickable(role = Role.Button, onClick = onEditPhotoClick),
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
@@ -132,19 +138,21 @@ internal fun CustomerProfileHeader(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        ) {
-            Text(
-                text = memberSince,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 0.6.sp,
-                fontWeight = FontWeight.Bold,
-            )
+        if (!memberSince.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+            ) {
+                Text(
+                    text = memberSince,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 0.6.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
@@ -227,12 +235,14 @@ internal fun CustomerPersonalInfoCard(
 internal fun CustomerSmsCard(
     isSmsEnabled: Boolean,
     phone: String,
+    hasVerifiedPhone: Boolean,
+    smsError: String?,
     isBusy: Boolean,
     isOffline: Boolean,
-    onToggleSms: () -> Unit,
     onSwitchChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val canToggle = !isBusy && !isOffline && hasVerifiedPhone
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -261,7 +271,13 @@ internal fun CustomerSmsCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = !isBusy && !isOffline, onClick = onToggleSms)
+                    .heightIn(min = 48.dp)
+                    .toggleable(
+                        value = isSmsEnabled,
+                        enabled = canToggle,
+                        role = Role.Switch,
+                        onValueChange = onSwitchChange,
+                    )
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -295,24 +311,40 @@ internal fun CustomerSmsCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    val verifiedFallback = stringResource(R.string.verified_number_fallback)
-                    Text(
-                        text = stringResource(
-                            R.string.sent_to_verified_number_fmt,
-                            phone.ifBlank { verifiedFallback },
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    if (!smsError.isNullOrBlank()) {
+                        Text(
+                            text = smsError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    } else if (!hasVerifiedPhone) {
+                        Text(
+                            text = stringResource(R.string.sms_phone_required),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    } else {
+                        val verifiedFallback = stringResource(R.string.verified_number_fallback)
+                        Text(
+                            text = stringResource(
+                                R.string.sent_to_verified_number_fmt,
+                                phone.ifBlank { verifiedFallback },
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Switch(
                     checked = isSmsEnabled,
-                    onCheckedChange = onSwitchChange,
-                    enabled = !isBusy && !isOffline,
+                    onCheckedChange = null,
+                    enabled = canToggle,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = MaterialTheme.colorScheme.primary,
@@ -331,6 +363,7 @@ internal fun CustomerMenuCard(
     onOpenSavedAddresses: () -> Unit,
     onChangePassword: () -> Unit,
     onOpenTerms: () -> Unit,
+    onOpenPrivacy: () -> Unit,
     onOpenHelp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -363,6 +396,12 @@ internal fun CustomerMenuCard(
                 iconRes = R.drawable.ic_check_circle,
                 text = stringResource(R.string.terms_of_service),
                 onClick = onOpenTerms,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            CustomerMenuItemRow(
+                iconVector = Icons.Outlined.PrivacyTip,
+                text = stringResource(R.string.privacy_policy),
+                onClick = onOpenPrivacy,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             CustomerMenuItemRow(
@@ -402,6 +441,7 @@ internal fun CustomerSubPanel(
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -572,7 +612,11 @@ internal fun CustomerSubPanel(
                                     onClick = { openUriSafely("mailto:$it") },
                                     modifier = Modifier.heightIn(min = 48.dp),
                                 ) {
-                                    Text("Email: $it", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = stringResource(R.string.email_contact_fmt, it),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                 }
                             }
                             phone?.let {
@@ -580,7 +624,11 @@ internal fun CustomerSubPanel(
                                     onClick = { openUriSafely("tel:$it") },
                                     modifier = Modifier.heightIn(min = 48.dp),
                                 ) {
-                                    Text("Call: $it", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = stringResource(R.string.call_contact_fmt, it),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                 }
                             }
                             url?.let {
@@ -609,7 +657,7 @@ internal fun CustomerSubPanel(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            val key = if (panel == "Privacy") "privacy_url" else "terms_url"
+                            val key = if (panel == "Privacy" || panel == "Privacy Policy") "privacy_url" else "terms_url"
                             val url = content?.value(key)?.let(DriverProfileRules::https)
                             if (settings == null) {
                                 Text(
@@ -662,7 +710,8 @@ private fun CustomerProfileRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -707,14 +756,14 @@ private fun CustomerProfileRow(
         if (isLocked) {
             Icon(
                 imageVector = Icons.Outlined.Lock,
-                contentDescription = "Locked",
+                contentDescription = stringResource(R.string.field_locked),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp),
             )
         } else {
             Icon(
                 imageVector = Icons.Outlined.Edit,
-                contentDescription = "Edit $label",
+                contentDescription = stringResource(R.string.edit_field_fmt, label),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
             )
@@ -733,7 +782,8 @@ private fun CustomerMenuItemRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -786,10 +836,25 @@ internal fun CustomerProfileNotices(
         if (showLinearProgress && state.busy) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary)
         }
+        if (state.offline) {
+            Surface(
+                color = TanawTheme.extendedColors.warningContainer,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = stringResource(R.string.offline_notice),
+                    modifier = Modifier.padding(14.dp),
+                    color = TanawTheme.extendedColors.onWarningContainer,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
         state.error?.let {
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer,
                 shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = it,
@@ -801,17 +866,112 @@ internal fun CustomerProfileNotices(
         }
         state.message?.let {
             Surface(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                color = TanawTheme.extendedColors.successBannerBackground,
                 shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = it,
                     modifier = Modifier.padding(14.dp),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = TanawTheme.extendedColors.onSuccessBannerText,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CustomerProfileHeaderPreview() {
+    TanawTheme {
+        CustomerProfileHeader(
+            fullName = "Maria Santos",
+            email = "maria.santos@example.com",
+            memberSince = "MEMBER SINCE OCTOBER 2024",
+            onEditPhotoClick = {},
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CustomerPersonalInfoCardPreview() {
+    TanawTheme {
+        CustomerPersonalInfoCard(
+            fullName = "Maria Santos",
+            email = "maria.santos@example.com",
+            contact = "+63 917 555 0142",
+            defaultAddress = "123 Rizal Ave, Brgy. San Antonio, Quezon City, Metro Manila",
+            onEditName = {},
+            onEmailInfo = {},
+            onEditPhone = {},
+            onEditAddress = {},
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CustomerSmsCardPreview() {
+    TanawTheme {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            CustomerSmsCard(
+                isSmsEnabled = true,
+                phone = "+63 917 555 0142",
+                hasVerifiedPhone = true,
+                smsError = null,
+                isBusy = false,
+                isOffline = false,
+                onSwitchChange = {},
+            )
+            CustomerSmsCard(
+                isSmsEnabled = false,
+                phone = "",
+                hasVerifiedPhone = false,
+                smsError = null,
+                isBusy = false,
+                isOffline = false,
+                onSwitchChange = {},
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CustomerMenuCardPreview() {
+    TanawTheme {
+        CustomerMenuCard(
+            onOpenBookings = {},
+            onOpenSavedAddresses = {},
+            onChangePassword = {},
+            onOpenTerms = {},
+            onOpenPrivacy = {},
+            onOpenHelp = {},
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CustomerProfileNoticesPreview() {
+    TanawTheme {
+        CustomerProfileNotices(
+            state = MobileState(
+                busy = true,
+                offline = true,
+                error = "Could not sync SMS preferences.",
+                message = "Profile saved.",
+            ),
+            modifier = Modifier.padding(16.dp),
+        )
     }
 }

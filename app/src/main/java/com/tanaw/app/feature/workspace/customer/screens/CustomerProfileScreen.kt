@@ -9,7 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -92,6 +93,8 @@ internal fun CustomerProfile(
     var editingProvinceValue by remember { mutableStateOf("") }
     var editError by remember { mutableStateOf<String?>(null) }
 
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
     val savedStructuredAddress = CustomerAddressRules.parseFromSaved(
         rawAddress = c.value("address"),
         rawCity = c.value("city"),
@@ -101,30 +104,6 @@ internal fun CustomerProfile(
 
     fun openUriSafely(value: String) {
         linkError = runCatching { uri.openUri(value) }.isFailure
-    }
-
-    BackHandler(panel != null) { panel = null }
-
-    if (panel != null) {
-        CustomerSubPanel(
-            panel = panel!!,
-            content = content,
-            settings = settings,
-            state = state,
-            savedStructuredAddress = savedStructuredAddress,
-            linkError = linkError,
-            openUriSafely = ::openUriSafely,
-            onBack = { panel = null },
-            onEditAddress = {
-                editingFieldKey = "address"
-                editingFieldValue = savedStructuredAddress.streetAddress
-                editingBarangayValue = savedStructuredAddress.barangay
-                editingCityValue = savedStructuredAddress.city
-                editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
-                editError = null
-            },
-        )
-        return
     }
 
     val nameLengthError = stringResource(R.string.name_length_error)
@@ -226,6 +205,7 @@ internal fun CustomerProfile(
     if (infoDialog != null) {
         AlertDialog(
             onDismissRequest = { infoDialog = null },
+            shape = RoundedCornerShape(16.dp),
             title = {
                 Text(
                     text = stringResource(R.string.profile_information),
@@ -246,7 +226,79 @@ internal fun CustomerProfile(
         )
     }
 
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!state.busy) showLogoutConfirm = false },
+            shape = RoundedCornerShape(16.dp),
+            title = {
+                Text(
+                    text = stringResource(R.string.log_out_confirm_title),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.log_out_confirm_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLogoutConfirm = false
+                        onLogout()
+                    },
+                    enabled = !state.busy,
+                ) {
+                    Text(
+                        text = stringResource(R.string.log_out_confirm_action),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLogoutConfirm = false },
+                    enabled = !state.busy,
+                ) {
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+        )
+    }
+
+    BackHandler(panel != null) { panel = null }
+
+    if (panel != null) {
+        CustomerSubPanel(
+            panel = panel!!,
+            content = content,
+            settings = settings,
+            state = state,
+            savedStructuredAddress = savedStructuredAddress,
+            linkError = linkError,
+            openUriSafely = ::openUriSafely,
+            onBack = { panel = null },
+            onEditAddress = {
+                editingFieldKey = "address"
+                editingFieldValue = savedStructuredAddress.streetAddress
+                editingBarangayValue = savedStructuredAddress.barangay
+                editingCityValue = savedStructuredAddress.city
+                editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
+                editError = null
+            },
+        )
+        return
+    }
+
     val unreadNotifications = data.rows("notifications").count { it.value("read_at").isBlank() }
+    val smsError = data.value("sms_error").takeIf { it.isNotBlank() }
+    val hasVerifiedPhone = MobileValidation.phone(p.value("phone")) != null
     val isSmsEnabled = data.rows("sms_preferences").any {
         it.value("type") == "shipment_status" && it.get("enabled") == JsonPrimitive(true)
     }
@@ -282,6 +334,7 @@ internal fun CustomerProfile(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(top = 16.dp, bottom = 32.dp),
@@ -337,10 +390,11 @@ internal fun CustomerProfile(
             CustomerSmsCard(
                 isSmsEnabled = isSmsEnabled,
                 phone = p.value("phone"),
+                hasVerifiedPhone = hasVerifiedPhone,
+                smsError = smsError,
                 isBusy = state.busy,
                 isOffline = state.offline,
-                onToggleSms = { vm.smsPreference(!isSmsEnabled) },
-                onSwitchChange = { vm.smsPreference(it) },
+                onSwitchChange = { if (hasVerifiedPhone) vm.smsPreference(it) },
             )
 
             // ── Menu Section Card ──────────────────────────────────────────────────
@@ -349,12 +403,13 @@ internal fun CustomerProfile(
                 onOpenSavedAddresses = { panel = "Saved Addresses" },
                 onChangePassword = { vm.openPasswordChange() },
                 onOpenTerms = { panel = "Terms of Service" },
+                onOpenPrivacy = { panel = "Privacy Policy" },
                 onOpenHelp = { panel = "Help & Support" },
             )
 
             // ── Log Out Button ──────────────────────────────────────────────────────
             OutlinedButton(
-                onClick = onLogout,
+                onClick = { showLogoutConfirm = true },
                 enabled = !state.busy,
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,
@@ -363,7 +418,7 @@ internal fun CustomerProfile(
                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .heightIn(min = 50.dp),
                 shape = RoundedCornerShape(10.dp),
             ) {
                 Row(
@@ -385,8 +440,6 @@ internal fun CustomerProfile(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
@@ -401,12 +454,12 @@ internal object CustomerProfilePresentation {
             .ifEmpty { "C" }
     }
 
-    fun memberSince(createdAt: String?): String {
-        if (createdAt.isNullOrBlank()) return "MEMBER SINCE JANUARY 2025"
+    fun memberSince(createdAt: String?): String? {
+        if (createdAt.isNullOrBlank()) return null
         return try {
-            val year = createdAt.take(4).toIntOrNull() ?: return "MEMBER SINCE JANUARY 2025"
-            val monthNum = createdAt.drop(5).take(2).toIntOrNull() ?: return "MEMBER SINCE JANUARY 2025"
-            if (monthNum !in 1..12) return "MEMBER SINCE JANUARY 2025"
+            val year = createdAt.take(4).toIntOrNull() ?: return null
+            val monthNum = createdAt.drop(5).take(2).toIntOrNull() ?: return null
+            if (monthNum !in 1..12) return null
             val months = listOf(
                 "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
                 "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
@@ -414,7 +467,7 @@ internal object CustomerProfilePresentation {
             val monthName = months[monthNum - 1]
             "MEMBER SINCE $monthName $year"
         } catch (_: Exception) {
-            "MEMBER SINCE JANUARY 2025"
+            null
         }
     }
 }

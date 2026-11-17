@@ -40,9 +40,9 @@ class DriverNavigateUiTest {
         compose.runOnIdle {assertTrue(arrived);assertTrue(fuel)}
         compose.onNodeWithTag("Shipment map").assertDoesNotExist()
         shot("next-step")
-        compose.onNodeWithText("Show delivery steps").performScrollTo().performClick()
+        compose.onNodeWithText("Checkpoints").performScrollTo().performClick()
         compose.onNodeWithText("3. Arrived at pickup").performScrollTo().assertExists()
-        compose.onNodeWithText("Hide delivery steps").performScrollTo().performClick()
+        compose.onNodeWithText("Route & Advisory").performScrollTo().performClick()
         compose.onNodeWithText("3. Arrived at pickup").assertDoesNotExist()
     }
     @Test fun directionsRetainOfficeConfirmationAndTruckSafetyBoundary() {
@@ -50,6 +50,7 @@ class DriverNavigateUiTest {
             DriverNavigateOverview(shipment,delivery,MobileState(),{_,_->}, {})
         }}}
         compose.onNodeWithText("Directions to pickup").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("More route options").performScrollTo().performClick()
         compose.onNodeWithText("Directions to destination").performScrollTo().assertIsEnabled()
         compose.onNodeWithText("Truck route awaiting office confirmation").performScrollTo().assertExists()
         compose.onNodeWithText("Google Maps may recalculate",substring=true).performScrollTo().assertExists()

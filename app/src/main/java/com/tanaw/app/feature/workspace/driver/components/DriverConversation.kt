@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -181,12 +183,16 @@ internal fun DriverConversation(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    TextButton(
+                    IconButton(
                         onClick = { revision++ },
                         enabled = !busy && !offline,
-                        modifier = Modifier.heightIn(min = 48.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Text("Retry / refresh messages", style = MaterialTheme.typography.labelMedium)
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = "Refresh messages",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -214,12 +220,23 @@ internal fun DriverConversation(
                             color = MaterialTheme.colorScheme.errorContainer,
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text(
-                                text = it,
+                            Column(
                                 modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                TextButton(
+                                    onClick = { revision++ },
+                                    enabled = !busy && !offline,
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text("Retry", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
                         }
                     }
                     notice?.let {

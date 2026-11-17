@@ -1,5 +1,6 @@
 package com.tanaw.app.feature.workspace.customer.components
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -117,10 +118,23 @@ fun CustomerTopBar(
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "Customer Top Bar Light")
 @Composable
 private fun CustomerTopBarPreview() {
-    TanawTheme {
+    TanawTheme(darkTheme = false) {
+        CustomerTopBar(
+            unreadAlertsCount = 3,
+            isBusy = false,
+            onRefresh = {},
+            onOpenAlerts = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Customer Top Bar Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun CustomerTopBarDarkPreview() {
+    TanawTheme(darkTheme = true) {
         CustomerTopBar(
             unreadAlertsCount = 3,
             isBusy = false,

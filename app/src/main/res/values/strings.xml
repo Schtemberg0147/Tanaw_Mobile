@@ -133,4 +133,14 @@
     <string name="help_and_support">Help &amp; Support</string>
     <string name="privacy_policy">Privacy Policy</string>
     <string name="log_out">Log Out</string>
+    <string name="offline_notice">Offline or reconnecting · showing the last loaded records.</string>
+    <string name="sms_phone_required">Add and verify a contact number above to enable SMS alerts.</string>
+    <string name="log_out_confirm_title">Log out of Tanaw?</string>
+    <string name="log_out_confirm_message">You will need to sign in again to book or track shipments.</string>
+    <string name="log_out_confirm_action">Log out</string>
+    <string name="phone_change_sms_note">Verification SMS will be sent if changed.</string>
+    <string name="email_contact_fmt">Email: %1$s</string>
+    <string name="call_contact_fmt">Call: %1$s</string>
+    <string name="field_locked">Locked</string>
+    <string name="edit_field_fmt">Edit %1$s</string>
 </resources>

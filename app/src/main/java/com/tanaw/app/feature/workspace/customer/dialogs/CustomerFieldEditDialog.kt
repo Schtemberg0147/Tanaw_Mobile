@@ -3,7 +3,9 @@ package com.tanaw.app.feature.workspace.customer.dialogs
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -51,17 +53,21 @@ internal fun CustomerFieldEditDialog(
     }
 
     val textFieldColors = OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         focusedBorderColor = MaterialTheme.colorScheme.primary,
-        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
     )
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(16.dp),
         title = { Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 when (fieldKey) {
                     "full_name" -> {
                         OutlinedTextField(
@@ -70,7 +76,7 @@ internal fun CustomerFieldEditDialog(
                             label = { Text(stringResource(R.string.full_name_label)) },
                             isError = editError != null,
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = textFieldColors,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { onSave() }),
@@ -83,10 +89,10 @@ internal fun CustomerFieldEditDialog(
                             onValueChange = onFieldValueChange,
                             label = { Text(stringResource(R.string.contact_number)) },
                             placeholder = { Text("09XXXXXXXXX") },
-                            supportingText = { Text("Verification SMS will be sent if changed.") },
+                            supportingText = { Text(stringResource(R.string.phone_change_sms_note)) },
                             isError = editError != null,
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = textFieldColors,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { onSave() }),
@@ -100,7 +106,7 @@ internal fun CustomerFieldEditDialog(
                             label = { Text(stringResource(R.string.house_street_label)) },
                             isError = editError != null && (fieldValue.isBlank() || !CustomerAddressRules.validateStreet(fieldValue)),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = textFieldColors,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
@@ -112,7 +118,7 @@ internal fun CustomerFieldEditDialog(
                             label = { Text(stringResource(R.string.barangay_label)) },
                             isError = editError != null && barangayValue.isNotBlank() && !CustomerAddressRules.validateBarangay(barangayValue),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = textFieldColors,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
@@ -124,7 +130,7 @@ internal fun CustomerFieldEditDialog(
                             label = { Text(stringResource(R.string.city_municipality_label)) },
                             isError = editError != null && (cityValue.isBlank() || !CustomerAddressRules.validateCity(cityValue)),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = textFieldColors,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
@@ -136,7 +142,7 @@ internal fun CustomerFieldEditDialog(
                             label = { Text(stringResource(R.string.province_label)) },
                             isError = editError != null && provinceValue.isNotBlank() && !CustomerAddressRules.validateProvince(provinceValue),
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = textFieldColors,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { onSave() }),
@@ -153,7 +159,7 @@ internal fun CustomerFieldEditDialog(
             Button(
                 onClick = onSave,
                 enabled = !isBusy,
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             ) {
                 Text(stringResource(R.string.save), fontWeight = FontWeight.Bold)

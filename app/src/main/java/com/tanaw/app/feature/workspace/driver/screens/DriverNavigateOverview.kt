@@ -1,11 +1,18 @@
 package com.tanaw.app.feature.workspace.driver.screens
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.LocalGasStation
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -13,14 +20,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import org.maplibre.android.geometry.LatLng
 import java.time.Instant
 import com.tanaw.app.feature.workspace.driver.components.*
-import com.tanaw.app.feature.workspace.driver.rules.*
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.feature.workspace.rules.*
 import com.tanaw.app.feature.workspace.state.*
@@ -31,6 +40,12 @@ import com.tanaw.app.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
+
+private enum class NavigateSection(val label: String) {
+    ROUTE("Route & Advisory"),
+    CHECKPOINTS("Checkpoints"),
+    LOGS("Trip Logs")
+}
 
 @Composable internal fun DriverTripSection(title:String,subtitle:String?=null,content:@Composable ColumnScope.()->Unit) {
     Surface(
@@ -95,7 +110,17 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
     else -> null
 }
 
-@Composable internal fun DriverNavigateOverview(s:JsonObject,d:JsonObject,state:MobileState,actions:@Composable (JsonObject,JsonObject)->Unit,expense:()->Unit,fuel:(()->Unit)?=null,routePreview:(suspend (String,LatLng,LatLng)->RoutePreview)?=null) {
+@Composable internal fun DriverNavigateOverview(
+    s: JsonObject,
+    d: JsonObject,
+    state: MobileState,
+    actions: @Composable (JsonObject, JsonObject) -> Unit,
+    expense: () -> Unit,
+    fuel: (() -> Unit)? = null,
+    routePreview: (suspend (String, LatLng, LatLng) -> RoutePreview)? = null,
+    onMessageOffice: (() -> Unit)? = null,
+    tripLogsContent: (@Composable () -> Unit)? = null
+) {
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -103,38 +128,84 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
             now = Instant.now()
         }
     }
-    val stage=DriverUiRules.stage(d)
-    val headings=listOf("Ready to start route","Heading to Pick-up","Waiting for Customer","Waiting to Load Cargo","Heading to Destination","Delivery submitted")
-    val next=listOf("Start your route when you are ready to leave.","Go to the pickup, then confirm your arrival.","Confirm when the customer is present.","Confirm when all cargo has been loaded.","Go to the destination, then submit delivery proof.","The office will review your delivery proof.")
-    var mapOpen by rememberSaveable(s.value("id")){mutableStateOf(false)}
-    var progressOpen by rememberSaveable(d.value("id")){mutableStateOf(false)}
-    val points=driverStopPins(s)
-    val mapPoints=driverMapPins(s,state.details,now)
-    val pinIdentity=points.map{Triple(it.first,it.second.latitude,it.second.longitude)}
-    val verifiedRouting = state.details?.takeIf { it.value("shipment_id") == s.value("id") }?.obj("routing")?.let { DriverRouteStatus.forAssignment(it, s, d) }
-    val savedGeometry = normalizeRouteGeoJson(s["route_geometry"]) ?: verifiedRouting?.takeIf { it["route_verified"] == JsonPrimitive(true) }?.obj("plan")?.let { normalizeRouteGeoJson(it["geometry"]) }
-    var preview by remember(s.value("id"),d.value("id"),d.value("driver_id"),pinIdentity){mutableStateOf<RoutePreview?>(null)}
-    var previewError by remember(s.value("id"),d.value("id"),pinIdentity){mutableStateOf<String?>(null)}
-    var previewLoading by remember {mutableStateOf(false)}
-    var previewRevision by remember {mutableIntStateOf(0)}
+    val stage = DriverUiRules.stage(d)
+    val headings = listOf(
+        "Ready to start route",
+        "Heading to Pick-up",
+        "Waiting for Customer",
+        "Waiting to Load Cargo",
+        "Heading to Destination",
+        "Delivery submitted"
+    )
+    val next = listOf(
+        "Start your route when you are ready to leave.",
+        "Go to the pickup, then confirm your arrival.",
+        "Confirm when the customer is present.",
+        "Confirm when all cargo has been loaded.",
+        "Go to the destination, then submit delivery proof.",
+        "The office will review your delivery proof."
+    )
+    var mapOpen by rememberSaveable(s.value("id")) { mutableStateOf(false) }
+    var selectedSection by rememberSaveable(s.value("id")) { mutableStateOf(NavigateSection.ROUTE.name) }
+    val activeSection = NavigateSection.entries.firstOrNull { it.name == selectedSection }
+        ?.takeIf { it != NavigateSection.LOGS || tripLogsContent != null }
+        ?: NavigateSection.ROUTE
+
+    val points = driverStopPins(s)
+    val mapPoints = driverMapPins(s, state.details, now)
+    val pinIdentity = points.map { Triple(it.first, it.second.latitude, it.second.longitude) }
+    val routing = state.details?.takeIf { it.value("shipment_id") == s.value("id") }?.obj("routing")
+        ?: if (state.detailLoading && !state.offline) buildJsonObject { put("loading", true) } else buildJsonObject {}
+    val verifiedRouting = state.details?.takeIf { it.value("shipment_id") == s.value("id") }?.obj("routing")
+        ?.let { DriverRouteStatus.forAssignment(it, s, d) }
+    val savedGeometry = normalizeRouteGeoJson(s["route_geometry"])
+        ?: verifiedRouting?.takeIf { it["route_verified"] == JsonPrimitive(true) }?.obj("plan")
+            ?.let { normalizeRouteGeoJson(it["geometry"]) }
+    var preview by remember(s.value("id"), d.value("id"), d.value("driver_id"), pinIdentity) { mutableStateOf<RoutePreview?>(null) }
+    var previewError by remember(s.value("id"), d.value("id"), pinIdentity) { mutableStateOf<String?>(null) }
+    var previewLoading by remember { mutableStateOf(false) }
+    var previewRevision by remember { mutableIntStateOf(0) }
     val previewLoader by rememberUpdatedState(routePreview)
-    LaunchedEffect(mapOpen,s.value("id"),d.value("id"),d.value("driver_id"),pinIdentity,savedGeometry,state.offline,previewRevision) {
-        previewLoading=false
-        if(!mapOpen || savedGeometry!=null || preview!=null)return@LaunchedEffect
-        if(state.offline){previewError="Road preview unavailable offline. Reconnect and retry.";return@LaunchedEffect}
-        if(points.size!=2){previewError="The office must save both pickup and destination pins before a road preview is available.";return@LaunchedEffect}
-        val loader=previewLoader
-        if(loader==null){previewError="Road preview unavailable. Refresh the trip and retry.";return@LaunchedEffect}
-        previewError=null;previewLoading=true
-        try {preview=loader(d.value("id"),points[0].second,points[1].second)}
-        catch(cancelled:CancellationException){throw cancelled}
-        catch(_:Exception){previewError="Road preview unavailable. Check your connection and the assignment pins, then retry."}
-        finally {previewLoading=false}
+
+    LaunchedEffect(mapOpen, s.value("id"), d.value("id"), d.value("driver_id"), pinIdentity, savedGeometry, state.offline, previewRevision) {
+        previewLoading = false
+        if (!mapOpen || savedGeometry != null || preview != null) return@LaunchedEffect
+        if (state.offline) {
+            previewError = "Road preview unavailable offline. Reconnect and retry."
+            return@LaunchedEffect
+        }
+        if (points.size != 2) {
+            previewError = "The office must save both pickup and destination pins before a road preview is available."
+            return@LaunchedEffect
+        }
+        val loader = previewLoader
+        if (loader == null) {
+            previewError = "Road preview unavailable. Refresh the trip and retry."
+            return@LaunchedEffect
+        }
+        previewError = null
+        previewLoading = true
+        try {
+            preview = loader(d.value("id"), points[0].second, points[1].second)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            previewError = "Road preview unavailable. Check your connection and the assignment pins, then retry."
+        } finally {
+            previewLoading = false
+        }
     }
+
     val isDark = isSystemInDarkTheme()
     val extendedColors = TanawTheme.extendedColors
-    val showExpense = d.value("status") in listOf("in_transit","delivered")
-    Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    val showExpense = d.value("status") in listOf("in_transit", "delivered")
+    val evaluatedRouting = DriverRouteStatus.forAssignment(routing, s, d)
+    val etaLine = DriverRouteStatus.eta(evaluatedRouting, state.offline, now)
+
+    Column(
+        Modifier.fillMaxWidth().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         Surface(
             color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
             shape = RoundedCornerShape(16.dp),
@@ -149,8 +220,12 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
                     Text(
                         s.value("tracking_number").ifBlank { "Current trip" },
                         color = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),
-                        style = MaterialTheme.typography.labelMedium
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    Spacer(Modifier.width(8.dp))
                     Surface(
                         color = if (isDark) MaterialTheme.colorScheme.primaryContainer else Color.White.copy(alpha = 0.14f),
                         shape = RoundedCornerShape(6.dp)
@@ -185,242 +260,291 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold
                 )
+                Text(
+                    etaLine,
+                    color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFC7DFFF),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
+
         DriverTripSection("Next step", "Update the trip only when the action has actually happened.") {
             if (d.value("id").isBlank()) {
                 Text("No delivery assignment is available. Refresh or contact the office.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 actions(s, d)
             }
-            if (fuel != null || showExpense) {
+            if (fuel != null || showExpense || onMessageOffice != null) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                if (fuel != null && showExpense) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = fuel,
-                            enabled = !state.busy && !state.offline,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                        ) {
-                            Text("Record Fuel", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        }
-                        OutlinedButton(
-                            onClick = expense,
-                            enabled = !state.busy && !state.offline,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                        ) {
-                            Text("Add Trip Expense", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        }
-                    }
-                } else if (fuel != null) {
-                    OutlinedButton(
-                        onClick = fuel,
-                        enabled = !state.busy && !state.offline,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Record Fuel") }
-                } else {
-                    OutlinedButton(
-                        onClick = expense,
-                        enabled = !state.busy && !state.offline,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Add Trip Expense") }
-                }
+                QuickOperationsStrip(
+                    fuel = fuel,
+                    expense = if (showExpense) expense else null,
+                    messageOffice = onMessageOffice,
+                    enabled = !state.busy && !state.offline,
+                    messageEnabled = !state.busy
+                )
             }
         }
-        DriverTripSection("Directions & route", "Open directions for travel. The saved map is a location preview.") {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(MapPinPickup))
-                        Box(Modifier.width(2.dp).height(28.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                    }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("PICKUP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(s.value("pickup_address").ifBlank { "Not recorded" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                    Box(Modifier.padding(top = 4.dp).size(10.dp).clip(CircleShape).background(MapPinDestination))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("DESTINATION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(s.value("dropoff_address").ifBlank { "Not recorded" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-            }
-            DriverDirectionsButtons(s, stage, savedGeometry)
-            val routing = state.details?.takeIf { it.value("shipment_id") == s.value("id") }?.obj("routing")
-                ?: if (state.detailLoading && !state.offline) buildJsonObject { put("loading", true) } else buildJsonObject {}
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            DriverRouteStatusCard(DriverRouteStatus.forAssignment(routing, s, d), state.offline)
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (s.value("scheduled_departure").isNotBlank()) {
-                    KeyValueRow("Scheduled departure", MobilePresentation.time(s.value("scheduled_departure")))
-                }
-                KeyValueRow("Office planned arrival", MobilePresentation.time(s.value("estimated_arrival")))
-                KeyValueRow(
-                    "Recorded distance",
-                    "${MobilePresentation.number(s.value("distance_km"), "km")} · ${MobilePresentation.number(s.value("route_duration_minutes"), "min")}"
-                )
-                if (s.value("weight_kg").isNotBlank()) {
-                    KeyValueRow("Cargo weight", MobilePresentation.number(s.value("weight_kg"), "kg"))
-                }
-            }
-            val truck = DriverUiRules.truck(state.data ?: buildJsonObject {})
-            val truckSpec = TruckRestrictionRules.evaluateTruckSpecs(truck, s, verifiedRouting?.obj("plan"))
-            val banAdvisory = TruckRestrictionRules.evaluateBanAdvisory(
-                truckSpec.plateNumber,
-                s.value("scheduled_departure"),
-                s.value("estimated_arrival"),
-                now
-            )
-            DriverTruckRestrictionCard(truckSpec, banAdvisory)
-            if (points.isEmpty()) {
-                Text(
-                    "This assignment has no saved map pins. Use address directions and confirm the entrance with the office.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                OutlinedButton(
-                    onClick = { mapOpen = !mapOpen },
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            NavigateSection.entries.forEach { section ->
+                if (section == NavigateSection.LOGS && tripLogsContent == null) return@forEach
+                FilterChip(
+                    selected = activeSection == section,
+                    onClick = { selectedSection = section.name },
+                    label = { Text(section.label) },
                     shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(if (mapOpen) "Hide route map" else "Show route map")
-                }
-                if (mapOpen) {
-                    if (savedGeometry == null) {
-                        Surface(
-                            color = extendedColors.warningContainer,
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Unverified road preview", style = MaterialTheme.typography.titleSmall, color = extendedColors.onWarningContainer)
-                                Text(
-                                    "Not office-confirmed. Truck height, width, loaded weight and access restrictions have not been checked. This preview does not change the confirmed route or live ETA.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (previewLoading) {
-                                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                                    Text("Loading unverified road preview…", style = MaterialTheme.typography.bodySmall)
-                                }
-                                previewError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                                if (previewError != null) {
-                                    OutlinedButton(
-                                        onClick = { previewRevision++ },
-                                        enabled = !state.offline && !previewLoading,
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.heightIn(min = 48.dp)
-                                    ) { Text("Retry road preview") }
-                                }
-                                preview?.let { Text("Preview road distance: ${it.distanceKm} km", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    modifier = Modifier.heightIn(min = 48.dp)
+                )
+            }
+        }
+
+        when (activeSection) {
+            NavigateSection.ROUTE -> {
+                DriverTripSection("Directions & route", "Open directions for travel. The saved map is a location preview.") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(MapPinPickup))
+                                Box(Modifier.width(2.dp).height(28.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("PICKUP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(s.value("pickup_address").ifBlank { "Not recorded" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                            Box(Modifier.padding(top = 4.dp).size(10.dp).clip(CircleShape).background(MapPinDestination))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("DESTINATION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(s.value("dropoff_address").ifBlank { "Not recorded" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
-                    ShipmentMap(mapPoints, savedGeometry ?: preview?.geometry)
-                    Text(
-                        if (mapPoints.any { it.first == "Vehicle" }) "Saved pickup, destination, and your fresh vehicle GPS position."
-                        else "Saved pickup and destination locations. Vehicle GPS is not shown on this preview.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    DriverDirectionsButtons(s, stage, savedGeometry)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    DriverRouteStatusCard(evaluatedRouting, state.offline)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (s.value("scheduled_departure").isNotBlank()) {
+                            KeyValueRow("Scheduled departure", MobilePresentation.time(s.value("scheduled_departure")))
+                        }
+                        KeyValueRow("Office planned arrival", MobilePresentation.time(s.value("estimated_arrival")))
+                        KeyValueRow(
+                            "Recorded distance",
+                            "${MobilePresentation.number(s.value("distance_km"), "km")} · ${MobilePresentation.number(s.value("route_duration_minutes"), "min")}"
+                        )
+                        if (s.value("weight_kg").isNotBlank()) {
+                            KeyValueRow("Cargo weight", MobilePresentation.number(s.value("weight_kg"), "kg"))
+                        }
+                    }
+                    val truck = DriverUiRules.truck(state.data ?: buildJsonObject {})
+                    val truckSpec = TruckRestrictionRules.evaluateTruckSpecs(truck, s, verifiedRouting?.obj("plan"))
+                    val banAdvisory = TruckRestrictionRules.evaluateBanAdvisory(
+                        truckSpec.plateNumber,
+                        s.value("scheduled_departure"),
+                        s.value("estimated_arrival"),
+                        now
                     )
-                    if (savedGeometry == null && preview == null && !previewLoading) {
+                    DriverTruckRestrictionCard(truckSpec, banAdvisory)
+                    if (points.isEmpty()) {
                         Text(
-                            if (mapPoints.any { it.first == "Vehicle" })
-                                "Showing saved stops and your vehicle GPS until a road preview is available."
-                            else
-                                "Showing saved stops only until a road preview is available.",
+                            "This assignment has no saved map pins. Use address directions and confirm the entrance with the office.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                }
-            }
-        }
-        DriverTripSection("Delivery progress") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Current stage: ${headings[stage]}",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = { progressOpen = !progressOpen },
-                    modifier = Modifier.heightIn(min = 48.dp)
-                ) {
-                    Text(if (progressOpen) "Hide delivery steps" else "Show delivery steps")
-                }
-            }
-            if (progressOpen) {
-                val steps = listOf(
-                    "Assigned" to "assigned_at",
-                    "Route started" to "route_started_at",
-                    "Arrived at pickup" to "pickup_arrived_at",
-                    "Customer present" to "customer_showed_at",
-                    "Cargo loaded" to "departed_at",
-                    "Proof submitted" to "arrived_at"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    steps.forEachIndexed { index, (label, field) ->
-                        val raw = d.value(field)
-                        val recorded = runCatching { Instant.parse(raw) }.isSuccess
-                        val dotColor = when {
-                            recorded -> extendedColors.onSuccessBannerText
-                            index == stage -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.outlineVariant
-                        }
-                        val itemColor = if (recorded) {
-                            if (isDark) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color(0xFFEFF6FF)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.Top
+                    } else {
+                        OutlinedButton(
+                            onClick = { mapOpen = !mapOpen },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(top = 14.dp)
-                            ) {
-                                Box(Modifier.size(12.dp).clip(CircleShape).background(dotColor))
-                                if (index < steps.lastIndex) {
-                                    Box(Modifier.width(2.dp).height(34.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                            Text(if (mapOpen) "Hide route map" else "Show route map")
+                        }
+                        if (mapOpen) {
+                            if (savedGeometry == null) {
+                                Surface(
+                                    color = extendedColors.warningContainer,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("Unverified road preview", style = MaterialTheme.typography.titleSmall, color = extendedColors.onWarningContainer)
+                                        Text(
+                                            "Not office-confirmed. Truck height, width, loaded weight and access restrictions have not been checked. This preview does not change the confirmed route or live ETA.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (previewLoading) {
+                                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                                            Text("Loading unverified road preview…", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        previewError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                                        if (previewError != null) {
+                                            OutlinedButton(
+                                                onClick = { previewRevision++ },
+                                                enabled = !state.offline && !previewLoading,
+                                                shape = RoundedCornerShape(10.dp),
+                                                modifier = Modifier.heightIn(min = 48.dp)
+                                            ) { Text("Retry road preview") }
+                                        }
+                                        preview?.let { Text("Preview road distance: ${it.distanceKm} km", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                    }
                                 }
                             }
-                            Surface(
-                                color = itemColor,
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                modifier = Modifier.weight(1f)
+                            ShipmentMap(mapPoints, savedGeometry ?: preview?.geometry)
+                            Text(
+                                if (mapPoints.any { it.first == "Vehicle" }) "Saved pickup, destination, and your fresh vehicle GPS position."
+                                else "Saved pickup and destination locations. Vehicle GPS is not shown on this preview.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (savedGeometry == null && preview == null && !previewLoading) {
+                                Text(
+                                    if (mapPoints.any { it.first == "Vehicle" })
+                                        "Showing saved stops and your vehicle GPS until a road preview is available."
+                                    else
+                                        "Showing saved stops only until a road preview is available.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            NavigateSection.CHECKPOINTS -> {
+                DriverTripSection("Delivery progress", "Current stage: ${headings[stage]}") {
+                    val steps = listOf(
+                        "Assigned" to "assigned_at",
+                        "Route started" to "route_started_at",
+                        "Arrived at pickup" to "pickup_arrived_at",
+                        "Customer present" to "customer_showed_at",
+                        "Cargo loaded" to "departed_at",
+                        "Proof submitted" to "arrived_at"
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        steps.forEachIndexed { index, (label, field) ->
+                            val raw = d.value(field)
+                            val recorded = runCatching { Instant.parse(raw) }.isSuccess
+                            val dotColor = when {
+                                recorded -> extendedColors.onSuccessBannerText
+                                index == stage -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.outlineVariant
+                            }
+                            val itemColor = if (recorded) {
+                                if (isDark) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color(0xFFEFF6FF)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.Top
                             ) {
-                                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("${index + 1}. $label", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                                    Text(
-                                        if (recorded) MobilePresentation.time(raw) else if (index > stage) "Not reached yet" else "Time not available",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(top = 14.dp)
+                                ) {
+                                    Box(Modifier.size(12.dp).clip(CircleShape).background(dotColor))
+                                    if (index < steps.lastIndex) {
+                                        Box(Modifier.width(2.dp).height(34.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                                    }
+                                }
+                                Surface(
+                                    color = itemColor,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text("${index + 1}. $label", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            if (recorded) MobilePresentation.time(raw) else if (index > stage) "Not reached yet" else "Time not available",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+
+            NavigateSection.LOGS -> {
+                tripLogsContent?.invoke()
+            }
         }
+    }
+}
+
+@Composable
+private fun QuickOperationsStrip(
+    fuel: (() -> Unit)?,
+    expense: (() -> Unit)?,
+    messageOffice: (() -> Unit)?,
+    enabled: Boolean,
+    messageEnabled: Boolean
+) {
+    val actions = buildList {
+        fuel?.let { add(Triple("Record Fuel", Icons.Outlined.LocalGasStation, it to enabled)) }
+        expense?.let { add(Triple("Add Trip Expense", Icons.AutoMirrored.Outlined.ReceiptLong, it to enabled)) }
+        messageOffice?.let { add(Triple("Message Office", Icons.Outlined.ChatBubbleOutline, it to messageEnabled)) }
+    }
+    if (actions.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        actions.chunked(2).forEach { rowItems ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowItems.forEach { (label, icon, actionPair) ->
+                    QuickOperationButton(
+                        label = label,
+                        icon = icon,
+                        onClick = actionPair.first,
+                        enabled = actionPair.second,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (rowItems.size == 1 && actions.size > 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickOperationButton(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        modifier = modifier.heightIn(min = 48.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -449,13 +573,14 @@ private fun DriverNavigateOverviewLightPreview() {
                 state = MobileState(),
                 actions = { _, _ -> DriverButton("I'VE ARRIVED AT PICK-UP") {} },
                 expense = {},
-                fuel = {}
+                fuel = {},
+                onMessageOffice = {}
             )
         }
     }
 }
 
-@Preview(showBackground = true, name = "Driver Navigate Cockpit Dark")
+@Preview(showBackground = true, name = "Driver Navigate Cockpit Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun DriverNavigateOverviewDarkPreview() {
     DriverTheme(darkTheme = true) {
@@ -478,7 +603,8 @@ private fun DriverNavigateOverviewDarkPreview() {
                 state = MobileState(),
                 actions = { _, _ -> DriverButton("MARK AS DELIVERED") {} },
                 expense = {},
-                fuel = {}
+                fuel = {},
+                onMessageOffice = {}
             )
         }
     }

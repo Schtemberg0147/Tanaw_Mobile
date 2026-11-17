@@ -76,7 +76,7 @@ class DriverConversationUiTest {
         compose.setContent {DriverTheme {Column {DriverConversation("delivery",false,null,{if(calls++==0)error("network");page()},{_,_->},{},{})}}}
         open();compose.onNodeWithText("Messages unavailable.",substring=true).assertExists()
         compose.onNodeWithText("No messages yet.").assertDoesNotExist()
-        compose.onNodeWithText("Retry / refresh messages").performClick();compose.waitForIdle()
+        compose.onNodeWithText("Retry").performClick();compose.waitForIdle()
         compose.onNodeWithText("Use the north entrance").assertExists()
     }
     @Test fun unreadInboxOpensExactDeliveryEvenOutsideLoadedTripList() {

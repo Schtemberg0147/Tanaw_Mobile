@@ -54,4 +54,37 @@ class DriverProfileRulesTest {
         assertEquals("+639000000000",DriverProfileRules.phone("+63 900 000 0000"))
         assertNull(DriverProfileRules.phone("911;other"))
     }
+    @Test fun complianceSummaryReflectsRealDocumentStates() {
+        val rows = settings()
+        val docs = listOf(doc(60), doc(20), doc(5), doc(-2))
+        val summary = DriverProfileRules.complianceSummary(docs, rows, today)
+        assertEquals(4, summary.total)
+        assertEquals(1, summary.validCount)
+        assertEquals(1, summary.attentionCount)
+        assertEquals(2, summary.criticalOrExpiredCount)
+        assertEquals("1 valid · 1 attention · 2 critical", DriverProfileRules.formatSummaryLine(summary))
+        assertEquals("", DriverProfileRules.formatSummaryLine(ComplianceSummary(0, 0, 0, 0)))
+    }
+    @Test fun expiryFormattingAndInitialsHandleValidAndMissingInputs() {
+        assertEquals("Nov 22, 2026", DriverProfileRules.formatExpiryDate("2026-11-22"))
+        assertEquals("Not recorded", DriverProfileRules.formatExpiryDate(""))
+        assertEquals("Not recorded", DriverProfileRules.formatExpiryDate("not-a-date"))
+        assertEquals("RD", DriverProfileRules.initials("Ramon Dela Cruz"))
+        assertEquals("D", DriverProfileRules.initials("   "))
+    }
+    @Test fun availabilityBadgePrioritizesOfflineAndRosterState() {
+        val ready = buildJsonObject {
+            put("driver", buildJsonObject { put("id", "d1"); put("status", "available") })
+            put("driver_sections", buildJsonObject { put("driver_roster", "ready") })
+        }
+        assertEquals("Available", DriverProfileRules.availabilityBadge(ready, offline = false).label)
+        assertEquals(AvailabilityTone.SUCCESS, DriverProfileRules.availabilityBadge(ready, offline = false).tone)
+        assertEquals("Offline · Saved Copy", DriverProfileRules.availabilityBadge(ready, offline = true).label)
+        assertEquals(AvailabilityTone.WARNING, DriverProfileRules.availabilityBadge(ready, offline = true).tone)
+
+        val missingRoster = buildJsonObject {
+            put("driver_sections", buildJsonObject { put("driver_roster", "error") })
+        }
+        assertEquals("Roster Unavailable", DriverProfileRules.availabilityBadge(missingRoster, offline = false).label)
+    }
 }

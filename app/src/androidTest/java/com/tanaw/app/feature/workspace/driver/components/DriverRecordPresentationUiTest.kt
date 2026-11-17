@@ -134,7 +134,7 @@ class DriverRecordPresentationUiTest {
         compose.onNodeWithText("PROFILE").performClick()
         compose.onNodeWithText("Compliance records unavailable.",substring=true).performScrollTo().assertExists()
         compose.onNodeWithText("No compliance documents were returned for your account.").assertDoesNotExist()
-        compose.onNodeWithText("Refresh driver profile").performScrollTo().performClick()
+        compose.onNodeWithText("Retry compliance records").performScrollTo().performClick()
         compose.onNodeWithText("No compliance documents were returned for your account.").performScrollTo().assertExists()
         compose.onNodeWithText("Compliance records unavailable.",substring=true).assertDoesNotExist()
     }
