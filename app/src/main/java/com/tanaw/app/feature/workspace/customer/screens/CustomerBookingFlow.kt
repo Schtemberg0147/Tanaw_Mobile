@@ -306,6 +306,7 @@ fun CustomerBookingFlow(
                     onOpenAlerts = onOpenAlerts,
                     onOpenActiveShipments = { onTrackShipment("") },
                     onPickupClick = { setStep(CustomerBookingStep.PICKUP_MAP) },
+                    showTopBar = false,
                     onDestinationClick = { setStep(CustomerBookingStep.DESTINATION_MAP) },
                     onSwapLocations = {
                         val tmpAddr = pickup

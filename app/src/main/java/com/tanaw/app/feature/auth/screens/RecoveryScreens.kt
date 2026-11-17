@@ -1,10 +1,10 @@
 package com.tanaw.app.feature.auth.screens
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,32 +24,40 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
 import com.tanaw.app.feature.workspace.state.MobileState
 import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.ui.components.SupportingText
-import com.tanaw.app.ui.theme.*
+import com.tanaw.app.ui.theme.TanawTheme
 
 @Composable
-private fun RecoveryNotices(state: MobileState) {
-    if (state.busy) {
+private fun RecoveryNotices(
+    busy: Boolean,
+    error: String?,
+    message: String?
+) {
+    if (busy) {
         LinearProgressIndicator(
             modifier = Modifier
                 .fillMaxWidth()
@@ -56,25 +65,37 @@ private fun RecoveryNotices(state: MobileState) {
             color = MaterialTheme.colorScheme.primary
         )
     }
-    state.error?.let {
+    error?.let {
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
             shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp)
         ) {
-            Text(
-                text = it,
+            Row(
                 modifier = Modifier.padding(14.dp),
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                style = MaterialTheme.typography.bodyMedium
-            )
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         }
     }
-    state.message?.let {
+    message?.let {
         Surface(
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+            color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -83,7 +104,7 @@ private fun RecoveryNotices(state: MobileState) {
             Text(
                 text = it,
                 modifier = Modifier.padding(14.dp),
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -91,9 +112,432 @@ private fun RecoveryNotices(state: MobileState) {
     }
 }
 
+@Composable
+private fun recoveryTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+    errorContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+    errorBorderColor = MaterialTheme.colorScheme.error,
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    errorTextColor = MaterialTheme.colorScheme.onSurface,
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
+    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    cursorColor = MaterialTheme.colorScheme.primary
+)
+
 /**
- * Screen 1: Forgot Password (Image 1 style)
- * Clean elevated card with an orange bottom accent line, hero badge with a question mark,
+ * Responsive 6-digit OTP entry row using weight(1f) cells (height = 54.dp, 12.dp radius)
+ * so cells never clip horizontally on narrow 320dp viewports.
+ */
+@Composable
+fun OtpCodeInputRow(
+    code: String,
+    onCodeChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    otpLength: Int = 6
+) {
+    val otpValues = remember(code, otpLength) {
+        val digits = code.filter { it.isDigit() }
+        List(otpLength) { idx -> digits.getOrNull(idx)?.toString().orEmpty() }
+    }
+    val focusRequesters = remember(otpLength) { List(otpLength) { FocusRequester() } }
+    val focusManager = LocalFocusManager.current
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        repeat(otpLength) { index ->
+            val digit = otpValues[index]
+            val isFocusedSlot = digit.isEmpty() && (index == 0 || otpValues[index - 1].isNotEmpty())
+            val borderColor = when {
+                isError -> MaterialTheme.colorScheme.error
+                isFocusedSlot || digit.isNotEmpty() -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.outline
+            }
+
+            BasicTextField(
+                value = digit,
+                enabled = enabled,
+                onValueChange = { newVal ->
+                    val filteredDigits = newVal.filter { it.isDigit() }
+                    if (filteredDigits.length > 1) {
+                        val pasted = filteredDigits.take(otpLength)
+                        onCodeChange(pasted)
+                        if (pasted.length >= otpLength) {
+                            focusManager.clearFocus()
+                        } else {
+                            focusRequesters[pasted.length.coerceAtMost(otpLength - 1)].requestFocus()
+                        }
+                    } else {
+                        val inputDigit = filteredDigits.takeLast(1)
+                        val mutableDigits = otpValues.toMutableList()
+                        mutableDigits[index] = inputDigit
+                        onCodeChange(mutableDigits.joinToString(""))
+                        if (inputDigit.isNotEmpty() && index < otpLength - 1) {
+                            focusRequesters[index + 1].requestFocus()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(54.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(
+                        width = if (isFocusedSlot || digit.isNotEmpty()) 2.dp else 1.5.dp,
+                        color = borderColor,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .background(
+                        if (digit.isNotEmpty()) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        }
+                    )
+                    .focusRequester(focusRequesters[index])
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (keyEvent.type == KeyEventType.KeyDown &&
+                            keyEvent.key == Key.Backspace &&
+                            digit.isEmpty() &&
+                            index > 0
+                        ) {
+                            val mutableDigits = otpValues.toMutableList()
+                            mutableDigits[index - 1] = ""
+                            onCodeChange(mutableDigits.joinToString(""))
+                            focusRequesters[index - 1].requestFocus()
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = if (index == otpLength - 1) ImeAction.Done else ImeAction.Next
+                ),
+                singleLine = true,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                textStyle = MaterialTheme.typography.titleLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                ),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.Center) {
+                        if (digit.isEmpty() && !isFocusedSlot) {
+                            Text(
+                                text = "•",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+        }
+    }
+}
+
+/**
+ * Reusable verification code screen supporting both 6-digit OTP entry and token/link paste,
+ * with resend cooldown and a clear Back to sign in action.
+ */
+@Composable
+fun VerificationCodeScreen(
+    title: String,
+    headline: String,
+    subtitle: String,
+    targetLabel: String,
+    code: String,
+    onCodeChange: (String) -> Unit,
+    onVerify: () -> Unit,
+    onResend: () -> Unit,
+    onBackToSignIn: () -> Unit,
+    modifier: Modifier = Modifier,
+    verifyButtonLabel: String = "Verify code",
+    resendButtonLabel: String = "Resend code",
+    codeFieldLabel: String = "Verification code or confirmation link",
+    allowTokenPaste: Boolean = true,
+    canVerify: Boolean = false,
+    isCodeError: Boolean = false,
+    codeErrorText: String = "Enter a valid verification code.",
+    busy: Boolean = false,
+    offline: Boolean = false,
+    resendSeconds: Int = 0,
+    errorMessage: String? = null,
+    statusMessage: String? = null,
+) {
+    val focusManager = LocalFocusManager.current
+    var showTokenField by rememberSaveable { mutableStateOf(code.length > 6) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+        ) {
+            IconButton(
+                onClick = onBackToSignIn,
+                enabled = !busy,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(top = 12.dp, bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            RecoveryNotices(busy = busy, error = errorMessage, message = statusMessage)
+            if (offline) {
+                SupportingText("Offline or reconnecting · check your connection.")
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            Box(
+                contentAlignment = Alignment.BottomEnd,
+                modifier = Modifier.padding(top = 8.dp, bottom = 20.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(22.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_mail_check),
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .offset(x = 4.dp, y = 4.dp)
+                        .background(MaterialTheme.colorScheme.secondary, shape = CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_shield_lock),
+                        contentDescription = null,
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSecondary),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = headline,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+
+            if (targetLabel.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = targetLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (!showTokenField && code.length <= 6) {
+                OtpCodeInputRow(
+                    code = code,
+                    onCodeChange = onCodeChange,
+                    enabled = !busy,
+                    isError = isCodeError
+                )
+                if (isCodeError) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = codeErrorText,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (allowTokenPaste) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { showTokenField = true },
+                        enabled = !busy,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(
+                            text = "Paste confirmation link instead",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { onCodeChange(it.trim()) },
+                    label = { Text(codeFieldLabel) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = recoveryTextFieldColors(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            if (canVerify && !busy) onVerify()
+                        }
+                    ),
+                    isError = isCodeError,
+                    supportingText = if (isCodeError) {
+                        { Text(codeErrorText) }
+                    } else null
+                )
+                if (allowTokenPaste && code.length <= 6) {
+                    TextButton(
+                        onClick = { showTokenField = false },
+                        enabled = !busy,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(
+                            text = "Enter 6-digit code instead",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    focusManager.clearFocus()
+                    onVerify()
+                },
+                enabled = canVerify && !busy,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                    disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.70f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = verifyButtonLabel,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TextButton(
+                onClick = onResend,
+                enabled = !busy && !offline && resendSeconds == 0,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text(
+                    text = if (resendSeconds > 0) "$resendButtonLabel in ${resendSeconds}s" else resendButtonLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (!busy && !offline && resendSeconds == 0) {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = onBackToSignIn,
+                enabled = !busy,
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 50.dp)
+            ) {
+                Text(
+                    text = "Back to sign in",
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Screen 1: Forgot Password
+ * Elevated card with a bottom accent line, hero badge with a question mark,
  * soft input field, primary Navy button, and secondary outlined Back to Sign In button.
  */
 @Composable
@@ -122,32 +566,26 @@ fun ForgotPasswordCardScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Error / Info Notices from ViewModel
-            RecoveryNotices(state)
+            RecoveryNotices(busy = state.busy, error = state.error, message = state.message)
             if (state.offline) {
                 SupportingText("Offline or reconnecting · check your network connection.")
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Main Forgot Password Card (Matching Image 1)
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(elevation = 6.dp, shape = RoundedCornerShape(18.dp)),
-                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth(),
+                shadowElevation = 6.dp,
+                shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp, vertical = 32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Hero Icon Badge with Orange '?' Circle
                         Box(
                             contentAlignment = Alignment.TopEnd,
                             modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
@@ -167,7 +605,6 @@ fun ForgotPasswordCardScreen(
                                     modifier = Modifier.size(38.dp)
                                 )
                             }
-                            // Small Orange Badge with '?'
                             Box(
                                 modifier = Modifier
                                     .size(22.dp)
@@ -177,8 +614,8 @@ fun ForgotPasswordCardScreen(
                             ) {
                                 Text(
                                     text = "?",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSecondary,
+                                    style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -187,18 +624,16 @@ fun ForgotPasswordCardScreen(
                         // Eyebrow / Test Identifier (satisfies compose.onNodeWithText("Reset password"))
                         Text(
                             text = "Reset password",
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.secondary,
-                            letterSpacing = 0.5.sp
+                            color = MaterialTheme.colorScheme.secondary
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Headline
                         Text(
                             text = "Forgot Password?",
-                            fontSize = 26.sp,
+                            style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.primary,
                             textAlign = TextAlign.Center
@@ -206,41 +641,36 @@ fun ForgotPasswordCardScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Subtitle
                         Text(
-                            text = "Enter your email address and we'll send you a link to reset your password.",
-                            fontSize = 13.sp,
+                            text = "Enter your email address or mobile number and we'll send you a code to reset your password.",
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(26.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                        // Soft Input Field
                         OutlinedTextField(
                             value = email,
                             onValueChange = { email = it },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Account phone number or email") },
-                            placeholder = { Text("your@gmail.com") },
+                            placeholder = { Text("your@gmail.com or 0912 345 6789") },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Outlined.Email,
                                     contentDescription = null,
-                                    tint = if (isRecoveryError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (isRecoveryError) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             },
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                                errorBorderColor = MaterialTheme.colorScheme.error
-                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = recoveryTextFieldColors(),
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Email,
                                 imeAction = ImeAction.Done
@@ -261,7 +691,6 @@ fun ForgotPasswordCardScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Primary Action Button (Matches Image 1 "SEND RESET LINK" / "Request recovery code")
                         Button(
                             onClick = {
                                 focusManager.clearFocus()
@@ -271,17 +700,17 @@ fun ForgotPasswordCardScreen(
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
-                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                                disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.70f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp)
+                                .heightIn(min = 52.dp)
                         ) {
                             Text(
                                 text = "Request recovery code",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                style = MaterialTheme.typography.labelLarge
                             )
                         }
 
@@ -289,14 +718,13 @@ fun ForgotPasswordCardScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Request another code in ${state.resendSeconds}s",
-                                fontSize = 12.sp,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Secondary Action Button (Matches Image 1 "BACK TO SIGN IN")
                         OutlinedButton(
                             onClick = { vm.page("login") },
                             enabled = !state.busy,
@@ -308,22 +736,19 @@ fun ForgotPasswordCardScreen(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp)
+                                .heightIn(min = 50.dp)
                         ) {
                             Text(
                                 text = "Back to sign in",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                style = MaterialTheme.typography.labelLarge
                             )
                         }
                     }
 
-                    // Orange Bottom Accent Strip (Image 1 Signature Border)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(4.dp)
+                            .height(3.dp)
                             .background(MaterialTheme.colorScheme.secondary)
                     )
                 }
@@ -333,9 +758,9 @@ fun ForgotPasswordCardScreen(
 }
 
 /**
- * Screen 2: Verify Code & Update Password (Image 2 style)
+ * Screen 2: Verify Code & Update Password
  * Clean screen with top navigation, rounded mail-check badge with shield icon,
- * 6-digit OTP cells, password inputs for backend finalization, resend row, and submit action.
+ * responsive 6-digit OTP cells, password inputs for backend finalization, resend row, and submit action.
  */
 @Composable
 fun VerifyRecoveryCodeScreen(
@@ -356,27 +781,20 @@ fun VerifyRecoveryCodeScreen(
     val passwordMismatch = confirm.isNotEmpty() && password != confirm
     val canUpdatePassword = !state.busy && codeValid && MobileValidation.password(password, confirm)
 
-    val otpLength = 6
-    val otpValues = remember(code) {
-        val digits = code.filter { it.isDigit() }
-        List(otpLength) { idx -> digits.getOrNull(idx)?.toString().orEmpty() }
-    }
-    val focusRequesters = remember { List(otpLength) { FocusRequester() } }
-
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
             .verticalScroll(rememberScrollState())
     ) {
-        // Top Header Bar (Matching Image 2 "Verify Number" / "Verify Code")
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
             IconButton(
                 onClick = { vm.page("recover") },
@@ -391,8 +809,7 @@ fun VerifyRecoveryCodeScreen(
             }
             Text(
                 text = "Verify Code",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.align(Alignment.Center)
             )
@@ -402,17 +819,15 @@ fun VerifyRecoveryCodeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(top = 16.dp, bottom = 32.dp),
+                .padding(top = 12.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Status Notices & Warnings
-            RecoveryNotices(state)
+            RecoveryNotices(busy = state.busy, error = state.error, message = state.message)
             if (state.offline) {
                 SupportingText("Offline or reconnecting · check your connection.")
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // Hero Badge: Rounded box with Mail-Check + Bottom-Right Orange Shield Badge
             Box(
                 contentAlignment = Alignment.BottomEnd,
                 modifier = Modifier.padding(top = 8.dp, bottom = 22.dp)
@@ -433,7 +848,6 @@ fun VerifyRecoveryCodeScreen(
                     )
                 }
 
-                // Orange circular badge with shield/lock icon
                 Box(
                     modifier = Modifier
                         .size(26.dp)
@@ -444,15 +858,15 @@ fun VerifyRecoveryCodeScreen(
                     Image(
                         painter = painterResource(id = R.drawable.ic_shield_lock),
                         contentDescription = null,
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSecondary),
                         modifier = Modifier.size(14.dp)
                     )
                 }
             }
 
-            // Heading
             Text(
                 text = "Verify your number",
-                fontSize = 24.sp,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
@@ -460,82 +874,29 @@ fun VerifyRecoveryCodeScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Subtitle & Target (Matches test assertion: "Recovery requested for ${state.email}")
             Text(
                 text = "We've sent a 6-digit code to",
-                fontSize = 13.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "Recovery requested for ${state.email}",
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(26.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // 6-Digit OTP Cells (Matching Image 2)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                repeat(otpLength) { index ->
-                    val digit = otpValues[index]
-                    val isFocused = digit.isEmpty() && (index == 0 || otpValues[index - 1].isNotEmpty())
-
-                    BasicTextField(
-                        value = digit,
-                        onValueChange = { newVal ->
-                            val inputDigit = newVal.filter { it.isDigit() }.takeLast(1)
-                            val mutableDigits = otpValues.toMutableList()
-                            mutableDigits[index] = inputDigit
-                            code = mutableDigits.joinToString("")
-                            if (inputDigit.isNotEmpty() && index < otpLength - 1) {
-                                focusRequesters[index + 1].requestFocus()
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(0.85f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(
-                                width = if (isFocused || digit.isNotEmpty()) 2.dp else 1.5.dp,
-                                color = if (isFocused || digit.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .background(
-                                if (digit.isNotEmpty())
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
-                                else
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                            )
-                            .focusRequester(focusRequesters[index]),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = if (index == otpLength - 1) ImeAction.Next else ImeAction.Next
-                        ),
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center
-                        ),
-                        decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.Center) {
-                                if (digit.isEmpty() && !isFocused) {
-                                    Text("•", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                innerTextField()
-                            }
-                        }
-                    )
-                }
-            }
+            OtpCodeInputRow(
+                code = code,
+                onCodeChange = { code = it },
+                enabled = !state.busy,
+                isError = isCodeError
+            )
 
             // Fallback / Deep-link field for long link tokens or manual paste
             if (code.length > 6 || (state.recoveryCode != null && state.recoveryCode.length > 6)) {
@@ -545,13 +906,8 @@ fun VerifyRecoveryCodeScreen(
                     onValueChange = { code = it.trim() },
                     label = { Text("Recovery code (or original email link)") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = recoveryTextFieldColors(),
                     isError = isCodeError,
                     supportingText = if (isCodeError) {
                         { Text("Enter a valid recovery code or confirmation link.") }
@@ -562,36 +918,42 @@ fun VerifyRecoveryCodeScreen(
                 Text(
                     text = "Enter a valid recovery code or confirmation link.",
                     color = MaterialTheme.colorScheme.error,
-                    fontSize = 12.sp
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Resend Code & Countdown Row
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Didn't receive the code? ",
-                    fontSize = 13.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = "Resend",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (state.resendSeconds == 0 && !state.busy) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable(enabled = state.resendSeconds == 0 && !state.busy) {
-                        vm.resetEmail(state.email)
-                    }
-                )
+                TextButton(
+                    onClick = { vm.resetEmail(state.email) },
+                    enabled = state.resendSeconds == 0 && !state.busy,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(
+                        text = "Resend",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (state.resendSeconds == 0 && !state.busy) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
                 if (state.resendSeconds > 0) {
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "in %02d:%02d".format(state.resendSeconds / 60, state.resendSeconds % 60),
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
@@ -602,30 +964,37 @@ fun VerifyRecoveryCodeScreen(
             TextButton(
                 onClick = { vm.resetEmail(state.email) },
                 enabled = !state.busy && state.resendSeconds == 0,
-                modifier = Modifier.padding(top = 2.dp)
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text(
                     text = "Request recovery code",
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (!state.busy && state.resendSeconds == 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (!state.busy && state.resendSeconds == 0) {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
 
             HorizontalDivider(
-                color = MaterialTheme.colorScheme.outline,
-                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                thickness = 1.dp,
                 modifier = Modifier.padding(vertical = 12.dp)
             )
 
-            // Password Inputs Section
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("New password (8+ characters)") },
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = {
-                    Icon(imageVector = Icons.Outlined.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 },
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -640,13 +1009,8 @@ fun VerifyRecoveryCodeScreen(
                 },
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
+                shape = RoundedCornerShape(12.dp),
+                colors = recoveryTextFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                 isError = passwordTooShort,
@@ -663,7 +1027,11 @@ fun VerifyRecoveryCodeScreen(
                 label = { Text("Confirm new password") },
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = {
-                    Icon(imageVector = Icons.Outlined.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 },
                 trailingIcon = {
                     IconButton(onClick = { confirmVisible = !confirmVisible }) {
@@ -678,13 +1046,8 @@ fun VerifyRecoveryCodeScreen(
                 },
                 visualTransformation = if (confirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
+                shape = RoundedCornerShape(12.dp),
+                colors = recoveryTextFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(
                     onDone = {
@@ -700,9 +1063,8 @@ fun VerifyRecoveryCodeScreen(
                 } else null
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Primary Update Password Button (Matches Image 2 "Verify & Continue" / "Update password")
             Button(
                 onClick = {
                     focusManager.clearFocus()
@@ -712,11 +1074,13 @@ fun VerifyRecoveryCodeScreen(
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                    disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.70f)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .heightIn(min = 52.dp)
             ) {
                 if (state.busy) {
                     CircularProgressIndicator(
@@ -727,16 +1091,13 @@ fun VerifyRecoveryCodeScreen(
                 } else {
                     Text(
                         text = "Update password",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        style = MaterialTheme.typography.labelLarge
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Secondary Back Button
             OutlinedButton(
                 onClick = { vm.page("login") },
                 enabled = !state.busy,
@@ -748,15 +1109,50 @@ fun VerifyRecoveryCodeScreen(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
             ) {
                 Text(
                     text = "Back to sign in",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    style = MaterialTheme.typography.labelLarge
                 )
             }
         }
+    }
+}
+
+@Preview(showBackground = true, name = "Verification Code Light")
+@Composable
+private fun VerificationCodeScreenLightPreview() {
+    TanawTheme(darkTheme = false) {
+        VerificationCodeScreen(
+            title = "Verify Phone",
+            headline = "Verify your number",
+            subtitle = "Enter the 6-digit SMS code sent to",
+            targetLabel = "+63 912 345 6789",
+            code = "123",
+            onCodeChange = {},
+            onVerify = {},
+            onResend = {},
+            onBackToSignIn = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Verification Code Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun VerificationCodeScreenDarkPreview() {
+    TanawTheme(darkTheme = true) {
+        VerificationCodeScreen(
+            title = "Verify Phone",
+            headline = "Verify your number",
+            subtitle = "Enter the 6-digit SMS code sent to",
+            targetLabel = "+63 912 345 6789",
+            code = "123456",
+            onCodeChange = {},
+            onVerify = {},
+            onResend = {},
+            onBackToSignIn = {},
+            canVerify = true
+        )
     }
 }

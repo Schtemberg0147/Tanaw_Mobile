@@ -1,5 +1,6 @@
 package com.tanaw.app.feature.auth.components
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -9,8 +10,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.R
+import com.tanaw.app.ui.theme.TanawTheme
 
 @Composable
 fun GoogleSignInButton(
@@ -27,16 +30,20 @@ fun GoogleSignInButton(
             enabled = enabled,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(28.dp),
+                .heightIn(min = 52.dp),
+            shape = RoundedCornerShape(10.dp),
             border = BorderStroke(
                 width = 1.dp,
-                color = if (enabled) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.outline
+                } else {
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+                }
             ),
             colors = ButtonDefaults.outlinedButtonColors(
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
-                disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                 disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             )
         ) {
@@ -53,7 +60,11 @@ fun GoogleSignInButton(
                 Text(
                     text = "Continue with Google",
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    }
                 )
             }
         }
@@ -82,5 +93,33 @@ fun GoogleSignInButton(
         }
 
         Spacer(modifier = Modifier.height(20.dp))
+    }
+}
+
+@Preview(showBackground = true, name = "Google Sign-In Light")
+@Composable
+private fun GoogleSignInButtonLightPreview() {
+    TanawTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            GoogleSignInButton(
+                enabled = true,
+                onClick = {},
+                modifier = Modifier.padding(24.dp)
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Google Sign-In Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun GoogleSignInButtonDarkPreview() {
+    TanawTheme(darkTheme = true) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            GoogleSignInButton(
+                enabled = true,
+                onClick = {},
+                modifier = Modifier.padding(24.dp)
+            )
+        }
     }
 }

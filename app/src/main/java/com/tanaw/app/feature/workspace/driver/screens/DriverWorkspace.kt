@@ -6,6 +6,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,10 +20,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,68 +45,22 @@ import kotlinx.serialization.json.*
 import java.time.*
 import java.util.UUID
 
-/** Figma driver interface. This theme and navigation apply only to authenticated drivers. */
-internal val DriverNavy=Color(0xFF002D54)
-internal val DriverBackground=Color(0xFFF9F9FF)
-internal val DriverMuted=Color(0xFF43474E)
-internal val DriverLine=Color(0xFFE7EEFF)
-private val DriverFont=FontFamily(listOf(400,500,600,700,800).map {weight->
-    Font(R.font.manrope,weight=FontWeight(weight),variationSettings=FontVariation.Settings(FontVariation.weight(weight)))
-})
+/** Unified Driver tokens aligned with DESIGN.md and TanawTheme. */
+internal val DriverNavy=NavyPrimary
+internal val DriverBackground=BackgroundGray
+internal val DriverMuted=HintGray
+internal val DriverLine=BorderGray
 
-internal val DriverLightColorScheme = lightColorScheme(
-    primary = DriverNavy,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCE2F9),
-    onPrimaryContainer = DriverNavy,
-    secondary = OrangeAccent,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFDCC2),
-    onSecondaryContainer = Color(0xFF2E1500),
-    background = DriverBackground,
-    onBackground = Color(0xFF111C2D),
-    surface = Color.White,
-    onSurface = Color(0xFF111C2D),
-    surfaceVariant = Color(0xFFF1F5F9),
-    onSurfaceVariant = DriverMuted,
-    surfaceContainerHigh = Color(0xFFF0F3FA),
-    outline = Color(0xFFC3C6CF),
-    outlineVariant = DriverLine,
-    error = Color(0xFFBA1A1A),
-    onError = Color.White,
-    errorContainer = Color(0xFFFFEDEA),
-    onErrorContainer = Color(0xFFBA1A1A)
-)
+internal val DriverLightColorScheme = LightColorScheme
 
-internal val DriverDarkColorScheme = darkColorScheme(
-    primary = NavyPrimaryDark,
-    onPrimary = Color(0xFF001B36),
-    primaryContainer = Color(0xFF003865),
-    onPrimaryContainer = Color(0xFFD2E4FF),
-    secondary = OrangeAccentDark,
-    onSecondary = Color(0xFF4E2600),
-    secondaryContainer = Color(0xFF6F3800),
-    onSecondaryContainer = Color(0xFFFFDCC2),
-    background = BackgroundDark,
-    onBackground = TextLight,
-    surface = SurfaceDark,
-    onSurface = TextLight,
-    surfaceVariant = Color(0xFF1E2536),
-    onSurfaceVariant = HintDark,
-    surfaceContainerHigh = InputDark,
-    outline = BorderDark,
-    outlineVariant = DriverLineDark,
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF3B1C1D),
-    onErrorContainer = Color(0xFFFFDAD6)
-)
+internal val DriverDarkColorScheme = DarkColorScheme
 
 @Composable internal fun DriverTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DriverDarkColorScheme else DriverLightColorScheme
+    val extendedColors = if (darkTheme) ExtendedDarkColors else ExtendedLightColors
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -119,23 +72,13 @@ internal val DriverDarkColorScheme = darkColorScheme(
             }
         }
     }
-    val base = MaterialTheme.typography
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = base.copy(
-            bodyLarge = base.bodyLarge.copy(fontFamily = DriverFont, letterSpacing = 0.sp),
-            bodyMedium = base.bodyMedium.copy(fontFamily = DriverFont, letterSpacing = 0.sp),
-            bodySmall = base.bodySmall.copy(fontFamily = DriverFont, letterSpacing = 0.sp),
-            titleLarge = base.titleLarge.copy(fontFamily = DriverFont, fontWeight = FontWeight.Bold),
-            titleMedium = base.titleMedium.copy(fontFamily = DriverFont, fontWeight = FontWeight.Bold),
-            headlineSmall = base.headlineSmall.copy(fontFamily = DriverFont, fontWeight = FontWeight.Bold),
-            headlineMedium = base.headlineMedium.copy(fontFamily = DriverFont, fontWeight = FontWeight.Bold),
-            labelLarge = base.labelLarge.copy(fontFamily = DriverFont),
-            labelMedium = base.labelMedium.copy(fontFamily = DriverFont),
-            labelSmall = base.labelSmall.copy(fontFamily = DriverFont)
-        ),
-        content = content
-    )
+    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }
 
 @Composable internal fun DriverAsset(id:Int,width:Int,height:Int=width,description:String?=null,tint:Color?=null) {
@@ -159,10 +102,10 @@ internal val DriverDarkColorScheme = darkColorScheme(
             }},vm::previewDriverRoute,
             onLoadNotifications = { more -> vm.loadNotifications(more) })
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
-            Surface(shape=RoundedCornerShape(4.dp), color=MaterialTheme.colorScheme.surface) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Surface(shape=RoundedCornerShape(16.dp), color=MaterialTheme.colorScheme.surface) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
                 Image(bitmap.asImageBitmap(),"Recorded delivery proof",Modifier.fillMaxWidth().heightIn(max=480.dp))
-                TextButton(onClick=vm::closeProof){Text("Close proof")}
+                TextButton(onClick=vm::closeProof,modifier=Modifier.heightIn(min=48.dp)){Text("Close proof")}
             }}
         }}
     }
@@ -197,45 +140,84 @@ internal val DriverDarkColorScheme = darkColorScheme(
     LaunchedEffect(shipment?.value("id"),tab) {if(shipment!=null)onDetails(shipment.value("id"))}
     BackHandler(tab!="Home" || selected!=null) {if(tab=="Messages" && messageThread!=null)messageThread=null else if(selected!=null)selected=null else tab="Home"}
     Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
-        if(tab!="Navigate" || shipment==null) Surface(color=MaterialTheme.colorScheme.surface,shadowElevation=1.dp) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal=16.dp),
-                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-                DriverAsset(R.drawable.figma_driver_fac2b,46)
-                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                    if(conversation!=null) {
-                        val unreadCount = if(state.offline || state.conversationUnread==null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}
-                        TextButton(
-                            onClick={tab="Messages";selected=null;messageThread=null},
-                            contentPadding=PaddingValues(horizontal=8.dp,vertical=4.dp)
+        Surface(color=MaterialTheme.colorScheme.surface) {
+            Column(Modifier.statusBarsPadding()) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min=64.dp).padding(
+                        start=if(tab=="Navigate" && shipment!=null) 4.dp else 16.dp,
+                        end=16.dp
+                    ),
+                    verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.SpaceBetween
+                ) {
+                    if(tab=="Navigate" && shipment!=null) {
+                        Row(
+                            modifier=Modifier.weight(1f),
+                            verticalAlignment=Alignment.CenterVertically
                         ) {
+                            IconButton(
+                                onClick={selected=null},
+                                modifier=Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector=Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription="Switch trip",
+                                    tint=MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                             Text(
-                                text=if(unreadCount!=null && unreadCount>0) "Messages ($unreadCount)" else "Messages",
+                                text=shipment.value("tracking_number").ifBlank {"Navigate"},
+                                style=MaterialTheme.typography.titleMedium,
+                                color=MaterialTheme.colorScheme.onSurface,
                                 maxLines=1,
-                                overflow=TextOverflow.Ellipsis
+                                overflow=TextOverflow.Ellipsis,
+                                modifier=Modifier.weight(1f)
                             )
                         }
+                    } else {
+                        DriverAsset(R.drawable.figma_driver_fac2b,46)
                     }
-                    val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
-                    IconButton(
-                        onClick={tab="Alerts";selected=null},
-                        modifier=Modifier.size(48.dp)
-                    ) {
-                        BadgedBox(
-                            badge = {
-                                if (unreadAlerts > 0) {
-                                    Badge { Text("$unreadAlerts") }
-                                }
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                        if(conversation!=null) {
+                            val unreadCount = if(state.offline || state.conversationUnread==null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}
+                            TextButton(
+                                onClick={tab="Messages";selected=null;messageThread=null},
+                                modifier=Modifier.heightIn(min=48.dp),
+                                contentPadding=PaddingValues(horizontal=8.dp,vertical=4.dp)
+                            ) {
+                                Text(
+                                    text=if(unreadCount!=null && unreadCount>0) "Messages ($unreadCount)" else "Messages",
+                                    maxLines=1,
+                                    overflow=TextOverflow.Ellipsis
+                                )
                             }
+                        }
+                        val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
+                        IconButton(
+                            onClick={tab="Alerts";selected=null},
+                            modifier=Modifier.size(48.dp)
                         ) {
-                            DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications",tint=MaterialTheme.colorScheme.onSurface)
+                            BadgedBox(
+                                badge = {
+                                    if (unreadAlerts > 0) {
+                                        Badge { Text("$unreadAlerts") }
+                                    }
+                                }
+                            ) {
+                                DriverAsset(R.drawable.figma_driver_90918,24,28,"Notifications",tint=MaterialTheme.colorScheme.onSurface)
+                            }
                         }
                     }
+                }
+                if(state.busy) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
+                } else {
+                    HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant,thickness=1.dp)
                 }
             }
         }
     },bottomBar={DriverBottomBar(tab,state.busy) {tab=it;selected=null}}) {padding->
         Column(Modifier.fillMaxSize().padding(padding).imePadding().then(if(tab=="Messages" && messageThread!=null) Modifier else Modifier.verticalScroll(rememberScrollState()))) {
-            if(state.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             state.error?.let {DriverNotice(it,true)}
             state.message?.let {DriverNotice(it)}
             if(state.offline) {
@@ -274,8 +256,8 @@ internal val DriverDarkColorScheme = darkColorScheme(
                     if(active.isEmpty())DriverEmpty(data)
                     else {
                         if(active.any {s->val d=DriverUiRules.delivery(data,s.value("id"));d.value("status")=="assigned" && d.value("route_started_at").isBlank()})
-                            Surface(color=MaterialTheme.colorScheme.primary,shape=RoundedCornerShape(4.dp)) {
-                                Row(Modifier.fillMaxWidth().padding(17.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                            Surface(color=MaterialTheme.colorScheme.primary,shape=RoundedCornerShape(12.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(16.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
                                     DriverAsset(R.drawable.figma_driver_e588e,17,12,tint=MaterialTheme.colorScheme.onPrimary);Spacer(Modifier.width(8.dp));Text("New Trip Assigned!",color=MaterialTheme.colorScheme.onPrimary,fontWeight=FontWeight.ExtraBold)
                                 }
                             }
@@ -383,16 +365,28 @@ internal val DriverDarkColorScheme = darkColorScheme(
 }
 
 @Composable private fun DriverBottomBar(tab:String,busy:Boolean,onTab:(String)->Unit) {
-    Surface(color=MaterialTheme.colorScheme.surface,shadowElevation=1.dp) {
+    Surface(color=MaterialTheme.colorScheme.surface) {
         Column {
             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().heightIn(min=68.dp).padding(top=8.dp),horizontalArrangement=Arrangement.SpaceEvenly) {
+            Row(Modifier.fillMaxWidth().navigationBarsPadding().heightIn(min=68.dp).padding(horizontal=8.dp,vertical=6.dp),horizontalArrangement=Arrangement.SpaceEvenly) {
                 listOf(Triple("Home",R.drawable.figma_driver_0699e,18),Triple("Navigate",R.drawable.figma_driver_10a8b,19),
                     Triple("Trips",R.drawable.figma_driver_8b002,18),Triple("Profile",R.drawable.figma_driver_dce13,16)).forEach {(name,icon,height)->
-                    val color=if(tab==name)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    Column(Modifier.weight(1f).clickable(enabled=!busy){onTab(name)}.padding(vertical=12.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                        DriverAsset(icon,if(name=="Trips")18 else 16,height,tint=color)
-                        Text(name.uppercase(),color=color,fontSize=10.sp,fontWeight=if(tab==name)FontWeight.ExtraBold else FontWeight.SemiBold)
+                    val selectedTab = tab==name
+                    val color=if(selectedTab)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(enabled=!busy){onTab(name)}.padding(vertical=6.dp),
+                        horizontalAlignment=Alignment.CenterHorizontally,
+                        verticalArrangement=Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier=Modifier.clip(RoundedCornerShape(16.dp))
+                                .background(if(selectedTab)MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .padding(horizontal=16.dp,vertical=4.dp),
+                            contentAlignment=Alignment.Center
+                        ) {
+                            DriverAsset(icon,if(name=="Trips")18 else 16,height,tint=color)
+                        }
+                        Text(name.uppercase(),color=color,fontSize=10.sp,fontWeight=if(selectedTab)FontWeight.ExtraBold else FontWeight.SemiBold,maxLines=1,softWrap=false)
                     }
                 }
             }
@@ -404,21 +398,21 @@ internal val DriverDarkColorScheme = darkColorScheme(
     val driver=data.obj("driver");val vehicle=DriverUiRules.truck(data)
     val status=if(DriverProfileRules.rosterState(data)=="ready")driver.value("status") else ""
     val available=status=="available"
-    val isDark = isSystemInDarkTheme()
-    val color=if(available)(if(isDark) StatusGreenDark else Color(0xFF22C55E)) else MaterialTheme.colorScheme.primary
-    val badgeTextColor=if(available)(if(isDark) StatusGreenDark else Color(0xFF166534)) else MaterialTheme.colorScheme.primary
-    val badgeBgColor=if(available)(if(isDark) StatusGreenBgDark else Color(0xFFDCFCE7)) else MaterialTheme.colorScheme.surfaceVariant
-    Surface(color=MaterialTheme.colorScheme.surface,shadowElevation=1.dp) {Column {
+    val extendedColors = TanawTheme.extendedColors
+    val barColor=if(available) extendedColors.onSuccessBannerText else MaterialTheme.colorScheme.primary
+    val badgeTextColor=if(available) extendedColors.onSuccessBannerText else MaterialTheme.colorScheme.primary
+    val badgeBgColor=if(available) extendedColors.successBannerBackground else MaterialTheme.colorScheme.surfaceVariant
+    Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {Column {
         Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
-                Text(data.obj("profile").value("full_name").ifBlank {"Driver"},fontSize=18.sp,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.Bold)
+                Text(data.obj("profile").value("full_name").ifBlank {"Driver"},style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onSurface)
                 Text(if(DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable") || DriverRecordPresentation.section(data,"driver_trucks") in listOf("error","unavailable"))"Assigned vehicle unavailable"
                     else if(vehicle==null && DriverUiRules.deliveryRows(data).any {it.value("status") in listOf("assigned","loading","in_transit")})"Trip vehicle unavailable"
-                    else DriverRecordPresentation.vehicleLabel(data,vehicle),fontSize=14.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    else DriverRecordPresentation.vehicleLabel(data,vehicle),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             DriverBadge(if(DriverProfileRules.rosterState(data)!="ready")"Unavailable" else if(status.isBlank())"Not recorded" else MobilePresentation.status(status),badgeTextColor,badgeBgColor)
         }
-        Box(Modifier.fillMaxWidth().height(4.dp).background(color))
+        Box(Modifier.fillMaxWidth().height(4.dp).background(barColor))
     }}
 }
 
@@ -426,14 +420,14 @@ internal val DriverDarkColorScheme = darkColorScheme(
     if(DriverProfileRules.rosterState(data)!="ready" || DriverRecordPresentation.section(data,"shipments") in listOf("error","unavailable") || DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable")) {
         return
     }
-    val isDark = isSystemInDarkTheme()
-    Surface(color=MaterialTheme.colorScheme.surfaceContainerHigh,shape=RoundedCornerShape(4.dp)) {
-        Column(Modifier.fillMaxWidth().heightIn(min=480.dp).padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-            DriverAsset(R.drawable.figma_driver_e4aa7,128)
-            Spacer(Modifier.height(56.dp));Text("No trips assigned",fontSize=18.sp,fontWeight=FontWeight.ExtraBold,color=MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(8.dp));Text("You'll be notified when a new trip is ready.",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=14.sp,textAlign=TextAlign.Center)
-            Spacer(Modifier.height(24.dp))
-            if(data.obj("driver").value("status")=="available")DriverBadge("●  You are available for assignments",if(isDark) StatusGreenDark else Color(0xFF15803D),if(isDark) StatusGreenBgDark else Color(0xFFF0FDF4),uppercase=false)
+    val extendedColors = TanawTheme.extendedColors
+    Surface(color=MaterialTheme.colorScheme.surfaceContainerHigh,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=36.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+            DriverAsset(R.drawable.figma_driver_e4aa7,120)
+            Spacer(Modifier.height(24.dp));Text("No trips assigned",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(8.dp));Text("You'll be notified when a new trip is ready.",color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium,textAlign=TextAlign.Center)
+            Spacer(Modifier.height(20.dp))
+            if(data.obj("driver").value("status")=="available")DriverBadge("●  You are available for assignments",extendedColors.onSuccessBannerText,extendedColors.successBannerBackground,uppercase=false)
         }
     }
 }
@@ -442,23 +436,22 @@ internal val DriverDarkColorScheme = darkColorScheme(
     val roster=DriverProfileRules.rosterState(data)
     if(roster!="ready") {
         DriverNotice(if(roster=="empty")"No driver roster link was returned for your account. Ask the office to check your driver account." else "Driver roster unavailable. Refresh to retry.",true)
-        TextButton(onClick=refresh,enabled=!busy){Text("Retry driver roster")}
+        TextButton(onClick=refresh,enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry driver roster")}
     }
     if(DriverRecordPresentation.section(data,"driver_trucks") in listOf("error","unavailable")) {
         DriverNotice("Assigned vehicle records unavailable. Other loaded records remain visible.",true)
-        TextButton(onClick=refresh,enabled=!busy){Text("Retry assigned vehicle")}
+        TextButton(onClick=refresh,enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry assigned vehicle")}
     }
     if(DriverRecordPresentation.section(data,"shipments") in listOf("error","unavailable") || DriverRecordPresentation.section(data,"driver_deliveries") in listOf("error","unavailable")) {
         DriverNotice("Trip details unavailable. Refresh to confirm current assignments.",true)
-        TextButton(onClick=refresh,enabled=!busy){Text("Retry assignments")}
+        TextButton(onClick=refresh,enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry assignments")}
     }
 }
 
 @Composable private fun DriverAssignment(s:JsonObject,d:JsonObject,open:()->Unit) {
-    val isDark = isSystemInDarkTheme()
-    Surface(onClick=open,color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {Column {
+    Surface(onClick=open,color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {Column {
         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-            Text("Trip Assignment",fontSize=18.sp,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text("Trip Assignment",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
             Spacer(Modifier.width(8.dp))
             DriverBadge(s.value("tracking_number"),MaterialTheme.colorScheme.primary,MaterialTheme.colorScheme.surfaceVariant)
         }
@@ -466,12 +459,12 @@ internal val DriverDarkColorScheme = darkColorScheme(
             Row(horizontalArrangement=Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f)) {
                     DriverCaption("CARGO",R.drawable.figma_driver_99491,10,10)
-                    Text(s.value("cargo_description").ifBlank {"Not recorded"},fontSize=14.sp,color=MaterialTheme.colorScheme.onSurface,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text(s.value("cargo_description").ifBlank {"Not recorded"},style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface,maxLines=2,overflow=TextOverflow.Ellipsis)
                     SupportingText(MobilePresentation.number(s.value("weight_kg"),"kg"))
                 }
                 s.value("special_handling").takeIf {it.isNotBlank() && it!="false"}?.let {Column(Modifier.weight(1f)) {
                     DriverCaption("SPECIAL",R.drawable.figma_driver_02651,10,8)
-                    DriverBadge(if(it=="true")"Special handling" else it,if(isDark) OrangeSpecialTagDark else Color(0xFF7D3100),if(isDark) OrangeSpecialTagBgDark else Color(0xFFFFDBCA))
+                    DriverBadge(if(it=="true")"Special handling" else it,MaterialTheme.colorScheme.onSecondaryContainer,MaterialTheme.colorScheme.secondaryContainer)
                 }}
             }
             DriverRoute(s)
@@ -479,8 +472,16 @@ internal val DriverDarkColorScheme = darkColorScheme(
             DriverMetrics(s)
             AllowanceRow(d.value("driver_allowance").takeIf {it.isNotBlank()}?.let(MobilePresentation::money)?:"Not recorded")
             s.value("driver_notes").takeIf(String::isNotBlank)?.let {notes->
-                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).border(1.dp,MaterialTheme.colorScheme.outlineVariant).padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    DriverAsset(R.drawable.figma_driver_d2476,14,12,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(notes,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .border(1.dp,MaterialTheme.colorScheme.outlineVariant,RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    horizontalArrangement=Arrangement.spacedBy(8.dp)
+                ) {
+                    DriverAsset(R.drawable.figma_driver_d2476,14,12,tint=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(notes,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -489,14 +490,17 @@ internal val DriverDarkColorScheme = darkColorScheme(
 }
 
 @Composable private fun DriverRoute(s:JsonObject) {
-    Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         listOf("PICK-UP" to "pickup_address","DESTINATION" to "dropoff_address").forEachIndexed {index,(label,key)->
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.padding(top=5.dp).size(9.dp).clip(CircleShape).background(if(index==0)MaterialTheme.colorScheme.primary else Color(0xFFBA1A1A)))
+                Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.padding(top=5.dp)) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(if(index==0)MapPinPickup else MapPinDestination))
+                    if(index==0)Box(Modifier.width(2.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                }
                 Column(Modifier.weight(1f, fill=false)) {
-                    Text(label,color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=10.sp,letterSpacing=.5.sp)
-                    Text(s.value(key).ifBlank {"Not recorded"},fontSize=14.sp,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    if(index==0)Text(MobilePresentation.time(s.value("scheduled_departure")),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(label,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(s.value(key).ifBlank {"Not recorded"},style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    if(index==0)Text(MobilePresentation.time(s.value("scheduled_departure")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -505,8 +509,8 @@ internal val DriverDarkColorScheme = darkColorScheme(
 
 @Composable private fun DriverMetrics(s:JsonObject) {
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(16.dp)) {
-        Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {DriverAsset(R.drawable.figma_driver_2af21,13,8,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(MobilePresentation.number(s.value("distance_km"),"km"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurface)}
-        Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {DriverAsset(R.drawable.figma_driver_48ff7,13,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(MobilePresentation.number(s.value("route_duration_minutes"),"min"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurface)}
+        Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {DriverAsset(R.drawable.figma_driver_2af21,13,8,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(MobilePresentation.number(s.value("distance_km"),"km"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurface)}
+        Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {DriverAsset(R.drawable.figma_driver_48ff7,13,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(MobilePresentation.number(s.value("route_duration_minutes"),"min"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurface)}
     }
 }
 
@@ -521,20 +525,21 @@ internal val DriverDarkColorScheme = darkColorScheme(
     val hasWaypoints = remember(effectiveGeoJson) {
         !DriverDirections.corridorWaypointsParam(effectiveGeoJson).isNullOrBlank()
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val pickupUrl = DriverDirections.url(shipment, false, effectiveGeoJson)
         val destUrl = DriverDirections.url(shipment, true, effectiveGeoJson)
         val tripUrl = DriverDirections.tripUrl(shipment, effectiveGeoJson)
 
         val isPickupPrimary = stage < 4
         if (isPickupPrimary) {
-            Button(
+            FilledTonalButton(
                 onClick = {
                     error = null
                     try { handler.openUri(requireNotNull(pickupUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
                 },
                 enabled = pickupUrl != null,
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) { Text("Directions to pickup") }
             OutlinedButton(
                 onClick = {
@@ -542,16 +547,18 @@ internal val DriverDarkColorScheme = darkColorScheme(
                     try { handler.openUri(requireNotNull(destUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
                 },
                 enabled = destUrl != null,
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) { Text("Directions to destination") }
         } else {
-            Button(
+            FilledTonalButton(
                 onClick = {
                     error = null
                     try { handler.openUri(requireNotNull(destUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
                 },
                 enabled = destUrl != null,
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) { Text("Directions to destination") }
             OutlinedButton(
                 onClick = {
@@ -559,7 +566,8 @@ internal val DriverDarkColorScheme = darkColorScheme(
                     try { handler.openUri(requireNotNull(pickupUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
                 },
                 enabled = pickupUrl != null,
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) { Text("Directions to pickup") }
         }
 
@@ -569,17 +577,18 @@ internal val DriverDarkColorScheme = darkColorScheme(
                 try { handler.openUri(requireNotNull(tripUrl)) } catch (_: Exception) { error = "Could not open maps. Check that a browser or maps app is available." }
             },
             enabled = tripUrl != null,
-            modifier = Modifier.fillMaxWidth()
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
         ) { Text("View pickup-to-destination route") }
 
-        Text("Opens external driving directions. Confirm truck restrictions with the office.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Opens external driving directions. Confirm truck restrictions with the office.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (hasWaypoints) {
-            Text("Includes office-confirmed HGV corridor waypoints.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Includes office-confirmed HGV corridor waypoints.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (stage >= 4) {
-                Text("If resuming navigation midway, remove past waypoints in Google Maps to avoid backtracking.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("If resuming navigation midway, remove past waypoints in Google Maps to avoid backtracking.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -587,7 +596,7 @@ internal val DriverDarkColorScheme = darkColorScheme(
     var filter by rememberSaveable {mutableStateOf("All")}
     var period by rememberSaveable {mutableStateOf("This month")}
     var showFilter by remember {mutableStateOf(false)}
-    val isDark = isSystemInDarkTheme()
+    val extendedColors = TanawTheme.extendedColors
     LaunchedEffect(period) {onHistory?.invoke(period,false)}
     val history=DriverHistory.reconcileWithLive(data,state.history,period)
     val recordData=JsonObject((history?:data)+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,history?:state.history))))
@@ -595,10 +604,19 @@ internal val DriverDarkColorScheme = darkColorScheme(
     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("My Trips",style=MaterialTheme.typography.headlineMedium,color=MaterialTheme.colorScheme.onSurface)
-            TextButton(onClick={showFilter=!showFilter}) {DriverAsset(R.drawable.figma_driver_4b41f,18,12,"Filter trips",tint=MaterialTheme.colorScheme.onSurface)}
+            IconButton(onClick={showFilter=!showFilter},modifier=Modifier.size(48.dp)) {
+                DriverAsset(R.drawable.figma_driver_4b41f,18,12,"Filter trips",tint=MaterialTheme.colorScheme.onSurface)
+            }
         }
         if(showFilter)Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            listOf("This month","Last month","All records").forEach {p->FilterChip(selected=period==p,onClick={period=p},label={Text(p)})}
+            listOf("This month","Last month","All records").forEach {p->
+                FilterChip(
+                    selected=period==p,
+                    onClick={period=p},
+                    label={Text(p)},
+                    shape=RoundedCornerShape(10.dp)
+                )
+            }
         }
         DriverCard(accent=MaterialTheme.colorScheme.primary) {
             DriverCaption(if(period=="This month")"MONTHLY TRIPS" else period.uppercase())
@@ -606,92 +624,101 @@ internal val DriverDarkColorScheme = darkColorScheme(
             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("TOTAL ALLOWANCE")
             Text(history?.let(DriverHistory::allowance)?:if(onHistory==null)DriverUiRules.allowanceTotal(recordData,records)else "Not loaded",fontSize=24.sp,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
             HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("ON-TIME RATE")
-            Text(history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(recordData,records)else "Not loaded",fontSize=24.sp,color=if(isDark) StatusGreenDark else Color(0xFF15803D),fontWeight=FontWeight.Bold)
+            Text(history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(recordData,records)else "Not loaded",fontSize=24.sp,color=extendedColors.onSuccessBannerText,fontWeight=FontWeight.Bold)
         }
-        Text(if(onHistory==null)"$period · latest 200 permitted shipment records" else "$period · ${records.size} of ${history?.value("total")?:"—"} trips · totals include the full period",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if(onHistory==null)"$period · latest 200 permitted shipment records" else "$period · ${records.size} of ${history?.value("total")?:"—"} trips · totals include the full period",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(onHistory!=null) {
-            Text("Period uses scheduled departure, or creation date when absent, in Philippine time.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            history?.value("as_of")?.let {Text("Updated ${MobilePresentation.time(it)}",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+            Text("Period uses scheduled departure, or creation date when absent, in Philippine time.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            history?.value("as_of")?.let {Text("Updated ${MobilePresentation.time(it)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(state.historyLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
-            state.historyError?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            TextButton(onClick={onHistory(period,false)},enabled=!state.historyLoading){Text("Refresh trip history")}
+            state.historyError?.let {Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}
+            TextButton(onClick={onHistory(period,false)},enabled=!state.historyLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Refresh trip history")}
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(24.dp)) {
-            listOf("All","Completed","Ongoing","Cancelled").forEach {f->Column(Modifier.clickable{filter=f}.padding(vertical=8.dp)) {
-                Text(f,color=if(filter==f)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=if(filter==f)FontWeight.Bold else FontWeight.Normal)
-                if(filter==f)Box(Modifier.padding(top=10.dp).width(50.dp).height(2.dp).background(MaterialTheme.colorScheme.primary))
-            }}
+        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            listOf("All","Completed","Ongoing","Cancelled").forEach {f->
+                FilterChip(
+                    selected=filter==f,
+                    onClick={filter=f},
+                    label={Text(f)},
+                    shape=RoundedCornerShape(10.dp)
+                )
+            }
         }
         val visible=records.filter {s->DriverUiRules.matches(s,DriverUiRules.delivery(recordData,s.value("id")),filter)}
-        if(visible.isEmpty() && !state.historyLoading && state.historyError==null)Text(if(history!=null && records.size<(history.value("total").toIntOrNull()?:0))"No matching trips loaded. Load more to search further." else "No trips in this view.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(visible.isEmpty() && !state.historyLoading && state.historyError==null)Text(if(history!=null && records.size<(history.value("total").toIntOrNull()?:0))"No matching trips loaded. Load more to search further." else "No trips in this view.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         visible.forEach {s->
             val d=DriverUiRules.delivery(recordData,s.value("id"))
-            Surface(onClick={open(s.value("id"))},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+            Surface(onClick={open(s.value("id"))},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column {
-                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                        Text(s.value("tracking_number"),fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(s.value("tracking_number"),style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
                         Spacer(Modifier.width(8.dp))
                         DriverBadge(DriverUiRules.tripStatusLabel(s,d))
                     }
-                    Text("○  ${s.value("pickup_address")}",fontSize=14.sp,color=MaterialTheme.colorScheme.onSurface,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    Text("○  ${s.value("dropoff_address")}",fontSize=14.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text("○  ${s.value("pickup_address")}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text("○  ${s.value("dropoff_address")}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
                     HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                    Text(MobilePresentation.time(s.value("scheduled_departure")),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(d.value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
+                    Text(MobilePresentation.time(s.value("scheduled_departure")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(d.value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",style=MaterialTheme.typography.titleSmall,color=MaterialTheme.colorScheme.primary)
                 }
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if(DriverUiRules.isDriverCompleted(s,d)) (if(isDark) StatusGreenBgDark else Color(0xFFCCF2D9)) else MaterialTheme.colorScheme.outlineVariant))
+                Box(Modifier.fillMaxWidth().height(4.dp).background(if(DriverUiRules.isDriverCompleted(s,d)) extendedColors.onSuccessBannerText else MaterialTheme.colorScheme.outlineVariant))
             }
         }}
         if(onHistory!=null && history!=null && records.size<(history.value("total").toIntOrNull()?:0))
-            OutlinedButton(onClick={onHistory(period,true)},enabled=!state.historyLoading,modifier=Modifier.fillMaxWidth()){Text("Load more trips")}
+            OutlinedButton(onClick={onHistory(period,true)},enabled=!state.historyLoading,shape=RoundedCornerShape(10.dp),modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Load more trips")}
     }
 }
 
 @Composable private fun DriverComplete(s:JsonObject,d:JsonObject?,details:JsonObject?,home:()->Unit) {
     val isDark = isSystemInDarkTheme()
-    Surface(color=if(isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,shape=RoundedCornerShape(4.dp)) {Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        Surface(color=Color(0xFF16A34A),shape=CircleShape,border=BorderStroke(4.dp,Color.White)) {Box(Modifier.size(80.dp),contentAlignment=Alignment.Center) {DriverAsset(R.drawable.figma_driver_966f6,33,24,tint=Color.White)}}
-        Text(if(s.value("status")=="cancelled")"Trip Cancelled" else if(s.value("status")=="completed")"Delivery Complete!" else "Proof Submitted",color=Color.White,fontSize=28.sp,fontWeight=FontWeight.Bold)
-        Text(s.value("tracking_number"),color=Color.White)
+    val heroTextColor = if(isDark) MaterialTheme.colorScheme.onSurface else Color.White
+    Surface(
+        color=if(isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
+        shape=RoundedCornerShape(16.dp),
+        border=if(isDark) BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant) else null
+    ) {Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        Surface(color=MapPinVehicle,shape=CircleShape,border=BorderStroke(4.dp,Color.White)) {Box(Modifier.size(80.dp),contentAlignment=Alignment.Center) {DriverAsset(R.drawable.figma_driver_966f6,33,24,tint=Color.White)}}
+        Text(if(s.value("status")=="cancelled")"Trip Cancelled" else if(s.value("status")=="completed")"Delivery Complete!" else "Proof Submitted",color=heroTextColor,style=MaterialTheme.typography.headlineMedium)
+        Text(s.value("tracking_number"),color=heroTextColor,style=MaterialTheme.typography.titleMedium)
     }}
     DriverCard {DriverCaption("TRIP SUMMARY");DriverRoute(s);HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverMetrics(s)}
     DriverCard {
         AllowanceRow(d?.value("driver_allowance")?.takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Not recorded")
-        Text("Other expenses submitted: ${DriverRecordPresentation.expenseTotal(details,s.value("id"))}",color=MaterialTheme.colorScheme.onSurface)
-        Text(if(s.value("status")=="completed")"Contact the office for allowance processing." else "Office review determines final completion.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Other expenses submitted: ${DriverRecordPresentation.expenseTotal(details,s.value("id"))}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface)
+        Text(if(s.value("status")=="completed")"Contact the office for allowance processing." else "Office review determines final completion.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
     DriverButton("BACK TO HOME",true,home)
 }
 
 @Composable private fun DriverRecords(s:JsonObject,state:MobileState,load:(String)->Unit,proof:(String,String)->Unit,evidence:((String,String,String)->Unit)?) {
     DriverTripSection("Saved trip records","Fuel purchases, expenses and recorded updates for this trip.") {
-    TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading){Text("Refresh trip records")}
+    TextButton(onClick={load(s.value("id"))},enabled=!state.detailLoading,modifier=Modifier.heightIn(min=48.dp)){Text("Refresh trip records")}
     if(state.detailLoading)LinearProgressIndicator(Modifier.fillMaxWidth())
     state.details?.takeIf {it.value("shipment_id")==s.value("id")}?.let {details->
         DriverEvidenceRecords(s.value("id"),details,state.busy || state.offline,evidence)
-        details.value("fuel_error").takeIf(String::isNotBlank)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+        details.value("fuel_error").takeIf(String::isNotBlank)?.let {Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}
         if(details.containsKey("fuel_logs")) {
             DriverFuelRecords(details.rows("fuel_logs"))
         }
         DriverRecordedTimeline(details)
-        details.rows("documents").forEach {doc->TextButton(onClick={proof(s.value("id"),doc.value("id"))}){Text("View ${MobilePresentation.status(doc.value("kind"))}")}}
+        details.rows("documents").forEach {doc->TextButton(onClick={proof(s.value("id"),doc.value("id"))},modifier=Modifier.heightIn(min=48.dp)){Text("View ${MobilePresentation.status(doc.value("kind"))}")}}
     }
-    if(state.details?.value("shipment_id")!=s.value("id") && !state.detailLoading)Text("Refresh to view this trip's saved records.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    if(state.details?.value("shipment_id")!=s.value("id") && !state.detailLoading)Text("Refresh to view this trip's saved records.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable internal fun DriverFuelRecords(records:List<JsonObject>) {
-    Text("Fuel records",fontSize=16.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
-    if(records.isEmpty())Text("No fuel records for this trip.",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("Fuel records",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
+    if(records.isEmpty())Text("No fuel records for this trip.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     records.forEach {record->
         Surface(color=MaterialTheme.colorScheme.surfaceContainerHigh,shape=RoundedCornerShape(12.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                Text(record.value("total_cost").toBigDecimalOrNull()?.let{MobilePresentation.money(it.toPlainString())}?:"Amount unavailable",fontSize=22.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
-                Text(record.value("station").ifBlank{"Station not recorded"},fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
-                Text("Purchased: ${MobilePresentation.number(record.value("liters"),"L")} · Unit price: ${record.value("price_per_liter").toBigDecimalOrNull()?.let{MobilePresentation.money(it.toPlainString())+"/L"}?:"Unavailable"}",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurface)
-                Text("Odometer: ${MobilePresentation.number(record.value("odometer_km"),"km")}",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurface)
-                Text("Recorded: ${MobilePresentation.time(record.value("logged_at"))}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(record.value("total_cost").toBigDecimalOrNull()?.let{MobilePresentation.money(it.toPlainString())}?:"Amount unavailable",style=MaterialTheme.typography.headlineSmall,color=MaterialTheme.colorScheme.primary)
+                Text(record.value("station").ifBlank{"Station not recorded"},style=MaterialTheme.typography.titleSmall,color=MaterialTheme.colorScheme.onSurface)
+                Text("Purchased: ${MobilePresentation.number(record.value("liters"),"L")} · Unit price: ${record.value("price_per_liter").toBigDecimalOrNull()?.let{MobilePresentation.money(it.toPlainString())+"/L"}?:"Unavailable"}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurface)
+                Text("Odometer: ${MobilePresentation.number(record.value("odometer_km"),"km")}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurface)
+                Text("Recorded: ${MobilePresentation.time(record.value("logged_at"))}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -701,40 +728,49 @@ internal val DriverDarkColorScheme = darkColorScheme(
     Button(
         onClick=click,
         enabled=enabled,
-        modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),
-        shape=RoundedCornerShape(4.dp),
+        modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),
+        shape=RoundedCornerShape(10.dp),
         colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary)
     ) {
-        Text(label,fontWeight=FontWeight.Bold,textAlign=TextAlign.Center)
+        Text(label,style=MaterialTheme.typography.labelLarge,textAlign=TextAlign.Center)
         if(label=="COMPLETE DELIVERY") {Spacer(Modifier.width(8.dp));DriverAsset(R.drawable.figma_driver_dafed,17,tint=MaterialTheme.colorScheme.onPrimary)}
         if(label=="BACK TO HOME") {Spacer(Modifier.width(8.dp));DriverAsset(R.drawable.figma_driver_43c84,16,18,tint=MaterialTheme.colorScheme.onPrimary)}
     }
 }
 @Composable internal fun DriverPageHeading(title:String,back:(()->Unit)?=null) {
-    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).heightIn(min=64.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(back!=null)IconButton(onClick=back,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){DriverAsset(R.drawable.figma_driver_e6917,16,description="Back",tint=MaterialTheme.colorScheme.onSurface)}
-        Text(title,fontSize=18.sp,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+    Column {
+        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).heightIn(min=64.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            if(back!=null)IconButton(onClick=back,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){DriverAsset(R.drawable.figma_driver_e6917,16,description="Back",tint=MaterialTheme.colorScheme.onSurface)}
+            Text(title,style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+        }
+        HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
     }
 }
 @Composable private fun DriverCaption(text:String,icon:Int?=null,width:Int=10,height:Int=10) {
-    Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {if(icon!=null)DriverAsset(icon,width,height,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(text,fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,letterSpacing=.5.sp)}
+    Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {if(icon!=null)DriverAsset(icon,width,height,tint=MaterialTheme.colorScheme.onSurfaceVariant);Text(text,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 }
 @Composable private fun DriverBadge(label:String,color:Color=MaterialTheme.colorScheme.primary,background:Color=MaterialTheme.colorScheme.surfaceVariant,uppercase:Boolean=true) {
-    Surface(color=background,shape=RoundedCornerShape(2.dp)) {Text(if(uppercase)label.uppercase()else label,Modifier.padding(8.dp,4.dp),color=color,fontSize=10.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)}
+    Surface(color=background,shape=RoundedCornerShape(6.dp)) {Text(if(uppercase)label.uppercase()else label,Modifier.padding(horizontal=10.dp,vertical=4.dp),color=color,style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis)}
 }
 @Composable private fun DriverCard(accent:Color?=null,content:@Composable ColumnScope.()->Unit) {
-    Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(4.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+    Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             if(accent!=null)Box(Modifier.width(4.dp).fillMaxHeight().background(accent))
-            Column(Modifier.weight(1f).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
+            Column(Modifier.weight(1f).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
         }
     }
 }
 @Composable private fun DriverNotice(text:String,error:Boolean=false) {
-    val isDark = isSystemInDarkTheme()
-    val bg = if(error) (if(isDark) MaterialTheme.colorScheme.errorContainer else Color(0xFFFFEDEA)) else (if(isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverLine)
-    val textColor = if(error) (if(isDark) MaterialTheme.colorScheme.onErrorContainer else Color(0xFFBA1A1A)) else MaterialTheme.colorScheme.onSurfaceVariant
-    Text(text,Modifier.fillMaxWidth().background(bg).padding(12.dp),fontSize=12.sp,color=textColor)
+    val bg = if(error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = if(error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),
+        color=bg,
+        shape=RoundedCornerShape(10.dp),
+        border=BorderStroke(1.dp,if(error) MaterialTheme.colorScheme.error.copy(alpha=0.35f) else MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Text(text,Modifier.fillMaxWidth().padding(14.dp),style=MaterialTheme.typography.bodySmall,color=textColor)
+    }
 }
 
 internal object DriverUiRules {

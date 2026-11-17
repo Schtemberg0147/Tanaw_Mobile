@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,8 +70,11 @@ internal fun CustomerProfile(
     onOpenBookings: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
+    showTopBar: Boolean = true,
+    onSubPanelChanged: (Boolean) -> Unit = {},
 ) {
     var panel by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(panel) { onSubPanelChanged(panel != null) }
     var linkError by remember { mutableStateOf(false) }
     var infoDialog by remember { mutableStateOf<String?>(null) }
     val uri = LocalUriHandler.current
@@ -265,25 +269,21 @@ internal fun CustomerProfile(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        // ── Top Header Bar ─────────────────────────────────────────────────────────
-        CustomerTopBar(
-            unreadAlertsCount = unreadNotifications,
-            isBusy = state.busy,
-            onRefresh = vm::refresh,
-            onOpenAlerts = onOpenAlerts,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-        )
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+        if (showTopBar) {
+            CustomerTopBar(
+                unreadAlertsCount = unreadNotifications,
+                isBusy = state.busy,
+                onRefresh = vm::refresh,
+                onOpenAlerts = onOpenAlerts,
+            )
+        }
 
         // ── Scrollable Body ────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 16.dp)
                 .padding(top = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -296,7 +296,7 @@ internal fun CustomerProfile(
             )
 
             // Status Notices (Loading / Error / Success)
-            CustomerProfileNotices(state)
+            CustomerProfileNotices(state, showLinearProgress = showTopBar)
 
             // Hero Avatar Section
             CustomerProfileHeader(

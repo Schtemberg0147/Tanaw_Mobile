@@ -17,64 +17,92 @@ import androidx.core.view.WindowCompat
 @Immutable
 data class ExtendedColors(
     val successBannerBackground: Color,
-    val onSuccessBannerText: Color
+    val onSuccessBannerText: Color,
+    val warningContainer: Color = ExpiringOrangeBg,
+    val onWarningContainer: Color = ExpiringOrange,
+    val infoContainer: Color = OngoingBlueBg,
+    val onInfoContainer: Color = OngoingBlue,
+    val decorativeOrange: Color = OrangeAccent
 )
 
 val LocalExtendedColors = staticCompositionLocalOf {
     ExtendedColors(
         successBannerBackground = SuccessBannerBg,
-        onSuccessBannerText = SuccessGreen
+        onSuccessBannerText = SuccessGreen,
+        warningContainer = ExpiringOrangeBg,
+        onWarningContainer = ExpiringOrange,
+        infoContainer = OngoingBlueBg,
+        onInfoContainer = OngoingBlue,
+        decorativeOrange = OrangeAccent
     )
 }
 
 val LightColorScheme = lightColorScheme(
     primary              = NavyPrimary,
     onPrimary            = Color.White,
-    primaryContainer     = NavyPrimary,
-    onPrimaryContainer   = Color.White,
-    secondary            = OrangeAccent,
+    primaryContainer     = PrimaryContainerLight,
+    onPrimaryContainer   = NavyPrimary,
+    secondary            = OrangeAccessible,
     onSecondary          = Color.White,
-    secondaryContainer   = OrangeAccent.copy(alpha = 0.1f),
-    onSecondaryContainer = OrangeAccent,
+    secondaryContainer   = OrangeSpecialTagBg,
+    onSecondaryContainer = OnSecondaryContainerLight,
     background           = BackgroundGray,
     onBackground         = TextDark,
     surface              = Color.White,
     onSurface            = TextDark,
     surfaceContainerHigh = InputGray,
-    surfaceVariant       = BackgroundGray,
+    surfaceVariant       = BorderGray,
     onSurfaceVariant     = HintGray,
-    outline              = BorderGray,
-    outlineVariant       = BorderGray
+    outline              = OutlineGray,
+    outlineVariant       = BorderGray,
+    error                = ExpiredRed,
+    onError              = Color.White,
+    errorContainer       = ExpiredRedBg,
+    onErrorContainer     = ExpiredRed
 )
 
 val DarkColorScheme = darkColorScheme(
     primary              = NavyPrimaryDark,
-    onPrimary            = TextDark,
-    primaryContainer     = NavyPrimary,
-    onPrimaryContainer   = Color.White,
+    onPrimary            = OnPrimaryDark,
+    primaryContainer     = PrimaryContainerDark,
+    onPrimaryContainer   = OnPrimaryContainerDark,
     secondary            = OrangeAccentDark,
-    onSecondary          = TextDark,
-    secondaryContainer   = OrangeAccentDark.copy(alpha = 0.15f),
-    onSecondaryContainer = OrangeAccentDark,
+    onSecondary          = OnSecondaryDark,
+    secondaryContainer   = OrangeSpecialTagBgDark,
+    onSecondaryContainer = OrangeSpecialTagBg,
     background           = BackgroundDark,
     onBackground         = TextLight,
     surface              = SurfaceDark,
     onSurface            = TextLight,
     surfaceContainerHigh = InputDark,
-    surfaceVariant       = SurfaceDark,
+    surfaceVariant       = SurfaceVariantDark,
     onSurfaceVariant     = HintDark,
-    outline              = BorderDark,
-    outlineVariant       = BorderDark
+    outline              = OutlineDark,
+    outlineVariant       = DriverLineDark,
+    error                = ErrorRedDark,
+    onError              = Color(0xFF690005),
+    errorContainer       = ErrorBgDark,
+    onErrorContainer     = ErrorRedDark
 )
 
 val ExtendedLightColors = ExtendedColors(
     successBannerBackground = SuccessBannerBg,
-    onSuccessBannerText     = SuccessGreen
+    onSuccessBannerText     = SuccessGreen,
+    warningContainer        = ExpiringOrangeBg,
+    onWarningContainer      = ExpiringOrange,
+    infoContainer           = OngoingBlueBg,
+    onInfoContainer         = OngoingBlue,
+    decorativeOrange        = OrangeAccent
 )
 
 val ExtendedDarkColors = ExtendedColors(
     successBannerBackground = SuccessBannerBgDark,
-    onSuccessBannerText     = SuccessGreenDark
+    onSuccessBannerText     = SuccessGreenDark,
+    warningContainer        = WarningBgDark,
+    onWarningContainer      = WarningOrangeDark,
+    infoContainer           = InfoBgDark,
+    onInfoContainer         = InfoBlueDark,
+    decorativeOrange        = OrangeAccentDark
 )
 
 object TanawTheme {
@@ -94,7 +122,7 @@ fun TanawTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
             val insetsController = WindowCompat.getInsetsController(window, view)
             insetsController.isAppearanceLightStatusBars = !darkTheme
             insetsController.isAppearanceLightNavigationBars = !darkTheme

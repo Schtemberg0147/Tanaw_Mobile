@@ -1,16 +1,20 @@
 package com.tanaw.app.feature.auth.screens
 
 import android.content.res.Configuration
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Visibility
@@ -19,8 +23,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -125,8 +131,10 @@ fun CreateAccountScreen(
             && !isLoading
 
     val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
 
     fun submitForm() {
+        focusManager.clearFocus()
         val finalAddress = if (phoneSignup) {
             val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
                 street   = streetAddress.trim(),
@@ -155,13 +163,15 @@ fun CreateAccountScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Image(
                 painter            = painterResource(
@@ -171,7 +181,7 @@ fun CreateAccountScreen(
                 modifier           = Modifier.size(48.dp)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text  = "Create Account",
@@ -179,37 +189,64 @@ fun CreateAccountScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // ── Google Sign In (Optional) ────────────────────────────────
             onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
 
-            // ── First and Last Name ──────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    TanawInputLabel(text = "FIRST NAME")
-                    Spacer(modifier = Modifier.height(6.dp))
-                    TanawTextField(
-                        value           = firstName,
-                        onValueChange   = { firstName = it },
-                        placeholder     = "Juan",
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    TanawInputLabel(text = "LAST NAME")
-                    Spacer(modifier = Modifier.height(6.dp))
-                    TanawTextField(
-                        value           = lastName,
-                        onValueChange   = { lastName = it },
-                        placeholder     = "Dela Cruz",
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                    )
+            // ── First and Last Name (collapses vertically on narrow / scaled screens) ──
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val stackNames = maxWidth < 330.dp || density.fontScale > 1.3f
+                if (stackNames) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        TanawInputLabel(text = "FIRST NAME")
+                        Spacer(modifier = Modifier.height(6.dp))
+                        TanawTextField(
+                            value           = firstName,
+                            onValueChange   = { firstName = it },
+                            placeholder     = "Juan",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TanawInputLabel(text = "LAST NAME")
+                        Spacer(modifier = Modifier.height(6.dp))
+                        TanawTextField(
+                            value           = lastName,
+                            onValueChange   = { lastName = it },
+                            placeholder     = "Dela Cruz",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            TanawInputLabel(text = "FIRST NAME")
+                            Spacer(modifier = Modifier.height(6.dp))
+                            TanawTextField(
+                                value           = firstName,
+                                onValueChange   = { firstName = it },
+                                placeholder     = "Juan",
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            TanawInputLabel(text = "LAST NAME")
+                            Spacer(modifier = Modifier.height(6.dp))
+                            TanawTextField(
+                                value           = lastName,
+                                onValueChange   = { lastName = it },
+                                placeholder     = "Dela Cruz",
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -274,11 +311,11 @@ fun CreateAccountScreen(
             )
 
             if (phoneSignup) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text  = "For your customer details only. Verification and account messages use SMS.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text     = "For your customer details only. Verification and account messages use SMS.",
+                    style    = MaterialTheme.typography.bodySmall,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -393,19 +430,43 @@ fun CreateAccountScreen(
                 } else null,
             )
 
+            val filledSegments = when (passwordStrength) {
+                PasswordStrength.EMPTY  -> 0
+                PasswordStrength.WEAK   -> 1
+                PasswordStrength.FAIR   -> 2
+                PasswordStrength.STRONG -> 3
+            }
             if (passwordStrength != PasswordStrengthLevel.EMPTY) {
+                val strengthColor = passwordStrengthColor(passwordStrength)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
+                    Row(
+                        modifier              = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        repeat(3) { idx ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(
+                                        if (idx < filledSegments) strengthColor
+                                        else MaterialTheme.colorScheme.outlineVariant
+                                    )
+                            )
+                        }
+                    }
                     Text(
                         text       = passwordStrength.label,
                         style      = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color      = passwordStrengthColor(passwordStrength)
+                        color      = strengthColor
                     )
                 }
             }
@@ -451,13 +512,31 @@ fun CreateAccountScreen(
             )
 
             if (errorMessage != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text     = errorMessage,
-                    color    = MaterialTheme.colorScheme.error,
-                    style    = MaterialTheme.typography.bodySmall,
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    color    = MaterialTheme.colorScheme.errorContainer,
+                    shape    = RoundedCornerShape(10.dp),
+                    border   = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier           = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text  = errorMessage,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -466,6 +545,7 @@ fun CreateAccountScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .toggleable(
                         value         = agreedToTerms,
                         role          = Role.Checkbox,
@@ -523,13 +603,13 @@ fun CreateAccountScreen(
 
             // ── Primary Action Button ────────────────────────────────────
             TanawPrimaryButton(
-                text      = "Verify & Continue  →",
+                text      = "Verify & Continue",
                 onClick   = ::submitForm,
                 isLoading = isLoading,
                 enabled   = canSubmit
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ── Footer ───────────────────────────────────────────────────
             Row(
@@ -545,11 +625,14 @@ fun CreateAccountScreen(
                 TanawTextLink(
                     text       = "Sign-in",
                     onClick    = onSignIn,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    modifier   = Modifier
+                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                        .wrapContentHeight(Alignment.CenterVertically)
                 )
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

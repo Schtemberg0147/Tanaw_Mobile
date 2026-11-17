@@ -1,19 +1,22 @@
 package com.tanaw.app.feature.auth.screens
 
 import android.content.res.Configuration
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +52,7 @@ import com.tanaw.app.ui.theme.TanawTheme
  * @param onPrivacyClick      Open Privacy Policy
  * @param successMessage      Non-null shows the success banner (e.g. after registration)
  * @param isLoading           Shows a spinner on the Login button and disables it
- * @param errorMessage        Non-null shows a red inline error below the form
+ * @param errorMessage        Non-null shows an inline error notice below the form
  */
 @Composable
 fun LoginScreen(
@@ -96,200 +99,232 @@ fun LoginScreen(
         modifier = Modifier.fillMaxSize(),
         color    = MaterialTheme.colorScheme.background
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-
-            // ── Success banner ───────────────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             if (showBanner && successMessage != null) {
+                Spacer(modifier = Modifier.height(12.dp))
                 SuccessBanner(
                     message   = successMessage,
                     onDismiss = { showBanner = false },
-                    modifier  = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                    modifier  = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(20.dp))
+            } else {
+                Spacer(modifier = Modifier.height(40.dp))
             }
 
-            // ── Main content ─────────────────────────────────────────────────
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            // ── TANAW Logo ───────────────────────────────────────────────
+            Image(
+                painter            = painterResource(
+                    id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo
+                ),
+                contentDescription = "TANAW logo",
+                modifier           = Modifier.size(56.dp)
+            )
 
-                Spacer(modifier = Modifier.height(if (showBanner) 96.dp else 64.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                // ── TANAW Logo ───────────────────────────────────────────────
-                Image(
-                    painter            = painterResource(
-                        id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo
-                    ),
-                    contentDescription = "TANAW logo",
-                    modifier           = Modifier.size(56.dp)
-                )
+            Text(
+                text  = "TANAW",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
 
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text  = "TANAW",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
+            Text(
+                text  = "Mabutol Trucking Operations",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-                Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-                // ── Google Sign In (Optional) ────────────────────────────────
-                onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
+            // ── Google Sign In (Optional) ────────────────────────────────
+            onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
 
-                // ── Identifier field ─────────────────────────────────────────
-                TanawInputLabel(text = if (useEmail) "EMAIL ADDRESS" else "PHONE NUMBER")
-                Spacer(modifier = Modifier.height(6.dp))
-                TanawTextField(
-                    value         = email,
-                    onValueChange = {
-                        email = it
-                        emailTouched = true
-                    },
-                    placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
-                    leadingIcon   = {
-                        Icon(
-                            imageVector        = if (useEmail) Icons.Outlined.Email else Icons.Outlined.Phone,
-                            contentDescription = null,
-                            modifier           = Modifier.size(20.dp)
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone,
-                        imeAction    = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                    ),
-                    isError        = isInputError,
-                    supportingText = inputSupportingText,
-                )
-                if (allowPhone) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        TanawTextLink(
-                            text    = if (useEmail) "Use phone number instead" else "Use email address instead",
-                            onClick = {
-                                if (!isLoading) {
-                                    useEmail = !useEmail
-                                    email = ""
-                                    emailTouched = false
-                                }
+            // ── Identifier field ─────────────────────────────────────────
+            TanawInputLabel(text = if (useEmail) "EMAIL ADDRESS" else "PHONE NUMBER")
+            Spacer(modifier = Modifier.height(6.dp))
+            TanawTextField(
+                value         = email,
+                onValueChange = {
+                    email = it
+                    emailTouched = true
+                },
+                placeholder   = if (useEmail) "email@gmail.com" else "0912 345 6789",
+                leadingIcon   = {
+                    Icon(
+                        imageVector        = if (useEmail) Icons.Outlined.Email else Icons.Outlined.Phone,
+                        contentDescription = null,
+                        modifier           = Modifier.size(20.dp)
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (useEmail) KeyboardType.Email else KeyboardType.Phone,
+                    imeAction    = ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                    onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                ),
+                isError        = isInputError,
+                supportingText = inputSupportingText,
+            )
+            if (allowPhone) {
+                Row(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    TanawTextLink(
+                        text     = if (useEmail) "Use phone number instead" else "Use email address instead",
+                        onClick  = {
+                            if (!isLoading) {
+                                useEmail = !useEmail
+                                email = ""
+                                emailTouched = false
                             }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // ── Password field ───────────────────────────────────────────
-                TanawInputLabel(text = "PASSWORD")
-                Spacer(modifier = Modifier.height(6.dp))
-                TanawTextField(
-                    value         = password,
-                    onValueChange = { password = it },
-                    placeholder   = "••••••••",
-                    leadingIcon   = {
-                        Icon(
-                            imageVector        = Icons.Outlined.Lock,
-                            contentDescription = null,
-                            modifier           = Modifier.size(20.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector        = if (passwordVisible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                modifier           = Modifier.size(20.dp)
-                            )
-                        }
-                    },
-                    visualTransformation = if (passwordVisible)
-                        VisualTransformation.None
-                    else
-                        PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction    = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            focusManager.clearFocus()
-                            if (canSubmit) onLoginClick(email, password)
-                        }
-                    ),
-                )
-
-                // ── Forgot password ──────────────────────────────────────────
-                onForgotPassword?.let { openRecovery ->
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TanawTextLink(
-                            text       = "Forgot Password?",
-                            onClick    = openRecovery,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier   = Modifier.padding(top = 6.dp)
-                        )
-                    }
-                }
-
-                // ── Inline error ─────────────────────────────────────────────
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text     = errorMessage,
-                        color    = MaterialTheme.colorScheme.error,
-                        style    = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth()
+                        },
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
                     )
                 }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // ── Login button ─────────────────────────────────────────────
-                TanawPrimaryButton(
-                    text      = "Login  →",
-                    onClick   = { onLoginClick(email, password) },
-                    isLoading = isLoading,
-                    enabled   = canSubmit
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // ── OR divider ───────────────────────────────────────────────
-                OrDivider()
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // ── Create Account button ────────────────────────────────────
-                TanawOutlinedButton(
-                    text    = "Create Account",
-                    onClick = onCreateAccount
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // ── Terms footer ─────────────────────────────────────
-                TermsFooter(
-                    onTermsClick   = onTermsClick,
-                    onPrivacyClick = onPrivacyClick
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
             }
+
+            if (allowPhone) {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // ── Password field ───────────────────────────────────────────
+            TanawInputLabel(text = "PASSWORD")
+            Spacer(modifier = Modifier.height(6.dp))
+            TanawTextField(
+                value         = password,
+                onValueChange = { password = it },
+                placeholder   = "••••••••",
+                leadingIcon   = {
+                    Icon(
+                        imageVector        = Icons.Outlined.Lock,
+                        contentDescription = null,
+                        modifier           = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Icon(
+                            imageVector        = if (passwordVisible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                            contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                            modifier           = Modifier.size(20.dp)
+                        )
+                    }
+                },
+                visualTransformation = if (passwordVisible)
+                    VisualTransformation.None
+                else
+                    PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction    = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        if (canSubmit) onLoginClick(email, password)
+                    }
+                ),
+            )
+
+            // ── Forgot password ──────────────────────────────────────────
+            onForgotPassword?.let { openRecovery ->
+                Row(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TanawTextLink(
+                        text       = "Forgot Password?",
+                        onClick    = openRecovery,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier   = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                    )
+                }
+            }
+
+            // ── Inline error ─────────────────────────────────────────────
+            if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    color  = MaterialTheme.colorScheme.errorContainer,
+                    shape  = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier           = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text  = errorMessage,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Login button ─────────────────────────────────────────────
+            TanawPrimaryButton(
+                text      = "Login  →",
+                onClick   = {
+                    focusManager.clearFocus()
+                    onLoginClick(email, password)
+                },
+                isLoading = isLoading,
+                enabled   = canSubmit
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── OR divider ───────────────────────────────────────────────
+            OrDivider()
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Create Account button ────────────────────────────────────
+            TanawOutlinedButton(
+                text    = "Create Account",
+                onClick = onCreateAccount
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Terms footer ─────────────────────────────────────────────
+            TermsFooter(
+                onTermsClick   = onTermsClick,
+                onPrivacyClick = onPrivacyClick
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

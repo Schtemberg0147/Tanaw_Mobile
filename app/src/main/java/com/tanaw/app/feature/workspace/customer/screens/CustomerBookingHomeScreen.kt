@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,7 +93,8 @@ internal fun CustomerBookingHomeContent(
     onUseSavedAddress: (() -> Unit)? = null,
     availableDraft: BookingDraft? = null,
     onResumeDraft: () -> Unit = {},
-    onDiscardDraft: () -> Unit = {}
+    onDiscardDraft: () -> Unit = {},
+    showTopBar: Boolean = true
 ) {
     val selectedVehicle = vehicles.firstOrNull { it.value("id") == selectedVehicleId }
     val sameLocationError = pickup.trim().length >= 5 && dropoff.trim().length >= 5 &&
@@ -104,19 +106,20 @@ internal fun CustomerBookingHomeContent(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(top = 12.dp, bottom = 110.dp),
+                .padding(horizontal = 16.dp)
+                .padding(top = if (showTopBar) 12.dp else 16.dp, bottom = 110.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Top Header: TANAW Logo (dark-mode aware) + Notification Bell + Refresh
-            CustomerTopBar(
-                unreadAlertsCount = unreadCount,
-                isBusy = busy,
-                onRefresh = onRefresh,
-                onOpenAlerts = onOpenAlerts,
-            )
+            if (showTopBar) {
+                CustomerTopBar(
+                    unreadAlertsCount = unreadCount,
+                    isBusy = busy,
+                    onRefresh = onRefresh,
+                    onOpenAlerts = onOpenAlerts,
+                )
+            }
 
-            if (busy) {
+            if (showTopBar && busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             errorMessage?.let {
@@ -372,24 +375,31 @@ internal fun CustomerBookingHomeContent(
                         }
 
                         if (pickup.isNotBlank() || dropoff.isNotBlank()) {
-                            Surface(
-                                onClick = onSwapLocations,
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surface,
-                                shadowElevation = 3.dp,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            Box(
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
-                                    .padding(end = 10.dp)
-                                    .size(34.dp)
+                                    .padding(end = 4.dp)
+                                    .size(48.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.SwapVert,
-                                        contentDescription = "Swap pick-up and destination",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                Surface(
+                                    onClick = onSwapLocations,
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 3.dp,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.SwapVert,
+                                            contentDescription = "Swap pick-up and destination",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -522,7 +532,7 @@ internal fun CustomerBookingHomeContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {

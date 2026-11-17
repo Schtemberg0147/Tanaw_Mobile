@@ -71,7 +71,7 @@ internal fun CustomerCancellationSection(
             OutlinedButton(
                 onClick = { showDialog = true },
                 enabled = !state.busy && !state.offline,
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(
                     1.dp,
                     if (!state.busy && !state.offline) MaterialTheme.colorScheme.error
@@ -284,7 +284,7 @@ internal fun CustomerCancellationDialog(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError
                 ),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(10.dp)
             ) {
                 Text("Confirm Cancellation", fontWeight = FontWeight.Bold)
             }

@@ -8,7 +8,9 @@ import android.location.*
 import android.os.*
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,7 +24,6 @@ import com.tanaw.app.feature.workspace.driver.dialogs.*
 import com.tanaw.app.feature.workspace.driver.rules.*
 import com.tanaw.app.feature.workspace.driver.screens.DriverButton
 import com.tanaw.app.feature.workspace.driver.screens.DriverTheme
-import com.tanaw.app.feature.workspace.driver.screens.DriverUiRules
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.state.*
 import com.tanaw.app.feature.workspace.tracking.*
@@ -227,20 +228,52 @@ internal fun DriverTripActionsContent(
  val id = delivery.value("id")
  val status = delivery.value("status")
  val busy = state.busy || locating || state.offline
- Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+ Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
   SupportingText("Trip actions")
-  error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+  error?.let {
+   Surface(
+    color = MaterialTheme.colorScheme.errorContainer,
+    shape = RoundedCornerShape(10.dp),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
+   ) {
+    Text(
+     text = it,
+     style = MaterialTheme.typography.bodySmall,
+     color = MaterialTheme.colorScheme.onErrorContainer,
+     modifier = Modifier.fillMaxWidth().padding(12.dp)
+    )
+   }
+  }
   if (status == "assigned" && delivery.value("route_started_at").isBlank()) {
    DriverButton("START ROUTE AND SHARE LOCATION", !busy) { onRequestLocationAction("start") }
   }
   if (status in listOf("assigned", "loading", "in_transit") && delivery.value("route_started_at").isNotBlank()) {
-   SupportingText(if (tracking.delivery == id) "${tracking.message} · ${tracking.buffered} queued" else "${tracking.message} Resume location sharing while this trip is active.")
-   if (tracking.delivery != id) {
-    OutlinedButton(onClick = { onRequestLocationAction("resume") }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-     Text("Resume location sharing")
+   Surface(
+    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    shape = RoundedCornerShape(10.dp),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+   ) {
+    Column(
+     modifier = Modifier.fillMaxWidth().padding(12.dp),
+     verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+     SupportingText(if (tracking.delivery == id) "${tracking.message} · ${tracking.buffered} queued" else "${tracking.message} Resume location sharing while this trip is active.")
+     if (tracking.delivery != id) {
+      OutlinedButton(
+       onClick = { onRequestLocationAction("resume") },
+       enabled = !busy,
+       shape = RoundedCornerShape(10.dp),
+       modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+      ) {
+       Text("Resume location sharing")
+      }
+     } else {
+      TextButton(
+       onClick = onStopTracking,
+       modifier = Modifier.heightIn(min = 48.dp)
+      ) { Text("Stop location sharing") }
+     }
     }
-   } else {
-    TextButton(onClick = onStopTracking) { Text("Stop location sharing") }
    }
   }
   if (status == "assigned" && delivery.value("route_started_at").isNotBlank() && delivery.value("pickup_arrived_at").isBlank()) {
@@ -253,7 +286,9 @@ internal fun DriverTripActionsContent(
     }
    )
    if (pickupTarget == null && !state.detailLoading) {
-    TextButton(onClick = onRefreshTrip, enabled = !busy) { Text("Refresh trip coordinates") }
+    TextButton(onClick = onRefreshTrip, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+     Text("Refresh trip coordinates")
+    }
    }
    DriverButton(
     if (locating && activeAction == "arrive") "Checking pick-up location…" else "I'VE ARRIVED AT PICK-UP",
@@ -263,7 +298,12 @@ internal fun DriverTripActionsContent(
   if (status == "assigned" && delivery.value("pickup_arrived_at").isNotBlank()) {
    SupportingText("Grace ends ${MobilePresentation.time(delivery.value("grace_ends_at"))}. Office review threshold ${MobilePresentation.time(delivery.value("auto_cancel_at"))}. Cancellation requires an office decision.")
    DriverButton("CUSTOMER ARRIVED AT PICK-UP", !busy) { onDriverAction("showed") }
-   OutlinedButton(onClick = { onDriverAction("no_show") }, enabled = !busy && noShowDue, modifier = Modifier.heightIn(min = 48.dp)) {
+   OutlinedButton(
+    onClick = { onDriverAction("no_show") },
+    enabled = !busy && noShowDue,
+    shape = RoundedCornerShape(10.dp),
+    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+   ) {
     Text("Report no-show for office review")
    }
   }
@@ -271,7 +311,19 @@ internal fun DriverTripActionsContent(
    DriverButton("CARGO LOADED", !busy) { onDriverAction("loaded") }
   }
   if (status == "in_transit" || (status == "delivered" && delivery.value("proof_review_status") == "correction_requested")) {
-   delivery.value("proof_review_reason").takeIf(String::isNotBlank)?.let { Text("Office correction request: $it") }
+   delivery.value("proof_review_reason").takeIf(String::isNotBlank)?.let {
+    Surface(
+     color = MaterialTheme.colorScheme.errorContainer,
+     shape = RoundedCornerShape(10.dp)
+    ) {
+     Text(
+      "Office correction request: $it",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onErrorContainer,
+      modifier = Modifier.fillMaxWidth().padding(12.dp)
+     )
+    }
+   }
    if (status == "in_transit") {
     val destinationTarget = DriverGeofenceRules.extractTarget(shipment, state.details, isDestination = true)
     SupportingText(
@@ -282,7 +334,9 @@ internal fun DriverTripActionsContent(
      }
     )
     if (destinationTarget == null && !state.detailLoading) {
-     TextButton(onClick = onRefreshTrip, enabled = !busy) { Text("Refresh trip coordinates") }
+     TextButton(onClick = onRefreshTrip, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+      Text("Refresh trip coordinates")
+     }
     }
    }
    DriverButton(
@@ -299,7 +353,13 @@ internal fun DriverTripActionsContent(
    DriverButton("RECOVER SAVED PROOF", !busy) { onOpenProof() }
   }
   if (status in listOf("assigned", "loading", "in_transit")) {
-   TextButton(onClick = onOpenIncident, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+   OutlinedButton(
+    onClick = onOpenIncident,
+    enabled = !busy,
+    shape = RoundedCornerShape(10.dp),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+   ) {
     Text("Report an Issue")
    }
   }

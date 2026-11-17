@@ -1,17 +1,21 @@
 package com.tanaw.app.feature.workspace.driver.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.*
 import org.maplibre.android.geometry.LatLng
 import java.time.Instant
@@ -29,10 +33,19 @@ import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
 @Composable internal fun DriverTripSection(title:String,subtitle:String?=null,content:@Composable ColumnScope.()->Unit) {
-    Surface(Modifier.fillMaxWidth(),color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text(title,fontSize=18.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
-            subtitle?.let {Text(it,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                subtitle?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             content()
         }
     }
@@ -119,40 +132,145 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
         finally {previewLoading=false}
     }
     val isDark = isSystemInDarkTheme()
+    val extendedColors = TanawTheme.extendedColors
+    val showExpense = d.value("status") in listOf("in_transit","delivered")
     Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Surface(
-            color=if(isDark)MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
-            shape=RoundedCornerShape(16.dp),
-            border=if(isDark)BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant) else null
+            color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
+            shape = RoundedCornerShape(16.dp),
+            border = if (isDark) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
         ) {
-            Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                Text(s.value("tracking_number").ifBlank{"Current trip"},color=if(isDark)MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),fontSize=12.sp)
-                Text(headings[stage],color=if(isDark)MaterialTheme.colorScheme.onSurface else Color.White,fontSize=22.sp,fontWeight=FontWeight.Bold)
-                Text(next[stage],color=if(isDark)MaterialTheme.colorScheme.onSurfaceVariant else Color.White,fontSize=14.sp)
-                HorizontalDivider(color=if(isDark)MaterialTheme.colorScheme.outlineVariant else Color.White.copy(alpha=.2f))
-                Text(if(stage>=4)"DESTINATION" else "PICKUP",color=if(isDark)MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),fontSize=11.sp)
-                Text(s.value(if(stage>=4)"dropoff_address" else "pickup_address").ifBlank{"Address unavailable — contact the office"},color=if(isDark)MaterialTheme.colorScheme.onSurface else Color.White,fontSize=15.sp,fontWeight=FontWeight.SemiBold)
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        s.value("tracking_number").ifBlank { "Current trip" },
+                        color = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Surface(
+                        color = if (isDark) MaterialTheme.colorScheme.primaryContainer else Color.White.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            "Step ${stage + 1} of 6",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDark) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                        )
+                    }
+                }
+                Text(
+                    headings[stage],
+                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.White,
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    next[stage],
+                    color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFE2ECF7),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                HorizontalDivider(color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color.White.copy(alpha = .2f))
+                Text(
+                    if (stage >= 4) "DESTINATION" else "PICKUP",
+                    color = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),
+                    style = MaterialTheme.typography.labelSmall
+                )
+                Text(
+                    s.value(if (stage >= 4) "dropoff_address" else "pickup_address").ifBlank { "Address unavailable — contact the office" },
+                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.White,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
-        DriverTripSection("Next step","Update the trip only when the action has actually happened.") {
-            if(d.value("id").isBlank())Text("No delivery assignment is available. Refresh or contact the office.") else actions(s,d)
-            if(fuel!=null)OutlinedButton(onClick=fuel,enabled=!state.busy && !state.offline,modifier=Modifier.fillMaxWidth()){Text("Record Fuel")}
-            if(d.value("status") in listOf("in_transit","delivered"))OutlinedButton(onClick=expense,enabled=!state.busy && !state.offline,modifier=Modifier.fillMaxWidth()){Text("Add Trip Expense")}
+        DriverTripSection("Next step", "Update the trip only when the action has actually happened.") {
+            if (d.value("id").isBlank()) {
+                Text("No delivery assignment is available. Refresh or contact the office.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                actions(s, d)
+            }
+            if (fuel != null || showExpense) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (fuel != null && showExpense) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = fuel,
+                            enabled = !state.busy && !state.offline,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        ) {
+                            Text("Record Fuel", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
+                        OutlinedButton(
+                            onClick = expense,
+                            enabled = !state.busy && !state.offline,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        ) {
+                            Text("Add Trip Expense", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
+                    }
+                } else if (fuel != null) {
+                    OutlinedButton(
+                        onClick = fuel,
+                        enabled = !state.busy && !state.offline,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) { Text("Record Fuel") }
+                } else {
+                    OutlinedButton(
+                        onClick = expense,
+                        enabled = !state.busy && !state.offline,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) { Text("Add Trip Expense") }
+                }
+            }
         }
-        DriverTripSection("Directions & route","Open directions for travel. The saved map is a location preview.") {
-            Text("PICKUP",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(s.value("pickup_address").ifBlank{"Not recorded"},fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
-            Text("DESTINATION",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(s.value("dropoff_address").ifBlank{"Not recorded"},fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
-            DriverDirectionsButtons(s,stage,savedGeometry)
-            val routing=state.details?.takeIf{it.value("shipment_id")==s.value("id")}?.obj("routing")
-                ?: if(state.detailLoading && !state.offline) buildJsonObject{put("loading",true)} else buildJsonObject{}
-            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-            DriverRouteStatusCard(DriverRouteStatus.forAssignment(routing,s,d),state.offline)
-            if(s.value("scheduled_departure").isNotBlank())Text("Scheduled departure: ${MobilePresentation.time(s.value("scheduled_departure"))}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Office planned arrival: ${MobilePresentation.time(s.value("estimated_arrival"))}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Recorded distance: ${MobilePresentation.number(s.value("distance_km"),"km")} · duration: ${MobilePresentation.number(s.value("route_duration_minutes"),"min")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(s.value("weight_kg").isNotBlank())Text("Cargo weight: ${MobilePresentation.number(s.value("weight_kg"),"kg")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        DriverTripSection("Directions & route", "Open directions for travel. The saved map is a location preview.") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(MapPinPickup))
+                        Box(Modifier.width(2.dp).height(28.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("PICKUP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(s.value("pickup_address").ifBlank { "Not recorded" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                    Box(Modifier.padding(top = 4.dp).size(10.dp).clip(CircleShape).background(MapPinDestination))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("DESTINATION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(s.value("dropoff_address").ifBlank { "Not recorded" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+            DriverDirectionsButtons(s, stage, savedGeometry)
+            val routing = state.details?.takeIf { it.value("shipment_id") == s.value("id") }?.obj("routing")
+                ?: if (state.detailLoading && !state.offline) buildJsonObject { put("loading", true) } else buildJsonObject {}
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            DriverRouteStatusCard(DriverRouteStatus.forAssignment(routing, s, d), state.offline)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (s.value("scheduled_departure").isNotBlank()) {
+                    KeyValueRow("Scheduled departure", MobilePresentation.time(s.value("scheduled_departure")))
+                }
+                KeyValueRow("Office planned arrival", MobilePresentation.time(s.value("estimated_arrival")))
+                KeyValueRow(
+                    "Recorded distance",
+                    "${MobilePresentation.number(s.value("distance_km"), "km")} · ${MobilePresentation.number(s.value("route_duration_minutes"), "min")}"
+                )
+                if (s.value("weight_kg").isNotBlank()) {
+                    KeyValueRow("Cargo weight", MobilePresentation.number(s.value("weight_kg"), "kg"))
+                }
+            }
             val truck = DriverUiRules.truck(state.data ?: buildJsonObject {})
             val truckSpec = TruckRestrictionRules.evaluateTruckSpecs(truck, s, verifiedRouting?.obj("plan"))
             val banAdvisory = TruckRestrictionRules.evaluateBanAdvisory(
@@ -162,60 +280,206 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
                 now
             )
             DriverTruckRestrictionCard(truckSpec, banAdvisory)
-            if(points.isEmpty())Text("This assignment has no saved map pins. Use address directions and confirm the entrance with the office.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            else {
-                OutlinedButton(onClick={mapOpen=!mapOpen},modifier=Modifier.fillMaxWidth()){Text(if(mapOpen)"Hide route map" else "Show route map")}
-                if(mapOpen) {
-                    if(savedGeometry==null) {
-                        Text("Unverified road preview",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
-                        Text("Not office-confirmed. Truck height, width, loaded weight and access restrictions have not been checked. This preview does not change the confirmed route or live ETA.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        if(previewLoading){LinearProgressIndicator(Modifier.fillMaxWidth());Text("Loading unverified road preview…",fontSize=12.sp)}
-                        previewError?.let {Text(it,fontSize=12.sp,color=MaterialTheme.colorScheme.error)}
-                        if(previewError!=null)OutlinedButton(onClick={previewRevision++},enabled=!state.offline && !previewLoading){Text("Retry road preview")}
-                        preview?.let{Text("Preview road distance: ${it.distanceKm} km",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+            if (points.isEmpty()) {
+                Text(
+                    "This assignment has no saved map pins. Use address directions and confirm the entrance with the office.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                OutlinedButton(
+                    onClick = { mapOpen = !mapOpen },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Text(if (mapOpen) "Hide route map" else "Show route map")
+                }
+                if (mapOpen) {
+                    if (savedGeometry == null) {
+                        Surface(
+                            color = extendedColors.warningContainer,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Unverified road preview", style = MaterialTheme.typography.titleSmall, color = extendedColors.onWarningContainer)
+                                Text(
+                                    "Not office-confirmed. Truck height, width, loaded weight and access restrictions have not been checked. This preview does not change the confirmed route or live ETA.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (previewLoading) {
+                                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                                    Text("Loading unverified road preview…", style = MaterialTheme.typography.bodySmall)
+                                }
+                                previewError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                                if (previewError != null) {
+                                    OutlinedButton(
+                                        onClick = { previewRevision++ },
+                                        enabled = !state.offline && !previewLoading,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.heightIn(min = 48.dp)
+                                    ) { Text("Retry road preview") }
+                                }
+                                preview?.let { Text("Preview road distance: ${it.distanceKm} km", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                        }
                     }
-                    ShipmentMap(mapPoints,savedGeometry?:preview?.geometry)
+                    ShipmentMap(mapPoints, savedGeometry ?: preview?.geometry)
                     Text(
-                        if(mapPoints.any{it.first=="Vehicle"})"Saved pickup, destination, and your fresh vehicle GPS position."
+                        if (mapPoints.any { it.first == "Vehicle" }) "Saved pickup, destination, and your fresh vehicle GPS position."
                         else "Saved pickup and destination locations. Vehicle GPS is not shown on this preview.",
-                        fontSize=12.sp,
-                        color=MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if(savedGeometry==null && preview==null && !previewLoading) {
+                    if (savedGeometry == null && preview == null && !previewLoading) {
                         Text(
-                            if(mapPoints.any{it.first=="Vehicle"})
+                            if (mapPoints.any { it.first == "Vehicle" })
                                 "Showing saved stops and your vehicle GPS until a road preview is available."
                             else
                                 "Showing saved stops only until a road preview is available.",
-                            fontSize=12.sp,
-                            color=MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
         }
         DriverTripSection("Delivery progress") {
-            Text("Current stage: ${headings[stage]}",fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
-            TextButton(onClick={progressOpen=!progressOpen}){Text(if(progressOpen)"Hide delivery steps" else "Show delivery steps")}
-            if(progressOpen) {
-                val steps=listOf("Assigned" to "assigned_at","Route started" to "route_started_at","Arrived at pickup" to "pickup_arrived_at","Customer present" to "customer_showed_at","Cargo loaded" to "departed_at","Proof submitted" to "arrived_at")
-                steps.forEachIndexed {index,(label,field)->
-                    val raw=d.value(field)
-                    val recorded=runCatching{Instant.parse(raw)}.isSuccess
-                    val itemColor = if(recorded) {
-                        if(isDark)MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.35f) else Color(0xFFEFF6FF)
-                    } else {
-                        if(isDark)MaterialTheme.colorScheme.surfaceContainerHigh else DriverBackground
-                    }
-                    val itemBorder = if(isDark)BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant) else null
-                    Surface(color=itemColor,shape=RoundedCornerShape(8.dp),border=itemBorder) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                            Text("${index+1}. $label",fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
-                            Text(if(recorded)MobilePresentation.time(raw)else if(index>stage)"Not reached yet" else "Time not available",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Current stage: ${headings[stage]}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = { progressOpen = !progressOpen },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(if (progressOpen) "Hide delivery steps" else "Show delivery steps")
+                }
+            }
+            if (progressOpen) {
+                val steps = listOf(
+                    "Assigned" to "assigned_at",
+                    "Route started" to "route_started_at",
+                    "Arrived at pickup" to "pickup_arrived_at",
+                    "Customer present" to "customer_showed_at",
+                    "Cargo loaded" to "departed_at",
+                    "Proof submitted" to "arrived_at"
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    steps.forEachIndexed { index, (label, field) ->
+                        val raw = d.value(field)
+                        val recorded = runCatching { Instant.parse(raw) }.isSuccess
+                        val dotColor = when {
+                            recorded -> extendedColors.onSuccessBannerText
+                            index == stage -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.outlineVariant
+                        }
+                        val itemColor = if (recorded) {
+                            if (isDark) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color(0xFFEFF6FF)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(top = 14.dp)
+                            ) {
+                                Box(Modifier.size(12.dp).clip(CircleShape).background(dotColor))
+                                if (index < steps.lastIndex) {
+                                    Box(Modifier.width(2.dp).height(34.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                                }
+                            }
+                            Surface(
+                                color = itemColor,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("${index + 1}. $label", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                    Text(
+                                        if (recorded) MobilePresentation.time(raw) else if (index > stage) "Not reached yet" else "Time not available",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Driver Navigate Cockpit Light")
+@Composable
+private fun DriverNavigateOverviewLightPreview() {
+    DriverTheme(darkTheme = false) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            DriverNavigateOverview(
+                s = buildJsonObject {
+                    put("id", "shp-1")
+                    put("tracking_number", "TNW-2026-0042")
+                    put("pickup_address", "Cabanatuan City Hub, Nueva Ecija")
+                    put("dropoff_address", "Gapan City Distribution Centre, Nueva Ecija")
+                    put("distance_km", "38")
+                    put("route_duration_minutes", "75")
+                    put("weight_kg", "6000")
+                },
+                d = buildJsonObject {
+                    put("id", "del-1")
+                    put("shipment_id", "shp-1")
+                    put("status", "assigned")
+                    put("route_started_at", "2026-11-15T01:00:00Z")
+                    put("assigned_at", "2026-11-15T00:30:00Z")
+                },
+                state = MobileState(),
+                actions = { _, _ -> DriverButton("I'VE ARRIVED AT PICK-UP") {} },
+                expense = {},
+                fuel = {}
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Driver Navigate Cockpit Dark")
+@Composable
+private fun DriverNavigateOverviewDarkPreview() {
+    DriverTheme(darkTheme = true) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            DriverNavigateOverview(
+                s = buildJsonObject {
+                    put("id", "shp-1")
+                    put("tracking_number", "TNW-2026-0042")
+                    put("pickup_address", "Cabanatuan City Hub, Nueva Ecija")
+                    put("dropoff_address", "Gapan City Distribution Centre, Nueva Ecija")
+                    put("distance_km", "38")
+                    put("route_duration_minutes", "75")
+                },
+                d = buildJsonObject {
+                    put("id", "del-1")
+                    put("shipment_id", "shp-1")
+                    put("status", "in_transit")
+                    put("route_started_at", "2026-11-15T01:00:00Z")
+                },
+                state = MobileState(),
+                actions = { _, _ -> DriverButton("MARK AS DELIVERED") {} },
+                expense = {},
+                fuel = {}
+            )
         }
     }
 }

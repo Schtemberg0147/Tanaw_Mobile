@@ -357,7 +357,7 @@ fun FullScreenLocationPicker(
             ) {
                 IconButton(
                     onClick = onBack,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
@@ -442,7 +442,7 @@ fun FullScreenLocationPicker(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 6.dp,
-                    modifier = Modifier.size(46.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -464,7 +464,7 @@ fun FullScreenLocationPicker(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
@@ -636,7 +636,7 @@ fun FullScreenLocationPicker(
                         ) {
                             IconButton(
                                 onClick = { searchMode = false },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
@@ -683,7 +683,7 @@ fun FullScreenLocationPicker(
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(
                                     onClick = { searchQuery = "" },
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(48.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Cancel,

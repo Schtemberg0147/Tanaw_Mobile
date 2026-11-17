@@ -1,8 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.components
 
-import com.tanaw.app.feature.workspace.driver.screens.DriverBackground
-import com.tanaw.app.feature.workspace.driver.screens.DriverMuted
-import com.tanaw.app.feature.workspace.driver.screens.DriverNavy
 import com.tanaw.app.feature.workspace.driver.screens.DriverUiRules
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.viewmodel.obj
@@ -11,6 +8,8 @@ import com.tanaw.app.feature.workspace.viewmodel.value
 import java.math.BigDecimal
 import java.time.Instant
 import kotlinx.serialization.json.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
@@ -21,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 internal data class DriverTimelineEntry(val label:String,val timestamp:String)
 
@@ -71,17 +69,36 @@ internal object DriverRecordPresentation {
 
 @Composable internal fun DriverRecordedTimeline(details:JsonObject) {
     var expanded by rememberSaveable(details.value("shipment_id")){mutableStateOf(false)}
-    Text("Recorded timeline",fontSize=16.sp,fontWeight=FontWeight.Bold,color=DriverNavy)
+    Text("Recorded timeline",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
     val entries=DriverRecordPresentation.timeline(details)
     val complete=details["history"] is JsonArray && details["events"] is JsonArray
-    TextButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide timeline" else if(complete)"Show timeline (${entries.size} updates)" else "Show timeline (some updates unavailable)")}
+    TextButton(
+        onClick={expanded=!expanded},
+        modifier=Modifier.heightIn(min=48.dp)
+    ) {
+        Text(if(expanded)"Hide timeline" else if(complete)"Show timeline (${entries.size} updates)" else "Show timeline (some updates unavailable)")
+    }
     if(!expanded)return
-    if(details["history"] !is JsonArray || details["events"] !is JsonArray)Text("Some timeline records are unavailable. Refresh to retry.")
-    if(entries.isEmpty() && details["history"] is JsonArray && details["events"] is JsonArray)Text("No status events have been recorded.")
-    entries.forEach {entry->Surface(color=DriverBackground,shape=RoundedCornerShape(10.dp)) {
-        Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text(entry.label,fontSize=14.sp,fontWeight=FontWeight.SemiBold)
-            Text(if(runCatching{Instant.parse(entry.timestamp)}.isSuccess)MobilePresentation.time(entry.timestamp)else "Date unavailable",fontSize=12.sp,color=DriverMuted)
+    if(details["history"] !is JsonArray || details["events"] !is JsonArray) {
+        Text("Some timeline records are unavailable. Refresh to retry.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if(entries.isEmpty() && details["history"] is JsonArray && details["events"] is JsonArray) {
+        Text("No status events have been recorded.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    entries.forEach {entry->
+        Surface(
+            color=MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape=RoundedCornerShape(12.dp),
+            border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                Text(entry.label,style=MaterialTheme.typography.bodyMedium,fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurface)
+                Text(
+                    if(runCatching{Instant.parse(entry.timestamp)}.isSuccess)MobilePresentation.time(entry.timestamp) else "Date unavailable",
+                    style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
-    }}
+    }
 }
