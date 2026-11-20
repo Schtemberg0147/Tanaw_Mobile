@@ -32,30 +32,54 @@ import java.util.UUID
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.seconds
 
+import androidx.core.database.sqlite.transaction
+
 data class TrackingStatus(val delivery:String?=null,val message:String="Tracking is stopped",val buffered:Int=0)
 object TripTrackingStatus { val state=MutableStateFlow(TrackingStatus()) }
 
 /** Private, project/account/delivery-scoped durable queue; retries reuse immutable sample IDs. */
-class TrackingQueue(context:Context,databaseName:String="tracking_${URI(BuildConfig.SUPABASE_URL).host}.db"):SQLiteOpenHelper(context,databaseName,null,1) {
+class TrackingQueue(
+ context:Context,
+ databaseName:String="tracking_${URI(BuildConfig.SUPABASE_URL).host}.db",
+ private val maxSamplesPerDelivery:Int=MAX_SAMPLES_PER_DELIVERY
+):SQLiteOpenHelper(context,databaseName,null,1) {
  override fun onCreate(db:SQLiteDatabase) { db.execSQL("CREATE TABLE samples(id TEXT PRIMARY KEY, owner TEXT NOT NULL, delivery TEXT NOT NULL, captured INTEGER NOT NULL, payload TEXT NOT NULL)") }
  override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int) = Unit
- fun add(owner:String,delivery:String,location:Location) {
+ @Synchronized fun add(owner:String,delivery:String,location:Location) {
+  require(maxSamplesPerDelivery>0)
   val recorded=Instant.ofEpochMilli(location.time)
   val payload=buildJsonObject {put("lat",location.latitude);put("lng",location.longitude);put("accuracy",location.accuracy);put("recorded_at",recorded.toString());put("buffered",true)}
-  writableDatabase.insertOrThrow("samples",null,ContentValues().apply {put("id",UUID.randomUUID().toString());put("owner",owner);put("delivery",delivery);put("captured",location.time);put("payload",payload.toString())})
+  writableDatabase.transaction {
+   insertOrThrow("samples",null,ContentValues().apply {put("id",UUID.randomUUID().toString());put("owner",owner);put("delivery",delivery);put("captured",location.time);put("payload",payload.toString())})
+   execSQL(
+    "DELETE FROM samples WHERE owner=? AND delivery=? AND id NOT IN (SELECT id FROM samples WHERE owner=? AND delivery=? ORDER BY captured DESC, rowid DESC LIMIT ?)",
+    arrayOf<Any>(owner,delivery,owner,delivery,maxSamplesPerDelivery)
+   )
+  }
  }
- fun clearOwner(owner:String) {writableDatabase.delete("samples","owner=?",arrayOf(owner))}
- fun retain(owner:String,delivery:String) {
-  writableDatabase.delete("samples","owner<>? OR delivery<>? OR captured<?",arrayOf(owner,delivery,(System.currentTimeMillis()-86400000).toString()))
+ @Synchronized fun clearOwner(owner:String) {writableDatabase.delete("samples","owner=?",arrayOf(owner))}
+ @Synchronized fun retain(owner:String,delivery:String) {
+  writableDatabase.transaction {
+   delete("samples","owner<>? OR delivery<>? OR captured<?",arrayOf(owner,delivery,(System.currentTimeMillis()-86400000).toString()))
+   execSQL(
+    "DELETE FROM samples WHERE owner=? AND delivery=? AND id NOT IN (SELECT id FROM samples WHERE owner=? AND delivery=? ORDER BY captured DESC, rowid DESC LIMIT ?)",
+    arrayOf<Any>(owner,delivery,owner,delivery,maxSamplesPerDelivery)
+   )
+  }
  }
- fun pending(owner:String,delivery:String):List<Triple<String,String,Long>> = readableDatabase.query("samples",arrayOf("id","payload","captured"),"owner=? AND delivery=?",arrayOf(owner,delivery),null,null,"captured ASC","100").use { cursor->buildList {while(cursor.moveToNext())add(Triple(cursor.getString(0),cursor.getString(1),cursor.getLong(2)))} }
- fun remove(id:String) {writableDatabase.delete("samples","id=?",arrayOf(id))}
+ @Synchronized fun pending(owner:String,delivery:String):List<Triple<String,String,Long>> = readableDatabase.query("samples",arrayOf("id","payload","captured"),"owner=? AND delivery=?",arrayOf(owner,delivery),null,null,"captured ASC","100").use { cursor->buildList {while(cursor.moveToNext())add(Triple(cursor.getString(0),cursor.getString(1),cursor.getLong(2)))} }
+ @Synchronized fun remove(id:String) {writableDatabase.delete("samples","id=?",arrayOf(id))}
+
+ companion object {
+  const val MAX_SAMPLES_PER_DELIVERY = 2_000
+ }
 }
 
 @AndroidEntryPoint
 class TripTrackingService:Service(),LocationListener {
  @Inject lateinit var client:SupabaseClient
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
+ private val dbDispatcher=Dispatchers.IO.limitedParallelism(1)
  private val wakeSignal=Channel<Unit>(Channel.CONFLATED)
  private lateinit var locations:LocationManager
  private lateinit var queue:TrackingQueue
@@ -114,15 +138,16 @@ class TripTrackingService:Service(),LocationListener {
   catch(_:RuntimeException) {fail("Location services could not start. Enable location, then Resume location sharing.");return START_NOT_STICKY}
   loop?.cancel()
   loop=scope.launch {
-   queue.retain(uid,id)
+   withContext(dbDispatcher) { queue.retain(uid,id) }
    while(isActive) {
     refreshStoredSessionUid()
     val state=ownerState(uid)
     if(TrackingSessionRules.shouldClearAndStopService(state)) {
-     queue.clearOwner(uid);stopSelf();break
+     withContext(dbDispatcher) { queue.clearOwner(uid) };stopSelf();break
     }
     if(state==TrackingOwnerState.OFFLINE_TOKEN_EXPIRED) {
-     TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",queue.pending(uid,id).size)
+     val bufferedCount=withContext(dbDispatcher) { queue.pending(uid,id).size }
+     TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",bufferedCount)
      withTimeoutOrNull(15.seconds) { wakeSignal.receive() }
      continue
     }
@@ -145,14 +170,16 @@ class TripTrackingService:Service(),LocationListener {
      }
 
      if(isTerminal) {
-      flush(uid,id,resolvedTruckId);queue.clearOwner(uid);stopSelf();break
+      flush(uid,id,resolvedTruckId);withContext(dbDispatcher) { queue.clearOwner(uid) };stopSelf();break
      }
-     TripTrackingStatus.state.value=TrackingStatus(id,if(lastFix?.let {System.currentTimeMillis()-it in 0..60000}==true)"Sharing trip location" else "Waiting for fresh accurate GPS · try outdoors",queue.pending(uid,id).size)
+     val bufferedCount=withContext(dbDispatcher) { queue.pending(uid,id).size }
+     TripTrackingStatus.state.value=TrackingStatus(id,if(lastFix?.let {System.currentTimeMillis()-it in 0..60000}==true)"Sharing trip location" else "Waiting for fresh accurate GPS · try outdoors",bufferedCount)
     } catch(cancelled:CancellationException) {throw cancelled}
     catch(error:Exception) {
      val detail=error.message.orEmpty()
-     if(detail.contains("ACTIVE_") || detail.contains("DELIVERY_CLOSED")) {queue.clearOwner(uid);stopSelf();break}
-     TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",queue.pending(uid,id).size)
+     if(detail.contains("ACTIVE_") || detail.contains("DELIVERY_CLOSED")) {withContext(dbDispatcher) { queue.clearOwner(uid) };stopSelf();break}
+     val bufferedCount=withContext(dbDispatcher) { queue.pending(uid,id).size }
+     TripTrackingStatus.state.value=TrackingStatus(id,"Offline or reconnecting · samples queued",bufferedCount)
     }
     withTimeoutOrNull(15.seconds) { wakeSignal.receive() }
    }
@@ -161,7 +188,8 @@ class TripTrackingService:Service(),LocationListener {
   return START_NOT_STICKY
  }
  private suspend fun flush(uid:String,id:String,truckId:String?=null) {
-  for((sample,payload,_) in queue.pending(uid,id)) {
+  val pendingSamples=withContext(dbDispatcher) { queue.pending(uid,id) }
+  for((sample,payload,_) in pendingSamples) {
    if(!TrackingSessionRules.shouldFlushNetwork(ownerState(uid)))return
    val parsedPayload = Json.parseToJsonElement(payload).jsonObject
    val enrichedPayload = if (!truckId.isNullOrBlank() && "truck_id" !in parsedPayload) {
@@ -169,19 +197,30 @@ class TripTrackingService:Service(),LocationListener {
    } else {
     parsedPayload
    }
-   try {client.postgrest.rpc("driver_record_position",buildJsonObject {put("p_delivery",id);put("p_sample",sample);put("p_data",enrichedPayload)});queue.remove(sample)}
-   catch(error:Exception) {if(error is CancellationException)throw error;if(error.message.orEmpty().contains("INVALID_POSITION")){queue.remove(sample)}else throw error}
+   try {
+    client.postgrest.rpc("driver_record_position",buildJsonObject {put("p_delivery",id);put("p_sample",sample);put("p_data",enrichedPayload)})
+    withContext(dbDispatcher) { queue.remove(sample) }
+   }
+   catch(error:Exception) {if(error is CancellationException)throw error;if(error.message.orEmpty().contains("INVALID_POSITION")){withContext(dbDispatcher) { queue.remove(sample) }}else throw error}
   }
  }
  override fun onLocationChanged(location:Location) {
   val uid=owner?:return;val id=delivery?:return
   val age=System.currentTimeMillis()-location.time
-  if(!TrackingSessionRules.shouldQueueFix(ownerState(uid)) || !location.hasAccuracy() || !TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,age))return
+  val isMock=androidx.core.location.LocationCompat.isMock(location)
+  if(!TrackingSessionRules.shouldQueueFix(ownerState(uid)) || !location.hasAccuracy() || !TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,age,isMock=isMock,allowMock=BuildConfig.DEBUG))return
   if(lastFix!=null && (location.time - lastFix!!) in 0 until 5_000L) return
   lastFix=location.time
-  queue.add(uid,id,location)
-  TripTrackingStatus.state.value=TrackingStatus(id,"Sharing trip location",queue.pending(uid,id).size)
-  wakeSignal.trySend(Unit)
+  scope.launch {
+   val bufferedCount=withContext(dbDispatcher) {
+    queue.add(uid,id,location)
+    queue.pending(uid,id).size
+   }
+   if(owner==uid && delivery==id) {
+    TripTrackingStatus.state.value=TrackingStatus(id,"Sharing trip location",bufferedCount)
+    wakeSignal.trySend(Unit)
+   }
+  }
  }
  override fun onProviderDisabled(provider:String) {
   if(runCatching { TrackingSafety.providers(locations::isProviderEnabled) }.isFailure) {

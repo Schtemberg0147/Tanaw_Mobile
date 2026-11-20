@@ -38,11 +38,32 @@ import java.net.URLEncoder
 
 data class SelectedAddress(val label:String,val latitude:Double,val longitude:Double)
 object MobileGeocoding {
+ private const val MAX_GEOCODING_RESPONSE_BYTES = 256 * 1024
+
+ internal fun readBoundedUtf8(input:java.io.InputStream,maxBytes:Int=MAX_GEOCODING_RESPONSE_BYTES):String = input.use { stream ->
+  val buffer=java.io.ByteArrayOutputStream()
+  val chunk=ByteArray(4096)
+  var total=0
+  while(true) {
+   val read=stream.read(chunk)
+   if(read<0) break
+   total+=read
+   require(total<=maxBytes) { "Geocoding response exceeds maximum allowed size ($maxBytes bytes)." }
+   buffer.write(chunk,0,read)
+  }
+  String(buffer.toByteArray(),Charsets.UTF_8)
+ }
+
  suspend fun search(query:String):List<SelectedAddress> = withContext(Dispatchers.IO) {
   require(query.trim().length>=3 && BuildConfig.MAPTILER_KEY.isNotBlank())
   val url=URL("https://api.maptiler.com/geocoding/${URLEncoder.encode(query.trim(),"UTF-8")}.json?country=ph&limit=5&key=${URLEncoder.encode(BuildConfig.MAPTILER_KEY,"UTF-8")}")
-  val connection=url.openConnection().apply { connectTimeout=10000;readTimeout=10000 }
-  val response=connection.getInputStream().bufferedReader().use { it.readText() }
+  val connection=(url.openConnection() as java.net.HttpURLConnection).apply { connectTimeout=10000;readTimeout=10000 }
+  val response=try {
+   check(connection.responseCode in 200..299) { "Geocoding search HTTP ${connection.responseCode}" }
+   readBoundedUtf8(connection.inputStream)
+  } finally {
+   connection.disconnect()
+  }
   Json.parseToJsonElement(response).jsonObject["features"]?.jsonArray?.mapNotNull { feature ->
    val record=feature.jsonObject;val center=record["center"]?.jsonArray ?: return@mapNotNull null
    SelectedAddress(record["place_name"]?.jsonPrimitive?.content ?: query,center[1].jsonPrimitive.double,center[0].jsonPrimitive.double)
@@ -53,8 +74,13 @@ object MobileGeocoding {
   val provider=runCatching {
    require(BuildConfig.MAPTILER_KEY.isNotBlank())
    val url=URL("https://api.maptiler.com/geocoding/${point.longitude},${point.latitude}.json?language=en&limit=1&key=${URLEncoder.encode(BuildConfig.MAPTILER_KEY,"UTF-8")}")
-   val connection=url.openConnection().apply {connectTimeout=6000;readTimeout=6000}
-   val data=Json.parseToJsonElement(connection.getInputStream().bufferedReader().use {it.readText()}).jsonObject
+   val connection=(url.openConnection() as java.net.HttpURLConnection).apply {connectTimeout=6000;readTimeout=6000}
+   val data=try {
+    check(connection.responseCode in 200..299) { "Geocoding reverse HTTP ${connection.responseCode}" }
+    Json.parseToJsonElement(readBoundedUtf8(connection.inputStream)).jsonObject
+   } finally {
+    connection.disconnect()
+   }
    data["features"]?.jsonArray?.firstOrNull()?.jsonObject?.get("place_name")?.jsonPrimitive?.contentOrNull
   }.getOrNull()
   provider?.takeIf {it.isNotBlank()} ?: runCatching {

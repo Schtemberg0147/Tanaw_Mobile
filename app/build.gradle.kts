@@ -97,6 +97,17 @@ tasks.register("verifyDriverLogin") {
     }
 }
 
+// Optional MapTiler geocoding key; sanitize against BuildConfig quote/newline injection.
+val mapTilerKey = (System.getenv("MAPTILER_KEY")
+    ?: localProperties.getProperty("MAPTILER_KEY", "")).trim().also {
+    require(it.none { ch -> ch == '\n' || ch == '\r' || ch == '"' || ch == '\\' }) {
+        "Invalid characters in MAPTILER_KEY."
+    }
+    require(it.isEmpty() || it.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+        "MAPTILER_KEY must be an alphanumeric MapTiler API key."
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -119,7 +130,18 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
-        buildConfigField("String", "MAPTILER_KEY", "\"${localProperties.getProperty("MAPTILER_KEY", "").trim()}\"")
+        buildConfigField("String", "MAPTILER_KEY", "\"$mapTilerKey\"")
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
     }
 
     compileOptions {

@@ -24,4 +24,20 @@ class TrackingQueueTest {
   }
   context.deleteDatabase(database)
  }
+
+ @Test fun queueEvictsOldestSamplesWhenDeliveryExceedsMaxCap() {
+  val context=InstrumentationRegistry.getInstrumentation().targetContext
+  val database="queue-cap-test-${UUID.randomUUID()}.db"
+  val baseTime=System.currentTimeMillis()
+  TrackingQueue(context,database,maxSamplesPerDelivery=3).use {queue->
+   for(i in 1..5) {
+    val fix=Location("fixture").apply{latitude=i.toDouble();longitude=i.toDouble();accuracy=10f;time=baseTime+i*1000L}
+    queue.add("driver-a","trip-cap",fix)
+   }
+   val pending=queue.pending("driver-a","trip-cap")
+   assertEquals(3,pending.size)
+   assertEquals(listOf(baseTime+3000L,baseTime+4000L,baseTime+5000L),pending.map { it.third })
+  }
+  context.deleteDatabase(database)
+ }
 }
