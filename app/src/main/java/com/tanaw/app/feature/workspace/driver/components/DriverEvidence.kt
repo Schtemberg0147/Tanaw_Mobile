@@ -307,7 +307,7 @@ internal fun IncidentPhotoPicker(
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     var preparing by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             preparing = true
             onPreparingChange(true)
@@ -343,7 +343,13 @@ internal fun IncidentPhotoPicker(
             )
         }
         OutlinedButton(
-            onClick = { picker.launch("image/*") },
+            onClick = {
+                picker.launch(
+                    androidx.activity.result.PickVisualMediaRequest(
+                        ActivityResultContracts.PickVisualMedia.ImageOnly
+                    )
+                )
+            },
             enabled = !busy && !preparing && photos.size < 3,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             shape = RoundedCornerShape(10.dp),

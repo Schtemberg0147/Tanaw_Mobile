@@ -15,7 +15,7 @@ class CustomerPaginationRulesTest {
         assertEquals("", CustomerPaginationRules.sanitizeSearchQuery("   "))
         assertEquals("TN-12345", CustomerPaginationRules.sanitizeSearchQuery("  TN-12345  "))
         assertEquals(
-            """TN\%123\_45\, \(test\)""",
+            """TN\%123\_45 test""",
             CustomerPaginationRules.sanitizeSearchQuery(" TN%123_45, (test) ")
         )
         assertEquals(
@@ -28,10 +28,10 @@ class CustomerPaginationRulesTest {
 
     @Test
     fun sanitizeSearchQueryMitigatesPostgrestFilterInjection() {
-        // Attempting to inject commas and closing parentheses to break out of the PostgREST or(...) group
-        val injectionAttempt = "TN-123),status.eq.completed,user_id.eq.admin"
+        // Attempting to inject commas, wildcards (*), and parentheses to break out of the PostgREST or(...) group
+        val injectionAttempt = "TN-123*),status.eq.completed,user_id.eq.admin"
         val sanitized = CustomerPaginationRules.sanitizeSearchQuery(injectionAttempt)
-        assertEquals("""TN-123\)\,status.eq.completed\,user\_id.eq.admin""", sanitized)
+        assertEquals("""TN-123status.eq.completeduser\_id.eq.admin""", sanitized)
     }
 
     @Test
@@ -66,7 +66,7 @@ class CustomerPaginationRulesTest {
         // An attacker might prepend backslashes attempting to escape the escape character
         val backslashes = """\\,test"""
         val sanitized = CustomerPaginationRules.sanitizeSearchQuery(backslashes)
-        assertEquals("""\\\\\,test""", sanitized)
+        assertEquals("""\\\\test""", sanitized)
     }
 
     @Test

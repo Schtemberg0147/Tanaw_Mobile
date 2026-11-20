@@ -40,4 +40,16 @@ class TrackingSafetyTest {
         assertEquals("fused_fresher_tie",TrackingSafety.chooseBestFix(candidates,now,maxAgeMs=15_000L))
         assertNull(TrackingSafety.chooseBestFix(listOf(FixCandidate("too_old",14.6,120.9,8f,now - 16_000L)),now,maxAgeMs=15_000L))
     }
+    @Test fun mockLocationsAreRejectedUnlessExplicitlyAllowed() {
+        val now = 100_000L
+        assertFalse(TrackingSafety.valid(14.6, 120.9, 5f, 1000L, isMock = true, allowMock = false))
+        assertTrue(TrackingSafety.valid(14.6, 120.9, 5f, 1000L, isMock = true, allowMock = true))
+
+        val candidates = listOf(
+            FixCandidate("spoofed_gps", 14.6, 120.9, 3f, now - 500L, isMock = true),
+            FixCandidate("real_network", 14.6, 120.9, 25f, now - 2_000L, isMock = false),
+        )
+        assertEquals("real_network", TrackingSafety.chooseBestFix(candidates, now, allowMock = false))
+        assertEquals("spoofed_gps", TrackingSafety.chooseBestFix(candidates, now, allowMock = true))
+    }
 }

@@ -62,16 +62,21 @@ import com.tanaw.app.feature.auth.screens.VerifyRecoveryCodeScreen
 import com.tanaw.app.feature.workspace.customer.components.CustomerTopBar
 import com.tanaw.app.feature.workspace.customer.components.TanawBrandLogo
 import com.tanaw.app.feature.workspace.customer.dialogs.CustomerCancellationSection
+import com.tanaw.app.feature.workspace.customer.dialogs.SuspensionAppealDialog
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerHistoryPresentation
+import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerPaginationRules
+import com.tanaw.app.feature.workspace.customer.screens.AccountSuspendedScreen
 import com.tanaw.app.feature.workspace.customer.screens.CustomerBookingFlow
 import com.tanaw.app.feature.workspace.customer.screens.CustomerProfile
 import com.tanaw.app.feature.workspace.customer.screens.CustomerShipmentsSection
+import com.tanaw.app.feature.workspace.customer.screens.NoShowCancelledScreen
 import com.tanaw.app.feature.workspace.customer.screens.ShipmentTrackingPreviewContent
 import com.tanaw.app.feature.workspace.customer.screens.ShipmentTrackingScreen
 import com.tanaw.app.feature.workspace.driver.components.DriverRouteStatus
+import com.tanaw.app.feature.workspace.driver.rules.DriverProfileRules
 import com.tanaw.app.feature.workspace.driver.screens.DriverWorkspace
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.rules.ShipmentDeliveryRules
@@ -275,6 +280,9 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
 
     renderCustomerOrDefault {
         key(data.obj("profile").value("id")) {
+            val customerStanding = remember(data) {
+                if (isCustomer) CustomerNoShowRules.evaluateStanding(data) else null
+            }
             if (isCustomer &&
                 MobileValidation.phone(data.obj("profile").value("phone")) == null
             ) {
@@ -283,6 +291,34 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                     state = state,
                     data = data
                 )
+            } else if (isCustomer && customerStanding?.isSuspended == true) {
+                var showAppealDialog by rememberSaveable { mutableStateOf(false) }
+                AccountSuspendedScreen(
+                    standing = customerStanding,
+                    busy = state.busy,
+                    offline = state.offline,
+                    statusMessage = state.message,
+                    errorMessage = state.error,
+                    onOpenAppealForm = { showAppealDialog = true },
+                    onRefresh = vm::refresh,
+                    onLogout = vm::logout
+                )
+                if (showAppealDialog) {
+                    SuspensionAppealDialog(
+                        initialPhone = data.obj("profile").value("phone"),
+                        isSubmitting = state.busy,
+                        offline = state.offline,
+                        errorMessage = state.error,
+                        onDismiss = { showAppealDialog = false },
+                        onSubmit = { reason, contactNumber ->
+                            vm.submitSuspensionAppeal(
+                                reason = reason,
+                                contactNumber = contactNumber,
+                                onSubmitted = { showAppealDialog = false }
+                            )
+                        }
+                    )
+                }
             } else if (data.obj("profile").value("role") == "driver") {
                 DriverWorkspace(vm, state, data)
             } else {
@@ -694,7 +730,11 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                     role = role,
                     state = state,
                     vm = vm,
-                    onBack = { detail = null }
+                    onBack = { detail = null },
+                    onBookAgain = {
+                        detail = null
+                        tab = "Home"
+                    }
                 )
             }
         } else if (isCustomerHome) {
@@ -1175,21 +1215,80 @@ private fun ShipmentDetails(
     role: String,
     state: MobileState,
     vm: MobileWorkspaceViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onBookAgain: () -> Unit = onBack
 ) {
+    val shipmentDeliveries = data.rows("deliveries").filter { it.value("shipment_id") == s.value("id") }
+    val deliveries = ShipmentDeliveryRules.displayDeliveries(s, shipmentDeliveries)
+    val activeDelivery = ShipmentDeliveryRules.primaryDelivery(deliveries)
+    val detail = state.details?.takeIf { it.value("shipment_id") == s.value("id") }
+
+    val isWaitingAtPickup = activeDelivery != null &&
+        activeDelivery.value("status").equals("assigned", ignoreCase = true) &&
+        activeDelivery.value("pickup_arrived_at").isNotBlank() &&
+        activeDelivery.value("customer_showed_at").isBlank() &&
+        !s.value("status").equals("cancelled", ignoreCase = true)
+
     var now by remember { mutableStateOf(Instant.now()) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isWaitingAtPickup) {
         while (true) {
-            kotlinx.coroutines.delay(15.seconds)
+            kotlinx.coroutines.delay(if (isWaitingAtPickup) 1.seconds else 15.seconds)
             now = Instant.now()
         }
     }
     LaunchedEffect(s.value("id")) { vm.loadDetails(s.value("id")) }
 
-    val shipmentDeliveries = data.rows("deliveries").filter { it.value("shipment_id") == s.value("id") }
-    val deliveries = ShipmentDeliveryRules.displayDeliveries(s, shipmentDeliveries)
-    val activeDelivery = ShipmentDeliveryRules.primaryDelivery(deliveries)
-    val detail = state.details?.takeIf { it.value("shipment_id") == s.value("id") }
+    val customerStanding = remember(data, now) {
+        if (role == "customer") CustomerNoShowRules.evaluateStanding(data, now) else null
+    }
+    val isNoShowCancelled = role == "customer" && CustomerNoShowRules.isNoShowCancellation(
+        shipment = s,
+        delivery = activeDelivery,
+        detail = detail,
+        strikes = customerStanding?.strikes.orEmpty()
+    )
+    if (isNoShowCancelled && customerStanding != null) {
+        var showSupportDialog by remember { mutableStateOf(false) }
+        val strikeNumber = CustomerNoShowRules.strikeNumberForShipment(s, customerStanding)
+        val matchedStrike = customerStanding.strikes.firstOrNull { it.shipmentId == s.value("id") }
+        val timelineSteps = remember(s, activeDelivery, detail, matchedStrike) {
+            CustomerNoShowRules.buildNoShowTimeline(s, activeDelivery, detail, matchedStrike)
+        }
+        val cancelledAtRaw = matchedStrike?.confirmedAt.orEmpty()
+            .ifBlank { activeDelivery?.value("no_show_confirmed_at").orEmpty() }
+            .ifBlank { s.value("cancelled_at") }
+            .ifBlank { s.value("updated_at") }
+        NoShowCancelledScreen(
+            trackingNumber = s.value("tracking_number"),
+            cancelledTimestampText = CustomerNoShowRules.formatCancelledTimestamp(cancelledAtRaw),
+            strikeNumber = strikeNumber,
+            standing = customerStanding,
+            timelineSteps = timelineSteps,
+            busy = state.busy,
+            onBack = onBack,
+            onBookAgain = onBookAgain,
+            onContactSupport = { showSupportDialog = true }
+        )
+        if (showSupportDialog) {
+            val content = DriverProfileRules.content(data)
+            val supportInfo = buildString {
+                val contact = content?.get("support_contact")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: content?.get("support_phone")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: content?.get("support_url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                if (!contact.isNullOrBlank()) {
+                    append("Reach Mabutol Trucking dispatch support at:\n$contact\n\n")
+                } else {
+                    append("Contact Mabutol Trucking Services dispatch office for assistance with no-show cancellations or strike inquiries.\n\n")
+                }
+                append("Reference: ${s.value("tracking_number").ifBlank { s.value("id") }}")
+            }
+            InfoDialog(
+                title = "Contact Support",
+                text = supportInfo
+            ) { showSupportDialog = false }
+        }
+        return
+    }
 
     val position = detail?.obj("position")
     val routing = detail?.obj("routing")?.takeIf { it.isNotEmpty() }
@@ -1311,6 +1410,9 @@ private fun ShipmentDetails(
         } else null,
         onAcceptQuote = if (role == "customer") {
             { vm.acceptQuote(s.value("id")) }
+        } else null,
+        onNotifyOnWay = if (role == "customer") {
+            { deliveryId -> vm.notifyDriverOnMyWay(deliveryId) }
         } else null
     )
 }

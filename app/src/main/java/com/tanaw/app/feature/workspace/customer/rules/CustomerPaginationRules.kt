@@ -51,8 +51,9 @@ object CustomerPaginationRules {
         pageSize > 0 && lastFetchedCount >= pageSize
 
     /**
-     * Trims and escapes %, _, ,, (, ), and \ characters so PostgREST or / ilike filters are safe against injection.
-     * Strips double quotes (") and ASCII control characters to prevent filter tokenizer disruption.
+     * Trims and escapes SQL LIKE wildcards (%, _, and \), while stripping PostgREST logic-tree
+     * delimiters (,, (, ), *), double quotes ("), and ASCII control characters so PostgREST
+     * `or(...)` / `ilike` filters cannot be broken or injected.
      */
     fun sanitizeSearchQuery(raw: String): String {
         val trimmed = raw.trim()
@@ -60,20 +61,17 @@ object CustomerPaginationRules {
         return buildString {
             for (char in trimmed) {
                 when (char) {
-                    '\\', '%', '_', ',', '(', ')' -> {
+                    '\\', '%', '_' -> {
                         append('\\')
                         append(char)
                     }
-                    '"' -> {
-                        // Strip double quotes to avoid unclosed string / token disruption in PostgREST URL syntax
-                    }
-                    '\r', '\n', '\t', '\u0000' -> {
-                        // Strip control characters
+                    ',', '(', ')', '*', '"', '\r', '\n', '\t', '\u0000' -> {
+                        // Strip PostgREST grammar delimiters, quotes, and control characters
                     }
                     else -> append(char)
                 }
             }
-        }
+        }.trim()
     }
 
     /**

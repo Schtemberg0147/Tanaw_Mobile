@@ -35,4 +35,28 @@ class CustomerAvatarRulesTest {
         // Square 512 x 512 -> crop size 512 at (0, 0)
         assertEquals(Triple(0, 0, 512), CustomerAvatarRules.centerSquareBounds(512, 512))
     }
+
+    @Test
+    fun `readSourceWithinLimit reads valid stream and rejects empty or oversized stream`() {
+        val valid = ByteArray(1024) { 0x42 }
+        val read = CustomerAvatarRules.readSourceWithinLimit(
+            java.io.ByteArrayInputStream(valid),
+            maxBytes = 2048
+        )
+        assertEquals(1024, read.size)
+
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            CustomerAvatarRules.readSourceWithinLimit(
+                java.io.ByteArrayInputStream(ByteArray(0)),
+                maxBytes = 2048
+            )
+        }
+
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            CustomerAvatarRules.readSourceWithinLimit(
+                java.io.ByteArrayInputStream(ByteArray(2049)),
+                maxBytes = 2048
+            )
+        }
+    }
 }

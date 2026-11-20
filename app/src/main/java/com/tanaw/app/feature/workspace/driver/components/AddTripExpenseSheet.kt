@@ -73,7 +73,7 @@ fun AddTripExpenseSheet(
         }
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             receiptError = null
             preparingReceipt = true
@@ -250,7 +250,13 @@ fun AddTripExpenseSheet(
                     receipt = receipt,
                     preparingReceipt = preparingReceipt,
                     enabled = !isSubmitting && !preparingReceipt,
-                    onSelectClick = { picker.launch("image/*") }
+                    onSelectClick = {
+                        picker.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    }
                 )
                 if (preparingReceipt) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())

@@ -6,6 +6,7 @@ internal data class FixCandidate<T>(
     val longitude: Double,
     val accuracy: Float,
     val timeMs: Long,
+    val isMock: Boolean = false,
 )
 
 internal object TrackingSafety {
@@ -20,15 +21,28 @@ internal object TrackingSafety {
         runCatching { enabled(it) }.getOrDefault(defaultValue = false)
     }.ifEmpty { error(LOCATION_DISABLED_ERROR) }
 
-    fun valid(latitude: Double, longitude: Double, accuracy: Float, age: Long): Boolean =
-        latitude.isFinite() && longitude.isFinite() && (latitude in -90.0..90.0) && (longitude in -180.0..180.0) &&
+    fun valid(
+        latitude: Double,
+        longitude: Double,
+        accuracy: Float,
+        age: Long,
+        isMock: Boolean = false,
+        allowMock: Boolean = false,
+    ): Boolean =
+        (!isMock || allowMock) &&
+            latitude.isFinite() && longitude.isFinite() && (latitude in -90.0..90.0) && (longitude in -180.0..180.0) &&
             accuracy.isFinite() && (accuracy in 0f..100f) && (age in 0..60000)
 
-    fun <T> chooseBestFix(candidates: Iterable<FixCandidate<T>>, nowMs: Long, maxAgeMs: Long = 60_000L): T? =
+    fun <T> chooseBestFix(
+        candidates: Iterable<FixCandidate<T>>,
+        nowMs: Long,
+        maxAgeMs: Long = 60_000L,
+        allowMock: Boolean = false,
+    ): T? =
         candidates
-            .filter { (_, latitude, longitude, accuracy, timeMs) ->
+            .filter { (_, latitude, longitude, accuracy, timeMs, isMock) ->
                 val age = nowMs - timeMs
-                age in 0..maxAgeMs && valid(latitude, longitude, accuracy, age)
+                age in 0..maxAgeMs && valid(latitude, longitude, accuracy, age, isMock = isMock, allowMock = allowMock)
             }
             .minWithOrNull(compareBy<FixCandidate<T>> { it.accuracy }.thenBy { nowMs - it.timeMs })
             ?.item

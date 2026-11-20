@@ -21,7 +21,8 @@ class CustomerAvatarStore(private val context: Context) {
     fun readBytes(userId: String): ByteArray? {
         if (userId.isBlank()) return null
         val file = avatarFile(userId)
-        if (!file.exists() || !file.isFile || file.length() <= 0L) return null
+        val length = file.length()
+        if (!file.exists() || !file.isFile || length <= 0L || length > CustomerAvatarRules.MAX_ENCODED_AVATAR_BYTES) return null
         return runCatching { file.readBytes() }.getOrNull()
     }
 
@@ -35,7 +36,7 @@ class CustomerAvatarStore(private val context: Context) {
     }
 
     suspend fun writeBytesAsync(userId: String, jpegBytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        if (userId.isBlank() || jpegBytes.isEmpty()) return@withContext false
+        if (userId.isBlank() || jpegBytes.isEmpty() || jpegBytes.size > CustomerAvatarRules.MAX_ENCODED_AVATAR_BYTES) return@withContext false
         runCatching {
             avatarFile(userId).writeBytes(jpegBytes)
             true

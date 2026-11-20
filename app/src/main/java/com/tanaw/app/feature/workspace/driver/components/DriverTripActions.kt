@@ -51,12 +51,13 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
  val manager=context.getSystemService(LocationManager::class.java)
  val providers=TrackingSafety.providers(manager::isProviderEnabled)
  val now=System.currentTimeMillis()
+ val allowMock=com.tanaw.app.BuildConfig.DEBUG
  val cachedCandidates=providers.mapNotNull { p ->
   runCatching { manager.getLastKnownLocation(p) }.getOrNull()?.takeIf { it.hasAccuracy() }
  }.map { loc ->
-  FixCandidate(loc,loc.latitude,loc.longitude,loc.accuracy,loc.time)
+  FixCandidate(loc,loc.latitude,loc.longitude,loc.accuracy,loc.time,isMock=androidx.core.location.LocationCompat.isMock(loc))
  }
- val cached=TrackingSafety.chooseBestFix(cachedCandidates,now,maxAgeMs=15_000L)
+ val cached=TrackingSafety.chooseBestFix(cachedCandidates,now,maxAgeMs=15_000L,allowMock=allowMock)
  if(cached!=null) return@withTimeout cached
 
  coroutineScope {
@@ -68,7 +69,7 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
    try {
     LocationManagerCompat.getCurrentLocation(manager,provider,signal,ContextCompat.getMainExecutor(context)) { location ->
      if(result.isCompleted) return@getCurrentLocation
-     if(location!=null && location.hasAccuracy() && TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time)) {
+     if(location!=null && location.hasAccuracy() && TrackingSafety.valid(location.latitude,location.longitude,location.accuracy,System.currentTimeMillis()-location.time,isMock=androidx.core.location.LocationCompat.isMock(location),allowMock=allowMock)) {
       result.complete(location)
      } else {
       pending--
@@ -167,7 +168,15 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
    notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
   else runLocationAction()
  }
- val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){withNotificationPermission()}
+ val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){grants->
+  val hasFineLocation = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+   ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+  if(hasFineLocation) {
+   withNotificationPermission()
+  } else {
+   error = "Allow precise location in Settings to verify arrival within 50m and share this trip."
+  }
+ }
  fun request(next:String) {
   action=next;error=null
   if(next in listOf("arrive","deliver")) {
@@ -348,15 +357,61 @@ internal fun DriverTripActionsContent(
    ) { onRequestLocationAction("arrive") }
   }
   if (status == "assigned" && delivery.value("pickup_arrived_at").isNotBlank()) {
-   SupportingText("Grace ends ${MobilePresentation.time(delivery.value("grace_ends_at"))}. Office review threshold ${MobilePresentation.time(delivery.value("auto_cancel_at"))}. Cancellation requires an office decision.")
+   var showNoShowConfirm by remember { mutableStateOf(false) }
+   val customerOnWayAt = delivery.value("customer_on_way_at")
+   if (customerOnWayAt.isNotBlank()) {
+    Surface(
+     color = MaterialTheme.colorScheme.secondaryContainer,
+     shape = RoundedCornerShape(10.dp),
+     border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
+     modifier = Modifier.fillMaxWidth()
+    ) {
+     Text(
+      text = "Customer notified: On their way (${MobilePresentation.time(customerOnWayAt)}).",
+      style = MaterialTheme.typography.bodySmall,
+      fontWeight = FontWeight.SemiBold,
+      color = MaterialTheme.colorScheme.onSecondaryContainer,
+      modifier = Modifier.padding(12.dp)
+     )
+    }
+   }
+   SupportingText("Grace ends ${MobilePresentation.time(delivery.value("grace_ends_at"))}. Wait threshold ${MobilePresentation.time(delivery.value("auto_cancel_at"))}. Driver or office may confirm no-show cancellation after threshold.")
    DriverButton("CUSTOMER ARRIVED AT PICK-UP", !busy) { onDriverAction("showed") }
    OutlinedButton(
-    onClick = { onDriverAction("no_show") },
+    onClick = { showNoShowConfirm = true },
     enabled = !busy && noShowDue,
     shape = RoundedCornerShape(10.dp),
     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
    ) {
-    Text("Report no-show for office review")
+    Text("Confirm no-show cancellation")
+   }
+   if (showNoShowConfirm) {
+    AlertDialog(
+     onDismissRequest = { if (!busy) showNoShowConfirm = false },
+     title = { Text("Confirm customer no-show?") },
+     text = {
+      Text("This will cancel the booking as a customer no-show and issue a strike on the customer's account. Make sure you have attempted to contact the customer.")
+     },
+     confirmButton = {
+      TextButton(
+       onClick = {
+        showNoShowConfirm = false
+        onDriverAction("no_show")
+       },
+       enabled = !busy
+      ) {
+       Text("Confirm No-Show", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+      }
+     },
+     dismissButton = {
+      TextButton(
+       onClick = { showNoShowConfirm = false },
+       enabled = !busy
+      ) {
+       Text("Keep Waiting")
+      }
+     }
+    )
    }
   }
   if (status == "loading") {

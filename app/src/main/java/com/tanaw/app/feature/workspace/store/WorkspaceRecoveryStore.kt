@@ -47,10 +47,10 @@ internal class WorkspaceRecoveryStore(context:Context,private val project:String
     private fun name(scope:String)=MessageDigest.getInstance("SHA-256").digest("$project/$scope".toByteArray()).joinToString(""){"%02x".format(it)}
     private fun file(scope:String)=AtomicFile(File(root,name(scope)))
     fun contains(scope:String)=file(scope).baseFile.exists() || File(file(scope).baseFile.path+".bak").exists()
-    private fun key():SecretKey {
+    private fun key():SecretKey = synchronized(KEYSTORE_LOCK) {
         val store=KeyStore.getInstance("AndroidKeyStore").apply {load(null)}
-        return (store.getKey("workspace-recovery-v1",null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").run {
-            init(KeyGenParameterSpec.Builder("workspace-recovery-v1",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+        (store.getKey(KEY_ALIAS,null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").run {
+            init(KeyGenParameterSpec.Builder(KEY_ALIAS,KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());generateKey()
         }
     }
@@ -63,7 +63,19 @@ internal class WorkspaceRecoveryStore(context:Context,private val project:String
         true
     }.getOrDefault(false)
     fun read(scope:String,maxAge:Long):JsonObject? = runCatching {
-        val bytes=file(scope).openRead().use {require(it.available()<=maxRecordBytes);it.readBytes()}
+        val bytes=file(scope).openRead().use { input ->
+            val buffer=java.io.ByteArrayOutputStream()
+            val chunk=ByteArray(8192)
+            var total=0
+            while(true) {
+                val read=input.read(chunk)
+                if(read<0) break
+                total+=read
+                require(total<=maxRecordBytes)
+                buffer.write(chunk,0,read)
+            }
+            buffer.toByteArray()
+        }
         require(bytes.size>28)
         val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply {init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,bytes.copyOfRange(0,12)));updateAAD(name(scope).toByteArray())}
         val data=Json.parseToJsonElement(String(cipher.doFinal(bytes.copyOfRange(12,bytes.size)))).jsonObject
@@ -74,4 +86,9 @@ internal class WorkspaceRecoveryStore(context:Context,private val project:String
     suspend fun readAsync(scope:String,maxAge:Long):JsonObject? = withContext(Dispatchers.IO) { read(scope,maxAge) }
     fun clear(scope:String){file(scope).delete()}
     suspend fun clearAsync(scope:String) = withContext(Dispatchers.IO) { clear(scope) }
+
+    private companion object {
+        private const val KEY_ALIAS = "workspace-recovery-v1"
+        private val KEYSTORE_LOCK = Any()
+    }
 }

@@ -160,7 +160,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                 try {
                     coroutineScope {
                         val eventsChannel = Channel<String>(Channel.UNLIMITED)
-                        val tables = listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","system_settings","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages","payments")
+                        val tables = listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","system_settings","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages","payments","customers","customer_no_show_strikes","customer_appeals")
                         tables.forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
                             launch {changes.collect {eventsChannel.trySend(table)}}
@@ -358,7 +358,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                         val changing=mutable.value.passwordChangeOwner!=null || pendingPasswordChange!=null
                         if(changing)clearPasswordChallenge()
                         stopLive(stopTracking = true)
-                        loadedUser?.let {recoveryStore.clear(it);deviceNotifier.clearUserSession(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
+                        loadedUser?.let {owner->recoveryStore.clear(owner);deviceNotifier.clearUserSession(owner);withContext(Dispatchers.IO) {TrackingQueue(context).use {queue->queue.clearOwner(owner)}}}
                         generation++; loadedUser = null
                         mutable.update { if(changing)MobileState(page="login",message="Sign in again to manage your password.") else
                             it.copy(data=null,details=null,proof=null,proofTitle="",proofSubtitle="",history=null,historyLoading=false,historyError=null,conversationUnread=null,customerHistoryDocuments=emptyList(),notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
@@ -510,8 +510,18 @@ class MobileWorkspaceViewModel @Inject constructor(
             } else {
                 data.obj("profile")
             }
-            val filteredFtlData = ftlData.filterKeys { it != "avatar_url" }
-            data = JsonObject(data + smsPrefs + filteredFtlData + ("profile" to updatedProfile))
+            val customerStandingPatch = ftlData["customer_standing_patch"] as? JsonObject
+            val updatedCustomer = if (customerStandingPatch != null && customerStandingPatch.isNotEmpty()) {
+                JsonObject(data.obj("customer") + customerStandingPatch)
+            } else {
+                data.obj("customer")
+            }
+            val filteredFtlData = ftlData.filterKeys { it != "avatar_url" && it != "customer_standing_patch" }
+            data = JsonObject(
+                data + smsPrefs + filteredFtlData +
+                    ("profile" to updatedProfile) +
+                    ("customer" to updatedCustomer)
+            )
         }
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
             deviceNotifier.onWorkspaceNotificationsLoaded(
@@ -1100,10 +1110,19 @@ class MobileWorkspaceViewModel @Inject constructor(
             when (val parsed = DeepLinkParser.parse(code, host)) {
                 is DeepLinkResult.Session -> {
                     if (parsed.isRecovery) {
+                        if (changeOwner != null) {
+                            val (jwtSub, _) = DeepLinkParser.extractJwtSubjectAndEmail(parsed.accessToken)
+                            require(!jwtSub.isNullOrBlank() && jwtSub == changeOwner) {
+                                "Recovery token does not match the signed-in account."
+                            }
+                        }
                         client.auth.importAuthToken(parsed.accessToken, parsed.refreshToken, retrieveUser = true)
                     } else {
                         verifyEmail(code, "recovery", OtpType.Email.RECOVERY)
                     }
+                }
+                is DeepLinkResult.Code -> {
+                    client.auth.exchangeCodeForSession(parsed.code)
                 }
                 else -> verifyEmail(code, "recovery", OtpType.Email.RECOVERY)
             }
@@ -1126,6 +1145,10 @@ class MobileWorkspaceViewModel @Inject constructor(
                         return
                     }
                     val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, currentUid)
+                    if (isOwnerChanging && !result.email.isNullOrBlank() && !result.email.equals(mutable.value.email, ignoreCase = true)) {
+                        mutable.update { it.copy(error = "Recovery link does not match the signed-in account.") }
+                        return
+                    }
                     recoveryPhone = null
                     val email = (result.email ?: mutable.value.email).trim()
                     if (email.length in 3..254) {
@@ -1141,10 +1164,61 @@ class MobileWorkspaceViewModel @Inject constructor(
                         )
                     }
                 } else if (result.type.equals("signup", ignoreCase = true)) {
+                    val currentUid = client.auth.currentUserOrNull()?.id
+                    if (currentUid != null || loadedUser != null) {
+                        mutable.update { it.copy(message = "Already signed in. Log out first to verify another account.") }
+                        return
+                    }
                     if (!result.email.isNullOrBlank()) {
                         mutable.update { it.copy(email = result.email) }
                     }
                     verifySignup(rawUri)
+                }
+            }
+            is DeepLinkResult.Code -> {
+                if (result.type.equals("recovery", ignoreCase = true)) {
+                    val currentUid = client.auth.currentUserOrNull()?.id
+                    val changeOwner = mutable.value.passwordChangeOwner
+                    if (currentUid != null) {
+                        if (changeOwner != null) {
+                            mutable.update { it.copy(error = "Enter the 6-digit recovery code sent to your email or phone to change your password while signed in.") }
+                        } else {
+                            mutable.update { it.copy(message = "Recovery link received. Log out to reset password, or use Profile to change password.") }
+                        }
+                        return
+                    }
+                    recoveryPhone = null
+                    viewModelScope.launch {
+                        try {
+                            client.auth.exchangeCodeForSession(result.code)
+                            val email = client.auth.currentUserOrNull()?.email ?: result.email.orEmpty()
+                            mutable.update {
+                                it.copy(
+                                    page = "recover_code",
+                                    passwordChangeCodeSent = false,
+                                    email = if (email.isNotBlank()) email else it.email,
+                                    recoveryCode = "session",
+                                    message = "Recovery link opened. Enter and confirm your new password."
+                                )
+                            }
+                        } catch (e: Exception) {
+                            mutable.update { it.copy(error = MobileErrorClassifier.friendlyMessage(e)) }
+                        }
+                    }
+                } else if (result.type.equals("signup", ignoreCase = true)) {
+                    val currentUid = client.auth.currentUserOrNull()?.id
+                    if (currentUid != null || loadedUser != null) {
+                        mutable.update { it.copy(message = "Already signed in. Log out first to verify another account.") }
+                        return
+                    }
+                    viewModelScope.launch {
+                        try {
+                            client.auth.exchangeCodeForSession(result.code)
+                            load()
+                        } catch (e: Exception) {
+                            mutable.update { it.copy(error = MobileErrorClassifier.friendlyMessage(e)) }
+                        }
+                    }
                 }
             }
             is DeepLinkResult.Session -> {
@@ -1156,6 +1230,13 @@ class MobileWorkspaceViewModel @Inject constructor(
                         return
                     }
                     val isOwnerChanging = changeOwner != null && PasswordChangePolicy.current(mutable.value, currentUid)
+                    if (changeOwner != null) {
+                        val (jwtSub, _) = DeepLinkParser.extractJwtSubjectAndEmail(result.accessToken)
+                        if (jwtSub.isNullOrBlank() || jwtSub != changeOwner || !isOwnerChanging) {
+                            mutable.update { it.copy(error = "Recovery link does not match the signed-in account.") }
+                            return
+                        }
+                    }
                     recoveryPhone = null
                     viewModelScope.launch {
                         try {
@@ -1175,6 +1256,11 @@ class MobileWorkspaceViewModel @Inject constructor(
                         }
                     }
                 } else if (result.type.equals("signup", ignoreCase = true)) {
+                    val currentUid = client.auth.currentUserOrNull()?.id
+                    if (currentUid != null || loadedUser != null) {
+                        mutable.update { it.copy(message = "Already signed in. Log out first to verify another account.") }
+                        return
+                    }
                     viewModelScope.launch {
                         try {
                             client.auth.importAuthToken(result.accessToken, result.refreshToken, retrieveUser = true)
@@ -1254,16 +1340,33 @@ class MobileWorkspaceViewModel @Inject constructor(
 
         ConfirmedMutation.run(
             mutate = {
-                client.from("shipments").update(
-                    buildJsonObject {
-                        put("status", "cancelled")
-                        put("cancelled_reason", normalizedReason)
-                        put("cancelled_at", nowIso)
-                    }
-                ) {
-                    filter {
-                        eq("id", shipmentId)
-                        isIn("status", CustomerCancellationRules.CANCELLABLE_SHIPMENT_STATUSES.toList())
+                try {
+                    client.postgrest.rpc(
+                        "mobile_cancel_shipment",
+                        buildJsonObject {
+                            put("p_shipment", shipmentId)
+                            put("p_reason", normalizedReason)
+                        }
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (rpcError: Exception) {
+                    val msg = rpcError.message.orEmpty()
+                    if (msg.contains("PGRST202") || msg.contains("Could not find the function", ignoreCase = true)) {
+                        client.from("shipments").update(
+                            buildJsonObject {
+                                put("status", "cancelled")
+                                put("cancelled_reason", normalizedReason)
+                                put("cancelled_at", nowIso)
+                            }
+                        ) {
+                            filter {
+                                eq("id", shipmentId)
+                                isIn("status", CustomerCancellationRules.CANCELLABLE_SHIPMENT_STATUSES.toList())
+                            }
+                        }
+                    } else {
+                        throw rpcError
                     }
                 }
             },
@@ -1452,11 +1555,71 @@ class MobileWorkspaceViewModel @Inject constructor(
                 null
             }
         }
+        val customerStandingDeferred = async {
+            try {
+                client.from("customers").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("no_show_strike_count,booking_cooldown_until,standing_status,suspended_at,suspension_reason,reinstated_at")
+                ) {
+                    filter { eq("user_id", userId) }
+                    limit(1)
+                }.decodeAs<JsonArray>().firstOrNull()?.jsonObject
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val strikesDeferred = async {
+            try {
+                client.from("customer_no_show_strikes").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("id,strike_number,shipment_id,delivery_id,confirmed_at,reason,attempt_notes")
+                ) {
+                    order("confirmed_at", Order.ASCENDING)
+                    limit(20)
+                }.decodeAs<JsonArray>()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val appealsDeferred = async {
+            try {
+                client.from("customer_appeals").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("id,status,reason,admin_notes,created_at,reviewed_at")
+                ) {
+                    order("created_at", Order.DESCENDING)
+                    limit(5)
+                }.decodeAs<JsonArray>()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val deliveriesDeferred = async {
+            try {
+                client.from("deliveries").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("id,shipment_id,status,assigned_at,departed_at,arrived_at,recipient_name,route_started_at,pickup_arrived_at,customer_showed_at,grace_ends_at,auto_cancel_at,customer_on_way_at,no_show_confirmed_at")
+                ) {
+                    order("assigned_at", Order.DESCENDING)
+                    limit(200)
+                }.decodeAs<JsonArray>()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
         buildMap {
             vehiclesDeferred.await()?.takeIf { it.isNotEmpty() }?.let { put("vehicles", it) }
             pricingDeferred.await()?.takeIf { it.isNotEmpty() }?.let { put("pricing_rates", it) }
             shipmentsDeferred.await()?.let { put("shipments", it) }
+            deliveriesDeferred.await()?.let { put("deliveries", it) }
             avatarDeferred.await()?.let { put("avatar_url", JsonPrimitive(it)) }
+            customerStandingDeferred.await()?.let { put("customer_standing_patch", it) }
+            strikesDeferred.await()?.let { put("customer_strikes", it) }
+            appealsDeferred.await()?.let { put("customer_appeals", it) }
         }
     }
     private suspend fun reconcileUncertainBooking(data: JsonObject, userId: String) {
@@ -1676,9 +1839,108 @@ class MobileWorkspaceViewModel @Inject constructor(
             catch(_:Exception){mutable.update {it.copy(message="$message Location sharing could not start. Tap Resume location sharing.")}}
         },{reloadWorkspaceAndDetails(deliveryId)},{mutable.update {it.copy(message="${it.message?:message} Saved successfully. Refresh to reload current trip status before another action.",error=null,offline=true)}})
     }
+    fun notifyDriverOnMyWay(deliveryId: String) = operation {
+        val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        require(deliveryId.isNotBlank()) { "INVALID_DELIVERY" }
+        val version = generation
+        val nowIso = java.time.Instant.now().toString()
+        ConfirmedMutation.run(
+            mutate = {
+                client.postgrest.rpc(
+                    "customer_notify_on_the_way",
+                    buildJsonObject { put("p_delivery_id", deliveryId) }
+                )
+            },
+            current = { version == generation && client.auth.currentUserOrNull()?.id == uid },
+            acknowledge = {
+                mutable.update { state ->
+                    state.copy(
+                        data = CustomerNoShowRules.optimisticMarkCustomerOnWay(state.data, deliveryId, nowIso),
+                        message = "Driver notified that you're on your way.",
+                        error = null
+                    )
+                }
+            },
+            refresh = { reloadWorkspaceAndDetails(deliveryId) },
+            refreshFailed = {
+                mutable.update {
+                    it.copy(
+                        message = "Driver notified. Refresh when back online to sync status.",
+                        error = null,
+                        offline = true
+                    )
+                }
+            }
+        )
+    }
+
+    fun submitSuspensionAppeal(
+        reason: String,
+        contactNumber: String? = null,
+        onSubmitted: () -> Unit = {}
+    ) = operation {
+        val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        require(CustomerNoShowRules.validateAppealReason(reason)) { "APPEAL_REASON_REQUIRED" }
+        val version = generation
+        val nowIso = java.time.Instant.now().toString()
+        var appealId = ""
+        ConfirmedMutation.run(
+            mutate = {
+                val res = client.postgrest.rpc(
+                    "customer_submit_suspension_appeal",
+                    buildJsonObject {
+                        put("p_reason", reason.trim())
+                        if (!contactNumber.isNullOrBlank()) {
+                            put("p_contact_number", contactNumber.trim())
+                        }
+                    }
+                ).decodeAs<JsonObject>()
+                appealId = res.value("id")
+            },
+            current = { version == generation && client.auth.currentUserOrNull()?.id == uid },
+            acknowledge = {
+                mutable.update { state ->
+                    state.copy(
+                        data = CustomerNoShowRules.optimisticRecordAppeal(state.data, appealId, reason, nowIso),
+                        message = "Appeal submitted. Administration will review within 3–5 business days.",
+                        error = null
+                    )
+                }
+                onSubmitted()
+            },
+            refresh = { load() },
+            refreshFailed = {
+                mutable.update {
+                    it.copy(
+                        message = "Appeal submitted. Refresh when back online to check review status.",
+                        error = null,
+                        offline = true
+                    )
+                }
+            }
+        )
+    }
+
     fun driver(id: String,action: String) = operation {
-        confirmedDriverAction(if(action=="no_show")"No-show reported for office review." else "Assignment updated.", deliveryId=id) {
-            client.postgrest.rpc("mobile_driver_action",buildJsonObject {put("p_delivery",id);put("p_action",action)})
+        confirmedDriverAction(if(action=="no_show")"No-show cancellation recorded." else "Assignment updated.", deliveryId=id) {
+            if (action == "no_show") {
+                try {
+                    client.postgrest.rpc("confirm_no_show_cancellation", buildJsonObject { put("p_delivery_id", id) })
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (err: Exception) {
+                    val msg = err.message.orEmpty()
+                    if (msg.contains("Could not find the function", ignoreCase = true) ||
+                        (msg.contains("confirm_no_show_cancellation", ignoreCase = true) && msg.contains("404"))
+                    ) {
+                        client.postgrest.rpc("mobile_driver_action", buildJsonObject { put("p_delivery", id); put("p_action", action) })
+                    } else {
+                        throw err
+                    }
+                }
+            } else {
+                client.postgrest.rpc("mobile_driver_action", buildJsonObject { put("p_delivery", id); put("p_action", action) })
+            }
         }
     }
     fun arrive(id:String,lat:Double,lng:Double)=operation {
@@ -1881,7 +2143,9 @@ class MobileWorkspaceViewModel @Inject constructor(
     override fun onCleared() {liveJob?.cancel();pollJob?.cancel()}
     fun saveCustomerAvatar(jpegBytes: ByteArray) = operation(allowOffline = true) {
         val uid = client.auth.currentUserOrNull()?.id ?: loadedUser ?: error("ACTIVE_ACCOUNT_REQUIRED")
-        require(jpegBytes.isNotEmpty())
+        require(jpegBytes.isNotEmpty() && jpegBytes.size <= CustomerAvatarRules.MAX_ENCODED_AVATAR_BYTES) {
+            "Profile photo exceeds maximum allowed size."
+        }
         val dataUri = CustomerAvatarRules.toDataUri(jpegBytes)
         avatarStore.writeBytesAsync(uid, jpegBytes)
         mutable.update { state ->
@@ -2044,8 +2308,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         // Reauthorize exact document immediately before fetching; no stale or caller-supplied paths.
         val detail=client.postgrest.rpc("mobile_shipment_details",buildJsonObject { put("p_shipment",shipment) }).decodeAs<JsonObject>()
         val record=detail.rows("documents").firstOrNull { it.value("id")==document } ?: error("SHIPMENT_NOT_FOUND")
-        val path=record.value("storage_path")
-        require(path.isNotBlank() && !path.startsWith('/') && path.split('/').none { it==".." })
+        val path=ProofSubmission.requireSafeStoragePath(record.value("storage_path"))
         val bytes=client.storage.from("delivery-documents").downloadAuthenticated(path)
         val bitmap=withContext(Dispatchers.Default) { ProofImage.decode(bytes) }
         if(version==generation && uid==client.auth.currentUserOrNull()?.id) {
@@ -2068,7 +2331,8 @@ class MobileWorkspaceViewModel @Inject constructor(
     fun clearMessage() { mutable.update { it.copy(message=null) } }
     fun viewEvidence(shipment:String,kind:String,record:String)=operation {
         val version=generation;val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
-        val path=client.postgrest.rpc("mobile_delivery_evidence_file",buildJsonObject {put("p_shipment",shipment);put("p_kind",kind);put("p_record",record)}).decodeAs<String>()
+        val rawPath=client.postgrest.rpc("mobile_delivery_evidence_file",buildJsonObject {put("p_shipment",shipment);put("p_kind",kind);put("p_record",record)}).decodeAs<String>()
+        val path=ProofSubmission.requireSafeStoragePath(rawPath)
         val bitmap=withContext(Dispatchers.Default){ProofImage.decode(client.storage.from("delivery-documents").downloadAuthenticated(path))}
         if(version==generation && uid==client.auth.currentUserOrNull()?.id)mutable.update {it.copy(proof=bitmap,proofTitle=if(kind=="expense")"Expense receipt" else "Incident photo")}
         else bitmap.recycle()
@@ -2076,7 +2340,7 @@ class MobileWorkspaceViewModel @Inject constructor(
     fun viewPaymentProof(shipment: String, paymentId: String, proofPath: String) = operation {
         val version = generation
         val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
-        val resolvedPath = try {
+        val rawPath = try {
             if (paymentId.isNotBlank()) {
                 client.postgrest.rpc(
                     "mobile_delivery_evidence_file",
@@ -2089,12 +2353,14 @@ class MobileWorkspaceViewModel @Inject constructor(
             } else proofPath
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            proofPath
+        } catch (e: Exception) {
+            if (ProofSubmission.isMissingPaymentEvidenceSupport(e.message)) {
+                proofPath
+            } else {
+                throw e
+            }
         }
-        require(resolvedPath.isNotBlank() && !resolvedPath.startsWith('/') && resolvedPath.split('/').none { it == ".." }) {
-            "Signed receipt photo is unavailable."
-        }
+        val resolvedPath = ProofSubmission.requireSafeStoragePath(rawPath, "Signed receipt photo is unavailable.")
         val bytes = client.storage.from("delivery-documents").downloadAuthenticated(resolvedPath)
         val bitmap = withContext(Dispatchers.Default) { ProofImage.decode(bytes) }
         if (version == generation && uid == client.auth.currentUserOrNull()?.id) {

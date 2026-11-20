@@ -99,4 +99,18 @@ class ProofSubmissionTest {
         assertEquals("available",driver.value("status"))
         assertEquals("available",truck.value("status"))
     }
+    @Test fun safeStoragePathValidationAndPaymentEvidenceFallbackRules() {
+        assertTrue(ProofSubmission.isSafeStoragePath("delivery-123/pod-photo-abc.jpg"))
+        assertTrue(ProofSubmission.isSafeStoragePath("delivery-123/payment-receipt-1.png"))
+        assertFalse(ProofSubmission.isSafeStoragePath(""))
+        assertFalse(ProofSubmission.isSafeStoragePath("/delivery-123/pod.jpg"))
+        assertFalse(ProofSubmission.isSafeStoragePath("delivery-123/../other/pod.jpg"))
+        assertFalse(ProofSubmission.isSafeStoragePath("delivery-123//pod.jpg"))
+        assertFalse(ProofSubmission.isSafeStoragePath("delivery-123\\pod.jpg"))
+        assertFalse(ProofSubmission.isSafeStoragePath("single_segment.jpg"))
+
+        assertTrue(ProofSubmission.isMissingPaymentEvidenceSupport("PGRST202: Could not find the function mobile_delivery_evidence_file"))
+        assertFalse(ProofSubmission.isMissingPaymentEvidenceSupport("PERMISSION_DENIED: Not authorized to view payment proof"))
+        assertFalse(ProofSubmission.isMissingPaymentEvidenceSupport(null))
+    }
 }

@@ -111,7 +111,7 @@ internal fun DriverPaymentSheet(
         }
     }
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             preparingPhoto = true
             photoError = null
@@ -183,7 +183,11 @@ internal fun DriverPaymentSheet(
             onPickGallery = {
                 if (!preparingPhoto && !isSubmitting) {
                     photoError = null
-                    galleryLauncher.launch("image/*")
+                    galleryLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
                 }
             },
             onRemovePhoto = {

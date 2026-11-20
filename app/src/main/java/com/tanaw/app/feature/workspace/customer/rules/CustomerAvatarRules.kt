@@ -14,6 +14,7 @@ import kotlin.math.min
  */
 object CustomerAvatarRules {
     const val MAX_SOURCE_BYTES = 20 * 1024 * 1024
+    const val MAX_ENCODED_AVATAR_BYTES = 512 * 1024
     const val AVATAR_DIMENSION_PX = 256
     const val JPEG_QUALITY = 82
     const val DATA_URI_PREFIX = "data:image/jpeg;base64,"
@@ -26,8 +27,32 @@ object CustomerAvatarRules {
 
     fun isValidSourceSize(byteCount: Int): Boolean = byteCount in 1..MAX_SOURCE_BYTES
 
+    /**
+     * Reads up to [maxBytes] from [input], throwing an [IllegalArgumentException] if the stream
+     * is empty or exceeds [maxBytes]. Never buffers unbounded streams into heap memory.
+     */
+    fun readSourceWithinLimit(
+        input: java.io.InputStream,
+        maxBytes: Int = MAX_SOURCE_BYTES,
+    ): ByteArray = input.use { stream ->
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= maxBytes) { "Choose a photo up to 20 MB." }
+            output.write(buffer, 0, count)
+        }
+        require(total > 0) { "Selected photo is empty." }
+        output.toByteArray()
+    }
+
     fun toDataUri(jpegBytes: ByteArray): String {
-        require(jpegBytes.isNotEmpty()) { "Avatar image bytes cannot be empty." }
+        require(jpegBytes.isNotEmpty() && jpegBytes.size <= MAX_ENCODED_AVATAR_BYTES) {
+            "Avatar image bytes must be non-empty and within ${MAX_ENCODED_AVATAR_BYTES / 1024} KB."
+        }
         val encoded = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
         return "$DATA_URI_PREFIX$encoded"
     }
@@ -35,6 +60,7 @@ object CustomerAvatarRules {
     fun fromDataUriOrBase64(raw: String?): ByteArray? {
         if (raw.isNullOrBlank()) return null
         val trimmed = raw.trim()
+        if (trimmed.length > MAX_ENCODED_AVATAR_BYTES * 2) return null
         val payload = when {
             trimmed.startsWith("data:image/", ignoreCase = true) -> {
                 val commaIndex = trimmed.indexOf(',')
@@ -46,7 +72,7 @@ object CustomerAvatarRules {
             else -> return null
         }
         return runCatching {
-            Base64.decode(payload, Base64.DEFAULT).takeIf { it.isNotEmpty() }
+            Base64.decode(payload, Base64.DEFAULT).takeIf { it.size in 1..MAX_ENCODED_AVATAR_BYTES }
         }.getOrNull()
     }
 
@@ -126,9 +152,25 @@ object CustomerAvatarRules {
 
     suspend fun decodeAvatarBitmapAsync(rawAvatarUrl: String?, fallbackBytes: ByteArray?): Bitmap? =
         withContext(Dispatchers.Default) {
-            val bytes = fromDataUriOrBase64(rawAvatarUrl) ?: fallbackBytes ?: return@withContext null
+            val bytes = (fromDataUriOrBase64(rawAvatarUrl) ?: fallbackBytes)
+                ?.takeIf { it.size in 1..MAX_ENCODED_AVATAR_BYTES }
+                ?: return@withContext null
             runCatching {
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth > 1024 || bounds.outHeight > 1024) {
+                    return@runCatching null
+                }
+                var sample = 1
+                while (min(bounds.outWidth, bounds.outHeight) / (sample * 2) >= AVATAR_DIMENSION_PX) {
+                    sample *= 2
+                }
+                BitmapFactory.decodeByteArray(
+                    bytes,
+                    0,
+                    bytes.size,
+                    BitmapFactory.Options().apply { inSampleSize = sample }
+                )
             }.getOrNull()
         }
 }

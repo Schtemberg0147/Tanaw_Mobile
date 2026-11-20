@@ -55,11 +55,13 @@ import com.tanaw.app.feature.workspace.customer.components.CustomerPersonalInfoC
 import com.tanaw.app.feature.workspace.customer.components.CustomerProfileHeader
 import com.tanaw.app.feature.workspace.customer.components.CustomerProfileNotices
 import com.tanaw.app.feature.workspace.customer.components.CustomerSmsCard
+import com.tanaw.app.feature.workspace.customer.components.CustomerStandingCard
 import com.tanaw.app.feature.workspace.customer.components.CustomerSubPanel
 import com.tanaw.app.feature.workspace.customer.components.CustomerTopBar
 import com.tanaw.app.feature.workspace.customer.dialogs.CustomerFieldEditDialog
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAvatarRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerProfileRules
 import com.tanaw.app.feature.workspace.driver.rules.DriverProfileRules
 import com.tanaw.app.feature.workspace.state.MobileState
@@ -123,7 +125,10 @@ internal fun CustomerProfile(
         scope.launch {
             val file = File(path)
             val rawBytes = withContext(Dispatchers.IO) {
-                runCatching { file.readBytes() }.getOrNull().also {
+                runCatching {
+                    require(file.exists() && file.length() in 1..CustomerAvatarRules.MAX_SOURCE_BYTES.toLong())
+                    file.inputStream().use { CustomerAvatarRules.readSourceWithinLimit(it) }
+                }.getOrNull().also {
                     runCatching { file.delete() }
                 }
             }
@@ -143,19 +148,19 @@ internal fun CustomerProfile(
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+        contract = ActivityResultContracts.PickVisualMedia(),
     ) { pickedUri ->
         if (pickedUri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val mimeType = context.contentResolver.getType(pickedUri)
-            if (mimeType != null && !CustomerAvatarRules.isSupportedMimeType(mimeType)) {
+            if (!CustomerAvatarRules.isSupportedMimeType(mimeType)) {
                 infoDialog = formatErrorMsg
                 return@launch
             }
             val rawBytes = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openInputStream(pickedUri)?.use { stream ->
-                        stream.readBytes()
+                        CustomerAvatarRules.readSourceWithinLimit(stream)
                     }
                 }.getOrNull()
             }
@@ -230,7 +235,11 @@ internal fun CustomerProfile(
             onChooseFromGallery = {
                 showPhotoSheet = false
                 try {
-                    galleryLauncher.launch("image/*")
+                    galleryLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
                 } catch (_: Exception) {
                     infoDialog = formatErrorMsg
                 }
@@ -489,6 +498,11 @@ internal fun CustomerProfile(
                 onEditPhotoClick = { showPhotoSheet = true },
                 avatarBitmap = avatarBitmap,
             )
+
+            val standing = remember(data) { CustomerNoShowRules.evaluateStanding(data) }
+            if (standing.strikeCount > 0) {
+                CustomerStandingCard(standing = standing)
+            }
 
             // ── Personal Information Section ──────────────────────────────────────────
             CustomerPersonalInfoCard(

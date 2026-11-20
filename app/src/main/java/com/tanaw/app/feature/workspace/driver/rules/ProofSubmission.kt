@@ -9,6 +9,34 @@ import java.util.UUID
 
 /** Identity includes recipient and BOTH immutable objects, including historical correction attempts. */
 internal object ProofSubmission {
+    private val SAFE_STORAGE_SEGMENT = Regex("^[A-Za-z0-9._-]{1,120}$")
+
+    fun isSafeStoragePath(raw: String?): Boolean {
+        if (raw.isNullOrBlank()) return false
+        val trimmed = raw.trim()
+        if (trimmed != raw || trimmed.startsWith('/') || trimmed.endsWith('/') || trimmed.contains('\\') || trimmed.contains("//")) {
+            return false
+        }
+        val segments = trimmed.split('/')
+        if (segments.size !in 2..5) return false
+        return segments.all { segment ->
+            segment != "." && segment != ".." && SAFE_STORAGE_SEGMENT.matches(segment)
+        }
+    }
+
+    fun requireSafeStoragePath(raw: String, errorMessage: String = "Document path is invalid."): String {
+        require(isSafeStoragePath(raw)) { errorMessage }
+        return raw
+    }
+
+    fun isMissingPaymentEvidenceSupport(errorMessage: String?): Boolean {
+        if (errorMessage.isNullOrBlank()) return false
+        val msg = errorMessage.lowercase()
+        return msg.contains("pgrst202") ||
+            msg.contains("could not find the function") ||
+            (msg.contains("mobile_delivery_evidence_file") && msg.contains("payment"))
+    }
+
     fun validate(delivery:String,attempt:String,recipient:String,photo:ByteArray,signature:ByteArray) {
         require(UUID.fromString(delivery).toString()==delivery && UUID.fromString(attempt).toString()==attempt)
         require(recipient.trim().length in 2..100 && photo.size in 1..5*1024*1024 && signature.size in 1..5*1024*1024)
