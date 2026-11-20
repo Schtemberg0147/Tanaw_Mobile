@@ -133,6 +133,7 @@ internal object DriverDatabaseData {
 
     suspend fun load(
         readSettings: suspend () -> JsonArray = { JsonArray(emptyList()) },
+        readPayments: (suspend () -> JsonArray)? = null,
         read: suspend (String, String?) -> JsonArray
     ): JsonObject = coroutineScope {
         val fields = mutableMapOf<String, JsonElement>()
@@ -148,6 +149,18 @@ internal object DriverDatabaseData {
                 Result.failure(e)
             }
         }
+
+        val paymentsDeferred = if (readPayments != null) {
+            async {
+                try {
+                    Result.success(readPayments())
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+            }
+        } else null
 
         suspend fun fetchSection(table: String, label: String, driver: String? = null): Pair<String, Result<JsonArray>> =
             try {
@@ -171,6 +184,10 @@ internal object DriverDatabaseData {
                 failed.add("profile settings")
             }
         )
+
+        paymentsDeferred?.await()?.onSuccess {
+            fields["driver_payments"] = it
+        }
 
         val (_, rosterResult) = rosterDeferred.await()
         val roster = rosterResult.fold(

@@ -93,6 +93,7 @@ class MobileWorkspaceViewModel @Inject constructor(
     private val proofDraftStore=ProofDraftStore(context)
     private val incidentDraftStore=IncidentDraftStore(context)
     private val expenseDraftStore=ExpenseDraftStore(context)
+    private val paymentDraftStore=PaymentDraftStore(context)
     internal val bookingDraftStore=BookingDraftStore(context)
     private val avatarStore=CustomerAvatarStore(context)
     private val deviceNotifier=WorkspaceDeviceNotifier(context)
@@ -159,7 +160,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                 try {
                     coroutineScope {
                         val eventsChannel = Channel<String>(Channel.UNLIMITED)
-                        val tables = listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","system_settings","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages")
+                        val tables = listOf("shipments","deliveries","notifications","tracking_logs","shipment_status_history","drivers","trucks","compliance_documents","system_settings","delivery_expenses","delivery_incidents","incident_attachments","delivery_messages","payments")
                         tables.forEach { table ->
                             val changes=channel.postgresChangeFlow<PostgresAction>(schema="public") {this.table=table}
                             launch {changes.collect {eventsChannel.trySend(table)}}
@@ -452,11 +453,19 @@ class MobileWorkspaceViewModel @Inject constructor(
             // Driver-only reads retain the caller's RLS; customer loading is unchanged.
             val (extra, unread) = coroutineScope {
                 val extraDeferred = async {
-                    DriverDatabaseData.load(readSettings = {
-                        client.from("system_settings").select {
-                            filter { isIn("key", listOf("compliance_thresholds", "compliance_threshold_days", "driver_app_content")) }
-                        }.decodeAs<JsonArray>()
-                    }) { table, driverId ->
+                    DriverDatabaseData.load(
+                        readSettings = {
+                            client.from("system_settings").select {
+                                filter { isIn("key", listOf("compliance_thresholds", "compliance_threshold_days", "driver_app_content")) }
+                            }.decodeAs<JsonArray>()
+                        },
+                        readPayments = {
+                            client.from("payments").select {
+                                order("created_at", Order.DESCENDING)
+                                limit(200)
+                            }.decodeAs<JsonArray>()
+                        }
+                    ) { table, driverId ->
                         client.from(table).select {
                             when (table) {
                                 "drivers" -> filter { eq("user_id", id) }
@@ -1195,6 +1204,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             proofDraftStore.clearOwner(owner)
             incidentDraftStore.clearOwner(owner)
             expenseDraftStore.clearOwner(owner)
+            paymentDraftStore.clearOwner(owner)
             val customerId = mutable.value.data?.obj("customer")?.value("id").orEmpty()
             if (customerId.isNotBlank()) bookingDraftStore.clear(customerId)
             bookingDraftStore.clearOwner(owner)
@@ -1743,6 +1753,97 @@ class MobileWorkspaceViewModel @Inject constructor(
             catch(_:Exception){mutable.update {it.copy(message="Expense saved. Close the form to return to your trip.")}}
         },{reloadWorkspaceAndDetails(delivery)},{mutable.update {it.copy(message="Expense saved. Refresh to reload reviewed expense history before another action.",error=null,offline=true)}})
     }
+    fun submitDriverPayment(
+        deliveryId: String,
+        shipmentId: String,
+        requestId: String,
+        method: String,
+        referenceNumber: String,
+        receiptBytes: ByteArray,
+        notes: String,
+        amountDue: java.math.BigDecimal,
+        onSaved: () -> Unit
+    ) = operation {
+        val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED")
+        val version = generation
+        DriverPaymentRules.validateSubmission(deliveryId, requestId, method, referenceNumber, receiptBytes, notes)
+        val jpeg = DriverEvidence.jpegAsync(receiptBytes)
+        val path = DriverPaymentRules.storagePath(deliveryId, requestId)
+        val cleanRef = referenceNumber.trim()
+        val cleanNotes = notes.trim()
+        fun current() = version == generation && client.auth.currentUserOrNull()?.id == uid
+        val bucket = client.storage.from("delivery-documents")
+        var recordedPaymentId = requestId
+        var recordedPaidAt = java.time.Instant.now().toString()
+        var recordedAmount = amountDue
+        ConfirmedMutation.run({
+            check(current())
+            ExpenseSubmission.upload(
+                bytes = jpeg,
+                write = {
+                    check(current())
+                    bucket.upload(path, jpeg) {
+                        upsert = false
+                        contentType = ContentType.Image.JPEG
+                    }
+                },
+                read = {
+                    check(current())
+                    bucket.downloadAuthenticated(path)
+                }
+            )
+            check(current())
+            val response = client.postgrest.rpc(
+                "driver_record_payment",
+                buildJsonObject {
+                    put("p_delivery_id", deliveryId)
+                    put("p_request_id", requestId)
+                    put("p_method", method.trim().lowercase())
+                    if (cleanRef.isNotBlank()) put("p_reference_number", cleanRef) else put("p_reference_number", JsonNull)
+                    put("p_proof_path", path)
+                    if (cleanNotes.isNotBlank()) put("p_notes", cleanNotes) else put("p_notes", JsonNull)
+                }
+            ).decodeAs<JsonElement>() as? JsonObject
+            if (response != null) {
+                recordedPaymentId = response.value("id").ifBlank { requestId }
+                recordedPaidAt = response.value("paid_at").ifBlank { recordedPaidAt }
+                response.value("amount").toBigDecimalOrNull()?.let { recordedAmount = it }
+            }
+        }, ::current, {
+            paymentDraftStore.clear(uid, deliveryId)
+            mutable.update { state ->
+                val updatedData = DriverPaymentRules.applySubmittedPayment(
+                    data = state.data,
+                    shipmentId = shipmentId,
+                    paymentId = recordedPaymentId,
+                    requestId = requestId,
+                    amount = recordedAmount,
+                    method = method,
+                    referenceNumber = cleanRef,
+                    proofPath = path,
+                    notes = cleanNotes,
+                    paidAt = recordedPaidAt
+                )
+                state.copy(
+                    data = updatedData ?: state.data,
+                    message = "Payment proof submitted. Waiting for office verification before departure.",
+                    error = null
+                )
+            }
+            try { onSaved() } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                mutable.update { it.copy(message = "Payment proof submitted. Close the form to check verification status.") }
+            }
+        }, { reloadWorkspaceAndDetails(deliveryId) }, {
+            mutable.update {
+                it.copy(
+                    message = "Payment proof saved. Refresh to check office verification status before departing.",
+                    error = null,
+                    offline = true
+                )
+            }
+        })
+    }
     fun submitProof(id:String,recipient:String,photo:ByteArray,signature:ByteArray,attempt:String,onSaved:()->Unit)=operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_DRIVER_REQUIRED");val version=generation
         ProofSubmission.validate(id,attempt,recipient,photo,signature)
@@ -1971,6 +2072,42 @@ class MobileWorkspaceViewModel @Inject constructor(
         val bitmap=withContext(Dispatchers.Default){ProofImage.decode(client.storage.from("delivery-documents").downloadAuthenticated(path))}
         if(version==generation && uid==client.auth.currentUserOrNull()?.id)mutable.update {it.copy(proof=bitmap,proofTitle=if(kind=="expense")"Expense receipt" else "Incident photo")}
         else bitmap.recycle()
+    }
+    fun viewPaymentProof(shipment: String, paymentId: String, proofPath: String) = operation {
+        val version = generation
+        val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        val resolvedPath = try {
+            if (paymentId.isNotBlank()) {
+                client.postgrest.rpc(
+                    "mobile_delivery_evidence_file",
+                    buildJsonObject {
+                        put("p_shipment", shipment)
+                        put("p_kind", "payment")
+                        put("p_record", paymentId)
+                    }
+                ).decodeAs<String>()
+            } else proofPath
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            proofPath
+        }
+        require(resolvedPath.isNotBlank() && !resolvedPath.startsWith('/') && resolvedPath.split('/').none { it == ".." }) {
+            "Signed receipt photo is unavailable."
+        }
+        val bytes = client.storage.from("delivery-documents").downloadAuthenticated(resolvedPath)
+        val bitmap = withContext(Dispatchers.Default) { ProofImage.decode(bytes) }
+        if (version == generation && uid == client.auth.currentUserOrNull()?.id) {
+            mutable.update {
+                it.copy(
+                    proof = bitmap,
+                    proofTitle = "Signed Payment Receipt",
+                    proofSubtitle = ""
+                )
+            }
+        } else {
+            bitmap.recycle()
+        }
     }
     private suspend fun readRouteStatus(delivery:String):JsonObject {
         val token=client.auth.currentSessionOrNull()?.accessToken ?: error("ACTIVE_ACCOUNT_REQUIRED")

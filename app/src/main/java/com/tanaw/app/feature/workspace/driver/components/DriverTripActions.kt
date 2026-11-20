@@ -30,10 +30,19 @@ import com.tanaw.app.feature.workspace.tracking.*
 import com.tanaw.app.feature.workspace.viewmodel.*
 import com.tanaw.app.ui.components.StatusBadge
 import com.tanaw.app.ui.components.SupportingText
+import com.tanaw.app.ui.theme.ExpiredRed
+import com.tanaw.app.ui.theme.ExpiredRedBg
+import com.tanaw.app.ui.theme.ExpiringOrange
+import com.tanaw.app.ui.theme.ExpiringOrangeBg
+import com.tanaw.app.ui.theme.SuccessBannerBg
+import com.tanaw.app.ui.theme.SuccessGreen
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
+import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.math.BigDecimal
 import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
@@ -101,6 +110,10 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
  }
  var action by remember {mutableStateOf<String?>(null)};var error by remember {mutableStateOf<String?>(null)};var locating by remember {mutableStateOf(false)}
  var proof by rememberSaveable(id){mutableStateOf(false)};var incident by rememberSaveable(id){mutableStateOf(false)}
+ var paymentOpen by rememberSaveable(id){mutableStateOf(false)}
+ val paymentSummary = remember(resolvedShipment, data, state.details) {
+  DriverPaymentRules.evaluate(resolvedShipment, data, state.details)
+ }
  fun runLocationAction() {
   if(ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){error="Allow precise location to verify arrival within 50m and share this trip.";return}
   when(action) {
@@ -190,11 +203,19 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
   error = error,
   noShowDue = noShowDue,
   hasProofDraft = hasProofDraft,
+  paymentSummary = paymentSummary,
   onRequestLocationAction = ::request,
   onStopTracking = { TripTrackingService.stop(context) },
   onDriverAction = { vm.driver(id, it) },
   onOpenProof = { proof = true },
   onOpenIncident = { incident = true },
+  onOpenPayment = { paymentOpen = true },
+  onViewPaymentProof = {
+   val shipmentId = resolvedShipment.value("id").ifBlank { delivery.value("shipment_id") }
+   if (shipmentId.isNotBlank()) {
+    vm.viewPaymentProof(shipmentId, paymentSummary.latestPaymentId, paymentSummary.latestProofPath)
+   }
+  },
   onRefreshTrip = {
    error = null
    vm.refresh()
@@ -204,6 +225,34 @@ suspend fun freshDriverLocation(context:Context):Location = withTimeout(20.secon
  )
  if(incident)DriverIncidentDialog(id,owner,state,vm){incident=false}
  if(proof)DriverProofDialog(id,owner,reference,state,vm,onBackHome=onBackHome){proof=false}
+ if(paymentOpen && status == "loading" && paymentSummary.canSubmitPayment && paymentSummary.balance > BigDecimal.ZERO) {
+  val shipmentId = resolvedShipment.value("id").ifBlank { delivery.value("shipment_id") }
+  DriverPaymentSheet(
+   deliveryId = id,
+   trackingNumber = reference.ifBlank { resolvedShipment.value("tracking_number") },
+   amountDue = paymentSummary.balance,
+   isResubmission = paymentSummary.gateStatus == DriverPaymentGateStatus.REJECTED,
+   rejectionReason = paymentSummary.rejectionReason,
+   isSubmitting = state.busy,
+   errorMessage = state.error,
+   offline = state.offline,
+   owner = owner,
+   onDismiss = { paymentOpen = false },
+   onSubmit = { requestId, method, refNum, receiptBytes, notes ->
+    vm.submitDriverPayment(
+     deliveryId = id,
+     shipmentId = shipmentId,
+     requestId = requestId,
+     method = method,
+     referenceNumber = refNum,
+     receiptBytes = receiptBytes,
+     notes = notes,
+     amountDue = paymentSummary.balance,
+     onSaved = { paymentOpen = false }
+    )
+   }
+  )
+ }
 }
 
 @Composable
@@ -217,11 +266,14 @@ internal fun DriverTripActionsContent(
  error: String?,
  noShowDue: Boolean,
  hasProofDraft: Boolean,
+ paymentSummary: DriverPaymentSummary = DriverPaymentRules.evaluate(shipment, state.data, state.details),
  onRequestLocationAction: (String) -> Unit,
  onStopTracking: () -> Unit,
  onDriverAction: (String) -> Unit,
  onOpenProof: () -> Unit,
  onOpenIncident: () -> Unit,
+ onOpenPayment: () -> Unit = {},
+ onViewPaymentProof: () -> Unit = {},
  onRefreshTrip: () -> Unit,
  modifier: Modifier = Modifier
 ) {
@@ -308,7 +360,17 @@ internal fun DriverTripActionsContent(
    }
   }
   if (status == "loading") {
-   DriverButton("CARGO LOADED", !busy) { onDriverAction("loaded") }
+   DriverPaymentGateCard(
+    summary = paymentSummary,
+    busy = busy,
+    onOpenPayment = onOpenPayment,
+    onRefreshTrip = onRefreshTrip,
+    onViewPaymentProof = onViewPaymentProof
+   )
+   DriverButton(
+    label = if (paymentSummary.canDepart) "CARGO LOADED — START TRANSIT" else "START TRANSIT (AWAITING VERIFICATION)",
+    enabled = !busy && paymentSummary.canDepart
+   ) { onDriverAction("loaded") }
   }
   if (status == "in_transit" || (status == "delivered" && delivery.value("proof_review_status") == "correction_requested")) {
    delivery.value("proof_review_reason").takeIf(String::isNotBlank)?.let {
@@ -431,3 +493,292 @@ private fun DriverTripActionsDestinationMissingPinsPreview() {
   )
  }
 }
+
+@Composable
+internal fun DriverPaymentGateCard(
+ summary: DriverPaymentSummary,
+ busy: Boolean,
+ onOpenPayment: () -> Unit,
+ onRefreshTrip: () -> Unit,
+ onViewPaymentProof: () -> Unit,
+ modifier: Modifier = Modifier
+) {
+ val (containerColor, contentColor, borderColor, title) = when (summary.gateStatus) {
+  DriverPaymentGateStatus.VERIFIED -> Quad(
+   SuccessBannerBg,
+   SuccessGreen,
+   SuccessGreen.copy(alpha = 0.35f),
+   "Full payment verified by office"
+  )
+  DriverPaymentGateStatus.PENDING_REVIEW -> Quad(
+   ExpiringOrangeBg,
+   ExpiringOrange,
+   ExpiringOrange.copy(alpha = 0.35f),
+   "Awaiting office payment verification"
+  )
+  DriverPaymentGateStatus.REJECTED -> Quad(
+   ExpiredRedBg,
+   ExpiredRed,
+   ExpiredRed.copy(alpha = 0.35f),
+   "Payment proof rejected by office"
+  )
+  DriverPaymentGateStatus.FINAL_AMOUNT_MISSING -> Quad(
+   ExpiringOrangeBg,
+   ExpiringOrange,
+   ExpiringOrange.copy(alpha = 0.35f),
+   "Final charge awaiting office setup"
+  )
+  DriverPaymentGateStatus.UNPAID -> Quad(
+   MaterialTheme.colorScheme.surfaceContainerHigh,
+   MaterialTheme.colorScheme.onSurface,
+   MaterialTheme.colorScheme.outlineVariant,
+   "Full payment required before transit"
+  )
+ }
+
+ Surface(
+  color = containerColor,
+  shape = RoundedCornerShape(12.dp),
+  border = BorderStroke(1.dp, borderColor),
+  modifier = modifier.fillMaxWidth()
+ ) {
+  Column(
+   modifier = Modifier.fillMaxWidth().padding(14.dp),
+   verticalArrangement = Arrangement.spacedBy(8.dp)
+  ) {
+   Text(
+    text = title,
+    style = MaterialTheme.typography.titleSmall,
+    fontWeight = FontWeight.SemiBold,
+    color = contentColor
+   )
+
+   when (summary.gateStatus) {
+    DriverPaymentGateStatus.UNPAID -> {
+     Text(
+      text = "Amount due: ${MobilePresentation.money(summary.balance.toPlainString())}",
+      style = MaterialTheme.typography.titleMedium.copy(
+       fontFamily = TanawMonoFontFamily,
+       fontWeight = FontWeight.Bold
+      ),
+      color = MaterialTheme.colorScheme.primary
+     )
+     Text(
+      text = "After loading cargo, bill the customer in full, have them sign the receipt, and submit payment proof for office verification.",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant
+     )
+     DriverButton("RECORD PAYMENT RECEIVED", !busy, onOpenPayment)
+    }
+    DriverPaymentGateStatus.PENDING_REVIEW -> {
+     val methodLabel = DriverPaymentMethod.fromValue(summary.latestPaymentMethod).label
+     val submittedLine = listOfNotNull(
+      MobilePresentation.money(summary.balance.toPlainString()),
+      methodLabel.takeIf { summary.latestPaymentMethod.isNotBlank() },
+      summary.latestPaidAt.takeIf { it.isNotBlank() }?.let { MobilePresentation.time(it) }
+     ).joinToString(" · ")
+     Text(
+      text = submittedLine,
+      style = MaterialTheme.typography.bodyMedium.copy(
+       fontFamily = TanawMonoFontFamily,
+       fontWeight = FontWeight.Medium
+      ),
+      color = contentColor
+     )
+     Text(
+      text = "Wait at pick-up until the office verifies the payment. Start Transit unlocks automatically once verified.",
+      style = MaterialTheme.typography.bodySmall,
+      color = contentColor
+     )
+     Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
+     ) {
+      OutlinedButton(
+       onClick = onRefreshTrip,
+       enabled = !busy,
+       shape = RoundedCornerShape(10.dp),
+       modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+      ) {
+       Text("Refresh Status")
+      }
+      if (summary.latestProofPath.isNotBlank() || summary.latestPaymentId.isNotBlank()) {
+       OutlinedButton(
+        onClick = onViewPaymentProof,
+        enabled = !busy,
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+       ) {
+        Text("View Receipt")
+       }
+      }
+     }
+    }
+    DriverPaymentGateStatus.REJECTED -> {
+     Text(
+      text = "Amount due: ${MobilePresentation.money(summary.balance.toPlainString())}",
+      style = MaterialTheme.typography.titleSmall.copy(
+       fontFamily = TanawMonoFontFamily,
+       fontWeight = FontWeight.Bold
+      ),
+      color = contentColor
+     )
+     Text(
+      text = summary.rejectionReason.ifBlank { "Office could not verify the previous submission. Confirm payment with the customer and resubmit." },
+      style = MaterialTheme.typography.bodySmall,
+      color = contentColor
+     )
+     DriverButton("RESUBMIT PAYMENT PROOF", !busy, onOpenPayment)
+    }
+    DriverPaymentGateStatus.VERIFIED -> {
+     val amountText = summary.finalAmount?.let { MobilePresentation.money(it.toPlainString()) }.orEmpty()
+     Text(
+      text = if (amountText.isNotBlank()) "$amountText verified. You may now depart and start transit."
+      else "Payment verified. You may now depart and start transit.",
+      style = MaterialTheme.typography.bodySmall,
+      color = contentColor
+     )
+    }
+    DriverPaymentGateStatus.FINAL_AMOUNT_MISSING -> {
+     Text(
+      text = "The office has not finalized the shipment charge yet. Contact dispatch or refresh before collecting payment.",
+      style = MaterialTheme.typography.bodySmall,
+      color = contentColor
+     )
+     OutlinedButton(
+      onClick = onRefreshTrip,
+      enabled = !busy,
+      shape = RoundedCornerShape(10.dp),
+      modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+     ) {
+      Text("Refresh Trip Details")
+     }
+    }
+   }
+  }
+ }
+}
+
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+@Preview(showBackground = true, name = "Loading — Payment Unpaid")
+@Composable
+private fun DriverTripActionsPaymentUnpaidPreview() {
+ DriverTheme {
+  DriverTripActionsContent(
+   delivery = buildJsonObject {
+    put("id", "del-1")
+    put("shipment_id", "shp-1")
+    put("status", "loading")
+    put("route_started_at", "2026-11-20T01:00:00Z")
+   },
+   shipment = buildJsonObject {
+    put("id", "shp-1")
+    put("final_amount", "2500.00")
+   },
+   state = MobileState(),
+   tracking = TrackingStatus(delivery = "del-1", message = "Sharing live location", buffered = 0),
+   locating = false,
+   activeAction = null,
+   error = null,
+   noShowDue = false,
+   hasProofDraft = false,
+   paymentSummary = DriverPaymentSummary(
+    finalAmount = BigDecimal("2500.00"),
+    verifiedPaid = BigDecimal.ZERO,
+    balance = BigDecimal("2500.00"),
+    gateStatus = DriverPaymentGateStatus.UNPAID
+   ),
+   onRequestLocationAction = {},
+   onStopTracking = {},
+   onDriverAction = {},
+   onOpenProof = {},
+   onOpenIncident = {},
+   onRefreshTrip = {},
+   modifier = Modifier.padding(16.dp)
+  )
+ }
+}
+
+@Preview(showBackground = true, name = "Loading — Payment Pending Review")
+@Composable
+private fun DriverTripActionsPaymentPendingPreview() {
+ DriverTheme {
+  DriverTripActionsContent(
+   delivery = buildJsonObject {
+    put("id", "del-1")
+    put("shipment_id", "shp-1")
+    put("status", "loading")
+    put("route_started_at", "2026-11-20T01:00:00Z")
+   },
+   shipment = buildJsonObject {
+    put("id", "shp-1")
+    put("final_amount", "2500.00")
+   },
+   state = MobileState(),
+   tracking = TrackingStatus(delivery = "del-1", message = "Sharing live location", buffered = 0),
+   locating = false,
+   activeAction = null,
+   error = null,
+   noShowDue = false,
+   hasProofDraft = false,
+   paymentSummary = DriverPaymentSummary(
+    finalAmount = BigDecimal("2500.00"),
+    verifiedPaid = BigDecimal.ZERO,
+    balance = BigDecimal("2500.00"),
+    gateStatus = DriverPaymentGateStatus.PENDING_REVIEW,
+    latestPaymentId = "pay-1",
+    latestPaymentMethod = "cash",
+    latestProofPath = "del-1/payment-req-1.jpg",
+    latestPaidAt = "2026-11-20T02:15:00Z"
+   ),
+   onRequestLocationAction = {},
+   onStopTracking = {},
+   onDriverAction = {},
+   onOpenProof = {},
+   onOpenIncident = {},
+   onRefreshTrip = {},
+   modifier = Modifier.padding(16.dp)
+  )
+ }
+}
+
+@Preview(showBackground = true, name = "Loading — Payment Verified")
+@Composable
+private fun DriverTripActionsPaymentVerifiedPreview() {
+ DriverTheme {
+  DriverTripActionsContent(
+   delivery = buildJsonObject {
+    put("id", "del-1")
+    put("shipment_id", "shp-1")
+    put("status", "loading")
+    put("route_started_at", "2026-11-20T01:00:00Z")
+   },
+   shipment = buildJsonObject {
+    put("id", "shp-1")
+    put("final_amount", "2500.00")
+   },
+   state = MobileState(),
+   tracking = TrackingStatus(delivery = "del-1", message = "Sharing live location", buffered = 0),
+   locating = false,
+   activeAction = null,
+   error = null,
+   noShowDue = false,
+   hasProofDraft = false,
+   paymentSummary = DriverPaymentSummary(
+    finalAmount = BigDecimal("2500.00"),
+    verifiedPaid = BigDecimal("2500.00"),
+    balance = BigDecimal.ZERO,
+    gateStatus = DriverPaymentGateStatus.VERIFIED
+   ),
+   onRequestLocationAction = {},
+   onStopTracking = {},
+   onDriverAction = {},
+   onOpenProof = {},
+   onOpenIncident = {},
+   onRefreshTrip = {},
+   modifier = Modifier.padding(16.dp)
+  )
+ }
+}
+

@@ -178,6 +178,13 @@ object MobileErrorClassifier {
             detail.contains("CANCELLATION_REASON_REQUIRED") -> "Please enter a valid cancellation reason."
             detail.contains("SHIPMENT_NOT_CANCELLABLE") -> "This shipment can no longer be cancelled. Contact the office for assistance."
             detail.contains("SHIPMENT_NOT_FOUND") -> "Shipment not found. Refresh your active shipments and try again."
+            detail.contains("PAYMENT_VERIFICATION_REQUIRED") -> "Full payment must be verified by the office before starting transit."
+            detail.contains("PAYMENT_ALREADY_PENDING") -> "A payment submission is already awaiting office verification. Tap Refresh to check its status."
+            detail.contains("PAYMENT_ALREADY_PAID") -> "Full payment for this shipment is already verified. Refresh to unlock transit."
+            detail.contains("FINAL_AMOUNT_REQUIRED") -> "Final shipment charge has not been set by the office yet. Contact dispatch."
+            detail.contains("PAYMENT_PROOF_REQUIRED") -> "Attach a clear photo of the customer-signed receipt before submitting."
+            detail.contains("PAYMENT_REFERENCE_REQUIRED") -> "Enter the transaction reference number for this payment method."
+            detail.contains("INVALID_PAYMENT_STATE") -> "Payment can only be recorded while the trip is in loading status."
             detail.contains("INVALID_") || error is IllegalArgumentException -> "Check the entered details and try again."
             isAuthError(error) -> "Your session could not be verified. Sign in again to verify access."
             else -> "Unable to complete the request. Check your connection, refresh and try again."
@@ -202,6 +209,13 @@ object MobileErrorClassifier {
                 msg.contains("OUTSIDE_OPERATING_HOURS") ||
                 msg.contains("WAIT_PERIOD_NOT_FINISHED") ||
                 msg.contains("DELIVERY_CLOSED") ||
+                msg.contains("PAYMENT_VERIFICATION_REQUIRED") ||
+                msg.contains("PAYMENT_ALREADY_PENDING") ||
+                msg.contains("PAYMENT_ALREADY_PAID") ||
+                msg.contains("FINAL_AMOUNT_REQUIRED") ||
+                msg.contains("PAYMENT_PROOF_REQUIRED") ||
+                msg.contains("PAYMENT_REFERENCE_REQUIRED") ||
+                msg.contains("INVALID_PAYMENT_STATE") ||
                 msg.contains("INVALID_CONTACT") ||
                 msg.contains("INVALID_PHONE") ||
                 msg.contains("ACTIVE_ACCOUNT_REQUIRED") ||

@@ -61,7 +61,8 @@ object WorkspaceSyncRules {
             "shipments",
             "shipment_status_history",
             "delivery_expenses",
-            "delivery_incidents"
+            "delivery_incidents",
+            "payments"
         )
     }
 

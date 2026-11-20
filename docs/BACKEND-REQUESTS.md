@@ -318,7 +318,7 @@ TANAW operates strictly for **scheduled Full Truckload (FTL)** deliveries (no LT
    - `mobile_accept_shipment_quote(p_shipment uuid)` transitions customer-accepted quotes from `'quoted'` to `'booked'`.
 7. **Driver Tracking & Chained-Dispatch Triggers (`20261120120000_ftl_alignment_chained_dispatch.sql`):**
    - `driver_record_position(p_delivery, p_sample, p_data)` inserts `{truck_id, delivery_id, latitude, longitude, recorded_at}` into `public.tracking_logs`, firing `trg_sync_truck_gps_from_tracking` to sync `trucks.current_lat`, `current_lng`, and `last_location_at`.
-   - `mobile_driver_action`, `driver_arrive_at_pickup`, `driver_submit_pod`, and `/functions/v1/delivery-routing` (`mode = 'eta'`) update `public.deliveries` (`delivered`, `completed`, etc.) and `public.delivery_route_eta` (`leg = 'destination'`), firing `trg_sync_truck_availability_on_delivery` and `trg_sync_truck_eta_from_route` to maintain `trucks.next_available_address`, `next_available_lat`, `next_available_lng`, and `next_available_at`.
+   - `mobile_driver_action`, `driver_arrive_at_pickup`, `driver_submit_pod`, and `/functions/v1/delivery-routing` (`mode = 'eta'`) update `public.deliveries` (`delivered`, etc.) and `public.delivery_route_eta` (`leg = 'destination'`), firing `trg_sync_truck_availability_on_delivery` and `trg_sync_truck_eta_from_route` to maintain `trucks.next_available_address`, `next_available_lat`, `next_available_lng`, and `next_available_at`.
 
 ---
 
@@ -332,6 +332,430 @@ TANAW operates strictly for **scheduled Full Truckload (FTL)** deliveries (no LT
 2. **Device Push Notifications When App Process Is Terminated (Optional FCM Extension):**
    - The Android client now posts heads-up Android system notifications (`WorkspaceDeviceNotifier`, channel `tanaw_workspace_alerts`) whenever new unread `public.notifications` rows arrive over Supabase Realtime or workspace polling, and deep-links notification taps directly into the shipment or Alerts screen.
    - If the business later requires wake-from-killed-process push delivery when the app is completely swiped away, the backend can add a `public.user_push_tokens` table and a database webhook on `public.notifications` `AFTER INSERT` that dispatches an FCM data payload containing `notification_id`, `shipment_id`, `title`, and `body`.
+
+---
+
+## 6. Request D06: Driver Face-to-Face Full Payment Collection & Strict Admin Verification Gate
+
+### Motivation
+Mabutol Trucking operates a strict **payment-first** workflow after cargo loading:
+1. Final shipment charges (`public.shipments.final_amount`) are always finalized by the office before dispatch.
+2. Right after cargo is loaded onto the truck (`deliveries.status = 'loading'`), the driver and helpers bill the customer face-to-face for the **full remaining balance** (no partial settlements from the driver).
+3. The customer signs a physical paper receipt after paying (for all payment methods: Cash, GCash, Bank Transfer, Check).
+4. To prevent collusion or fake payment proofs, every driver-submitted payment starts as `status = 'pending'` and requires **manual office verification** before the driver is allowed to depart (`loading` → `in_transit`).
+5. Once an admin clicks **Verify** in the web Payment Ledger, the driver's **Start Transit** button unlocks in real time so the driver can depart and record an accurate `departed_at`. If the customer already prepaid at the office and the payment is `verified` (`balance <= 0`), the gate is already satisfied and the driver does not double-bill the customer.
+
+Currently:
+- `public.payments` exists with `amount`, `method`, `reference_number`, `proof_path`, `status` (`pending`, `verified`, `rejected`, `refunded`), `paid_at`, `verified_by`, `verified_at`, `notes`, and `created_by`, plus the `payments_check` constraint requiring `verified_by` and `verified_at` when `status = 'verified'`.
+- `public.payments` has no `client_request_id` (for idempotent mobile retries) and no dedicated `rejection_reason` column (separate from driver `notes`).
+- Drivers have no RLS `SELECT` policy on `public.payments` and no `driver_record_payment` RPC.
+- `driver_confirm_cargo_loaded` / `mobile_driver_action('loaded')` does not yet enforce server-side payment verification before transitioning `loading` → `in_transit`.
+- The web Payment Ledger currently supports manual **Record Payment** only, and needs **View Receipt**, **Verify**, and **Reject (with reason)** actions for `pending` rows.
+
+### Proposed Schema, RLS & Realtime Changes
+
+```sql
+-- 1. Add idempotency key and separate rejection_reason to public.payments
+ALTER TABLE public.payments
+    ADD COLUMN IF NOT EXISTS client_request_id uuid,
+    ADD COLUMN IF NOT EXISTS rejection_reason text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS payments_shipment_client_request_uidx
+    ON public.payments (shipment_id, client_request_id)
+    WHERE client_request_id IS NOT NULL;
+
+-- 2. Allow assigned drivers to read payment rows for their assigned shipments (needed for gate status & Realtime)
+DROP POLICY IF EXISTS "driver reads assigned shipment payments" ON public.payments;
+CREATE POLICY "driver reads assigned shipment payments"
+ON public.payments
+FOR SELECT
+TO authenticated
+USING (
+    shipment_id IN (SELECT public.my_driver_shipment_ids())
+);
+
+-- 3. Ensure public.payments is in the Realtime publication so Verify/Reject pushes immediately to mobile
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = 'payments'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.payments;
+    END IF;
+END $$;
+
+-- 4. Storage policies on delivery-documents for driver payment receipt uploads & reads
+DROP POLICY IF EXISTS "driver uploads payment receipt for loading delivery" ON storage.objects;
+CREATE POLICY "driver uploads payment receipt for loading delivery"
+ON storage.objects
+FOR INSERT
+TO authenticated
+WITH CHECK (
+    bucket_id = 'delivery-documents'
+    AND name ~ '^[0-9a-f-]{36}/payment-[0-9a-f-]{36}\.jpg$'
+    AND EXISTS (
+        SELECT 1
+        FROM public.deliveries d
+        WHERE d.id::text = split_part(name, '/', 1)
+          AND d.driver_id = public.my_driver_id()
+          AND d.status = 'loading'
+    )
+);
+
+DROP POLICY IF EXISTS "authorized users read recorded payment receipts" ON storage.objects;
+CREATE POLICY "authorized users read recorded payment receipts"
+ON storage.objects
+FOR SELECT
+TO authenticated
+USING (
+    bucket_id = 'delivery-documents'
+    AND EXISTS (
+        SELECT 1
+        FROM public.payments p
+        WHERE p.proof_path = storage.objects.name
+          AND (
+              public.is_admin()
+              OR p.shipment_id IN (SELECT public.my_driver_shipment_ids())
+          )
+    )
+);
+```
+
+### Proposed RPC Contracts
+
+```sql
+-- 1. Driver records full payment received after loading (always status = 'pending')
+CREATE OR REPLACE FUNCTION public.driver_record_payment(
+    p_delivery_id uuid,
+    p_request_id uuid,
+    p_method public.payment_method,
+    p_reference_number text DEFAULT NULL,
+    p_proof_path text DEFAULT NULL,
+    p_notes text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_driver_id uuid;
+    v_delivery public.deliveries%ROWTYPE;
+    v_shipment public.shipments%ROWTYPE;
+    v_existing public.payments%ROWTYPE;
+    v_verified_paid numeric(12,2);
+    v_balance numeric(12,2);
+    v_ref text := nullif(btrim(coalesce(p_reference_number, '')), '');
+    v_notes text := nullif(btrim(coalesce(p_notes, '')), '');
+    v_proof text := nullif(btrim(coalesce(p_proof_path, '')), '');
+    v_payment public.payments%ROWTYPE;
+    v_customer_user_id uuid;
+BEGIN
+    IF v_uid IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND is_active AND role = 'driver'
+    ) THEN
+        RAISE EXCEPTION 'ACTIVE_DRIVER_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT id INTO v_driver_id FROM public.drivers WHERE user_id = v_uid LIMIT 1;
+    IF v_driver_id IS NULL THEN
+        RAISE EXCEPTION 'ACTIVE_DRIVER_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    IF p_delivery_id IS NULL OR p_request_id IS NULL THEN
+        RAISE EXCEPTION 'INVALID_PAYMENT_REQUEST';
+    END IF;
+
+    -- Serialize concurrent retries for the same delivery
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_delivery_id::text, 0));
+
+    SELECT * INTO v_delivery
+    FROM public.deliveries
+    WHERE id = p_delivery_id AND driver_id = v_driver_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'DELIVERY_NOT_FOUND';
+    END IF;
+
+    IF v_delivery.status <> 'loading' THEN
+        RAISE EXCEPTION 'INVALID_PAYMENT_STATE';
+    END IF;
+
+    SELECT * INTO v_shipment
+    FROM public.shipments
+    WHERE id = v_delivery.shipment_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'SHIPMENT_NOT_FOUND';
+    END IF;
+
+    -- Idempotent replay check on client_request_id
+    SELECT * INTO v_existing
+    FROM public.payments
+    WHERE shipment_id = v_shipment.id AND client_request_id = p_request_id;
+
+    IF FOUND THEN
+        IF v_existing.created_by IS DISTINCT FROM v_uid
+           OR v_existing.method IS DISTINCT FROM p_method
+           OR v_existing.reference_number IS DISTINCT FROM v_ref
+           OR v_existing.proof_path IS DISTINCT FROM v_proof THEN
+            RAISE EXCEPTION 'REQUEST_ALREADY_SAVED_REFRESH';
+        END IF;
+        RETURN jsonb_build_object(
+            'id', v_existing.id,
+            'shipment_id', v_existing.shipment_id,
+            'amount', v_existing.amount,
+            'method', v_existing.method,
+            'status', v_existing.status,
+            'paid_at', v_existing.paid_at
+        );
+    END IF;
+
+    IF v_shipment.final_amount IS NULL OR v_shipment.final_amount <= 0 THEN
+        RAISE EXCEPTION 'FINAL_AMOUNT_REQUIRED';
+    END IF;
+
+    SELECT coalesce(sum(amount), 0) INTO v_verified_paid
+    FROM public.payments
+    WHERE shipment_id = v_shipment.id AND status = 'verified';
+
+    v_balance := v_shipment.final_amount - v_verified_paid;
+    IF v_balance <= 0 THEN
+        RAISE EXCEPTION 'PAYMENT_ALREADY_PAID';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.payments
+        WHERE shipment_id = v_shipment.id AND status = 'pending'
+    ) THEN
+        RAISE EXCEPTION 'PAYMENT_ALREADY_PENDING';
+    END IF;
+
+    IF v_proof IS NULL OR v_proof <> (p_delivery_id::text || '/payment-' || p_request_id::text || '.jpg') THEN
+        RAISE EXCEPTION 'PAYMENT_PROOF_REQUIRED';
+    END IF;
+
+    IF p_method IN ('gcash', 'bank_transfer', 'check') AND v_ref IS NULL THEN
+        RAISE EXCEPTION 'PAYMENT_REFERENCE_REQUIRED';
+    END IF;
+
+    INSERT INTO public.payments (
+        shipment_id, amount, method, reference_number, proof_path,
+        status, paid_at, notes, created_by, client_request_id
+    )
+    VALUES (
+        v_shipment.id, v_balance, p_method, v_ref, v_proof,
+        'pending', now(), v_notes, v_uid, p_request_id
+    )
+    RETURNING * INTO v_payment;
+
+    -- Notify active admin/staff users for immediate review before truck departs
+    INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+    SELECT
+        u.id,
+        'payment'::public.notification_type,
+        'Payment verification required',
+        'Driver submitted ₱' || to_char(v_balance, 'FM999,999,990.00') || ' (' || p_method::text ||
+        ') for ' || coalesce(v_shipment.tracking_number, 'shipment') || '. Review signed receipt before departure.',
+        v_shipment.id
+    FROM public.users u
+    WHERE u.is_active AND u.role IN ('admin', 'staff');
+
+    -- Notify customer for transparency (anti-collusion audit)
+    SELECT c.user_id INTO v_customer_user_id
+    FROM public.customers c
+    WHERE c.id = v_shipment.customer_id;
+
+    IF v_customer_user_id IS NOT NULL THEN
+        INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+        VALUES (
+            v_customer_user_id,
+            'payment'::public.notification_type,
+            'Payment submitted for office review',
+            'Your driver recorded a full payment of ₱' || to_char(v_balance, 'FM999,999,990.00') ||
+            ' (' || p_method::text || ') for ' || coalesce(v_shipment.tracking_number, 'your shipment') ||
+            '. It is pending office verification.',
+            v_shipment.id
+        );
+    END IF;
+
+    RETURN jsonb_build_object(
+        'id', v_payment.id,
+        'shipment_id', v_payment.shipment_id,
+        'amount', v_payment.amount,
+        'method', v_payment.method,
+        'status', v_payment.status,
+        'paid_at', v_payment.paid_at
+    );
+END $$;
+
+REVOKE ALL ON FUNCTION public.driver_record_payment(uuid, uuid, public.payment_method, text, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.driver_record_payment(uuid, uuid, public.payment_method, text, text, text) TO authenticated;
+
+-- 2. Admin/Staff verifies or rejects a pending payment from the Web Payment Ledger
+CREATE OR REPLACE FUNCTION public.review_shipment_payment(
+    p_payment_id uuid,
+    p_decision text,
+    p_reason text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_payment public.payments%ROWTYPE;
+    v_shipment public.shipments%ROWTYPE;
+    v_driver_user_id uuid;
+    v_customer_user_id uuid;
+    v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+BEGIN
+    IF v_uid IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND is_active AND role IN ('admin', 'staff')
+    ) THEN
+        RAISE EXCEPTION 'OFFICE_ACCESS_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_payment
+    FROM public.payments
+    WHERE id = p_payment_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'PAYMENT_NOT_FOUND';
+    END IF;
+
+    IF v_payment.status <> 'pending' THEN
+        RAISE EXCEPTION 'PAYMENT_ALREADY_REVIEWED';
+    END IF;
+
+    SELECT * INTO v_shipment FROM public.shipments WHERE id = v_payment.shipment_id;
+
+    SELECT dr.user_id INTO v_driver_user_id
+    FROM public.deliveries d
+    JOIN public.drivers dr ON dr.id = d.driver_id
+    WHERE d.shipment_id = v_shipment.id AND d.status <> 'cancelled'
+    ORDER BY d.assigned_at DESC
+    LIMIT 1;
+
+    SELECT c.user_id INTO v_customer_user_id
+    FROM public.customers c
+    WHERE c.id = v_shipment.customer_id;
+
+    IF p_decision = 'verify' THEN
+        UPDATE public.payments
+        SET status = 'verified',
+            verified_by = v_uid,
+            verified_at = now(),
+            rejection_reason = NULL,
+            updated_at = now()
+        WHERE id = v_payment.id;
+
+        IF v_driver_user_id IS NOT NULL THEN
+            INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+            VALUES (
+                v_driver_user_id,
+                'payment'::public.notification_type,
+                'Payment verified — ready to depart',
+                'Office verified ₱' || to_char(v_payment.amount, 'FM999,999,990.00') || ' for ' ||
+                coalesce(v_shipment.tracking_number, 'your trip') || '. You may now start transit.',
+                v_shipment.id
+            );
+        END IF;
+
+        IF v_customer_user_id IS NOT NULL THEN
+            INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+            VALUES (
+                v_customer_user_id,
+                'payment'::public.notification_type,
+                'Payment verified',
+                'Your payment of ₱' || to_char(v_payment.amount, 'FM999,999,990.00') || ' for ' ||
+                coalesce(v_shipment.tracking_number, 'your shipment') || ' has been verified by the office.',
+                v_shipment.id
+            );
+        END IF;
+
+        RETURN jsonb_build_object('id', v_payment.id, 'status', 'verified');
+
+    ELSIF p_decision = 'reject' THEN
+        IF v_reason IS NULL OR length(v_reason) < 3 THEN
+            RAISE EXCEPTION 'REJECTION_REASON_REQUIRED';
+        END IF;
+
+        UPDATE public.payments
+        SET status = 'rejected',
+            verified_by = v_uid,
+            verified_at = now(),
+            rejection_reason = v_reason,
+            updated_at = now()
+        WHERE id = v_payment.id;
+
+        IF v_driver_user_id IS NOT NULL THEN
+            INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+            VALUES (
+                v_driver_user_id,
+                'payment'::public.notification_type,
+                'Payment proof rejected',
+                'Office rejected payment proof for ' || coalesce(v_shipment.tracking_number, 'your trip') ||
+                ': ' || v_reason || '. Resolve and resubmit before departing.',
+                v_shipment.id
+            );
+        END IF;
+
+        IF v_customer_user_id IS NOT NULL THEN
+            INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+            VALUES (
+                v_customer_user_id,
+                'payment'::public.notification_type,
+                'Payment verification issue',
+                'The office could not verify the submitted payment for ' ||
+                coalesce(v_shipment.tracking_number, 'your shipment') || '. Please coordinate with your driver.',
+                v_shipment.id
+            );
+        END IF;
+
+        RETURN jsonb_build_object('id', v_payment.id, 'status', 'rejected');
+    ELSE
+        RAISE EXCEPTION 'INVALID_PAYMENT_DECISION';
+    END IF;
+END $$;
+
+REVOKE ALL ON FUNCTION public.review_shipment_payment(uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.review_shipment_payment(uuid, text, text) TO authenticated;
+
+-- 3. Server-side strict departure gate inside driver_confirm_cargo_loaded (called by mobile_driver_action('loaded'))
+-- Inside driver_confirm_cargo_loaded(p_delivery uuid), BEFORE transitioning loading -> in_transit:
+--
+--   SELECT s.final_amount,
+--          coalesce((SELECT sum(p.amount) FROM public.payments p WHERE p.shipment_id = s.id AND p.status = 'verified'), 0)
+--   INTO v_final_amount, v_verified_paid
+--   FROM public.shipments s
+--   WHERE s.id = v_delivery.shipment_id;
+--
+--   IF v_final_amount IS NULL OR v_final_amount <= 0 OR v_verified_paid < v_final_amount THEN
+--       RAISE EXCEPTION 'PAYMENT_VERIFICATION_REQUIRED';
+--   END IF;
+```
+
+### Additional Backend & Web Admin Notes
+1. **Evidence file resolution (`mobile_delivery_evidence_file`):** Extend `p_kind = 'payment'` to look up `payments.proof_path` where `payments.id = p_record::uuid AND payments.shipment_id = p_shipment` so drivers can view their uploaded receipt through the same reauthorized endpoint used for expenses and incidents.
+2. **Web Admin Payment Ledger (`mabutol-trucking-react`):**
+   - Keep the existing **Record Payment** modal for office/walk-in settlements.
+   - For rows with `status = 'pending'` in the Payment Ledger table, add **View Receipt** (signed URL from `delivery-documents`), **Verify** (`review_shipment_payment(id, 'verify')`), and **Reject** (prompt for mandatory reason → `review_shipment_payment(id, 'reject', reason)`).
+   - Surface real-time notifications for `type = 'payment'` prominently so dispatchers verify promptly while trucks are waiting at pickup.
+
+### Client Compatibility (`Tanaw_Mobile`)
+- The Android client reads `public.payments` directly under RLS (best-effort, non-blocking if the driver SELECT policy is not yet applied) AND supports enriched payment summary fields if added to `mobile_workspace()` / `mobile_shipment_details()`.
+- The Android client subscribes to Realtime on `public.payments` so Admin Verify/Reject unlocks `START TRANSIT` or displays the rejection banner immediately without forcing manual reloads.
+- All payment submission retries use a stable encrypted local draft UUID (`PaymentDraftStore`) and idempotent storage upload at `<delivery_id>/payment-<request_id>.jpg`.
+
 
 
 
