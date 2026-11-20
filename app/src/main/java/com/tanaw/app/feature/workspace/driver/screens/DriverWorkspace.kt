@@ -96,7 +96,8 @@ internal val DriverLightColorScheme = LightColorScheme
                     {ids->vm.readConversation(d.value("id"),ids)},vm::refreshConversationUnread,d.value("driver_id"),d.value("inbox_open")=="true",
                     d.value("tracking_number").ifBlank {DriverRecordPresentation.shipments(data,state.history).firstOrNull {it.value("id")==d.value("shipment_id")}?.value("tracking_number").orEmpty()})
             }},vm::previewDriverRoute,
-            onLoadNotifications = { more -> vm.loadNotifications(more) })
+            onLoadNotifications = { more -> vm.loadNotifications(more) },
+            onConsumePendingNotification = vm::consumePendingNotificationNavigation)
         state.proof?.let {bitmap->Dialog(onDismissRequest=vm::closeProof) {
             Surface(shape=RoundedCornerShape(16.dp), color=MaterialTheme.colorScheme.surface) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text(state.proofTitle,style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
@@ -135,7 +136,8 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
     onEvidence:((String,String,String)->Unit)?=null,
     conversation:(@Composable (JsonObject)->Unit)?=null,
     routePreview:(suspend (String,org.maplibre.android.geometry.LatLng,org.maplibre.android.geometry.LatLng)->RoutePreview)?=null,
-    onLoadNotifications:((Boolean)->Unit)?=null
+    onLoadNotifications:((Boolean)->Unit)?=null,
+    onConsumePendingNotification:(()->Unit)?=null
 ) {
     var tab by rememberSaveable {mutableStateOf(if(state.passwordChangeOwner!=null)"Profile" else "Home")}
     var selected by rememberSaveable {mutableStateOf<String?>(null)}
@@ -152,6 +154,18 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
     var expense by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
     var fuel by rememberSaveable(delivery?.value("id")){mutableStateOf(false)}
     val request=rememberSaveable(delivery?.value("id"),expense){UUID.randomUUID().toString()}
+    LaunchedEffect(state.pendingOpenAlerts, state.pendingNotificationShipmentId, shipments) {
+        if (state.pendingOpenAlerts || state.pendingNotificationShipmentId != null) {
+            val targetId = state.pendingNotificationShipmentId?.takeIf { id -> shipments.any { it.value("id") == id } }
+            if (targetId != null) {
+                selected = targetId
+            } else {
+                tab = "Alerts"
+                selected = null
+            }
+            onConsumePendingNotification?.invoke()
+        }
+    }
     LaunchedEffect(tab) {
         if(tab!="Profile") profileSubPanelOpen=false
         if(tab!="Navigate") {

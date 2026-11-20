@@ -320,5 +320,19 @@ TANAW operates strictly for **scheduled Full Truckload (FTL)** deliveries (no LT
    - `driver_record_position(p_delivery, p_sample, p_data)` inserts `{truck_id, delivery_id, latitude, longitude, recorded_at}` into `public.tracking_logs`, firing `trg_sync_truck_gps_from_tracking` to sync `trucks.current_lat`, `current_lng`, and `last_location_at`.
    - `mobile_driver_action`, `driver_arrive_at_pickup`, `driver_submit_pod`, and `/functions/v1/delivery-routing` (`mode = 'eta'`) update `public.deliveries` (`delivered`, `completed`, etc.) and `public.delivery_route_eta` (`leg = 'destination'`), firing `trg_sync_truck_availability_on_delivery` and `trg_sync_truck_eta_from_route` to maintain `trucks.next_available_address`, `next_available_lat`, `next_available_lng`, and `next_available_at`.
 
+---
+
+## 5. Request C11: Return `avatar_url` in `mobile_workspace()` Profile Object & Optional FCM Push Webhook for `public.notifications`
+
+### Motivation
+1. **Customer Profile Photo (`public.users.avatar_url`):**
+   - `public.users` already defines `avatar_url text` and allows authenticated users to update their own profile row under RLS (`"update own profile"`).
+   - However, `mobile_workspace()` builds `'profile', jsonb_build_object('id', me.id, 'full_name', me.full_name, 'email', me.email, 'phone', me.phone, 'role', me.role, 'created_at', me.created_at)` without including `'avatar_url', me.avatar_url`.
+   - The Android client currently queries `public.users(avatar_url)` in `readCustomerFtlData` and caches the 256x256 JPEG in `CustomerAvatarStore`. Returning `'avatar_url', me.avatar_url` directly in `mobile_workspace()` eliminates the extra query round-trip.
+2. **Device Push Notifications When App Process Is Terminated (Optional FCM Extension):**
+   - The Android client now posts heads-up Android system notifications (`WorkspaceDeviceNotifier`, channel `tanaw_workspace_alerts`) whenever new unread `public.notifications` rows arrive over Supabase Realtime or workspace polling, and deep-links notification taps directly into the shipment or Alerts screen.
+   - If the business later requires wake-from-killed-process push delivery when the app is completely swiped away, the backend can add a `public.user_push_tokens` table and a database webhook on `public.notifications` `AFTER INSERT` that dispatches an FCM data payload containing `notification_id`, `shipment_id`, `title`, and `body`.
+
+
 
 

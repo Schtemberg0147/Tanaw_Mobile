@@ -110,6 +110,7 @@
     <string name="shipment_sms_alerts_desc">Receive SMS updates for dispatch, tracking milestones, and delivery delays.</string>
     <string name="sent_to_verified_number_fmt">Sent to %1$s</string>
     <string name="verified_number_fallback">your verified number</string>
+    <string name="account_and_policies">Account &amp; Policies</string>
     <string name="my_bookings">My Bookings</string>
     <string name="saved_addresses">Saved Addresses</string>
     <string name="change_password">Change Password</string>
@@ -127,4 +128,40 @@
     <string name="call_contact_fmt">Call: %1$s</string>
     <string name="field_locked">Locked</string>
     <string name="edit_field_fmt">Edit %1$s</string>
+
+    <!-- Profile Photo Picker -->
+    <string name="profile_photo_sheet_title">Profile Photo</string>
+    <string name="profile_photo_sheet_subtitle">Take a new photo with your camera or choose an image from your device gallery.</string>
+    <string name="profile_photo_take_camera">Take a Photo</string>
+    <string name="profile_photo_choose_gallery">Choose from Gallery</string>
+    <string name="profile_photo_remove">Remove Current Photo</string>
+    <string name="profile_photo_camera_error">Could not capture or process the camera photo. Try again or choose an image from your gallery.</string>
+    <string name="profile_photo_format_error">Could not read the selected image. Choose a valid JPEG, PNG, or WebP photo.</string>
+
+    <!-- Terms of Service & Company FTL Policies -->
+    <string name="policy_effective_badge">EFFECTIVE NOVEMBER 2026 · MABUTOL TRUCKING SERVICES</string>
+    <string name="terms_intro_title">1. Full Truckload (FTL) Service Scope</string>
+    <string name="terms_intro_body">Tanaw provides scheduled Full Truckload (FTL) freight booking and live dispatch tracking operated by Mabutol Trucking Services across Luzon. All bookings allocate an entire commercial vehicle exclusively to a single customer shipment. Less-Than-Truckload (LTL) consolidation and instant on-demand dispatch are not offered.</string>
+    <string name="terms_scheduling_title">2. Lead-Time &amp; Advance Scheduling Policy</string>
+    <string name="terms_scheduling_body">Standard commercial trucks require at least 24 hours advance notice prior to scheduled departure. Specialized units, including Refrigerated Vans and 10-Wheeler Flatbeds, require at least 48 hours advance notice. Shipments may be scheduled up to 14 days in advance so dispatch can verify HGV clearances, municipal truck-ban windows, and vehicle readiness.</string>
+    <string name="terms_quotation_title">3. Quotations, Tolls &amp; Mobilization Fees</string>
+    <string name="terms_quotation_body">Pre-booking estimates show base linehaul from pickup to destination only. Official quotations issued by the dispatch office itemize Base Linehaul Fare, Estimated Expressway Tolls, and any applicable Mobilization Fee when truck positioning exceeds the free deadhead allowance. A booking is dispatched only after the customer confirms the official quotation before its expiration timestamp.</string>
+    <string name="terms_loading_title">4. Loading Buffer, Geofence Arrival &amp; Demurrage</string>
+    <string name="terms_loading_body">Each vehicle class includes a standard loading and unloading buffer (typically 180 minutes). Driver arrival at pickup and destination is verified via a 50-meter GPS geofence. If the shipper or consignee is unavailable after the grace period expires, the driver may log a No-Show report with office verification, and waiting or redelivery charges may apply.</string>
+    <string name="terms_cancellation_title">5. Customer Self-Service Cancellation Policy</string>
+    <string name="terms_cancellation_body">Customers may cancel a shipment through the app with a stated reason while the booking is in Pending, Quoted, Booked, or Assigned status prior to driver route start. Once the assigned driver starts the route or arrives at pickup, self-service cancellation is locked and requires direct coordination with the dispatch office.</string>
+    <string name="terms_cargo_title">6. Prohibited Cargo, Weight Limits &amp; Proof of Delivery</string>
+    <string name="terms_cargo_body">Shippers must declare accurate cargo descriptions and gross weight within the selected truck capacity to comply with DPWH and LTO anti-overloading regulations. Illegal, hazardous, or undeclared contraband goods are strictly prohibited. Delivery completion is recorded via recipient name, digital signature, and timestamped Proof of Delivery (POD) photographs.</string>
+
+    <!-- Privacy Policy -->
+    <string name="privacy_collection_title">1. Information We Collect</string>
+    <string name="privacy_collection_body">We collect your full name, verified mobile number, contact email, default pickup address, profile photo, and shipment booking records (pickup and destination coordinates, cargo descriptions, weight declarations, and quotation acceptance history) required to fulfill FTL freight operations.</string>
+    <string name="privacy_location_title">2. Live GPS Telemetry &amp; Proof of Delivery</string>
+    <string name="privacy_location_body">During active deliveries, assigned company trucks transmit GPS coordinates to provide customers with real-time route progress and live ETA updates. Upon arrival at the destination geofence, the driver captures Proof of Delivery photographs and the recipient signature, which are stored in private, access-controlled storage buckets.</string>
+    <string name="privacy_communications_title">3. SMS Alerts &amp; Device Notifications</string>
+    <string name="privacy_communications_body">Your verified phone number is used for account authentication (OTP), password recovery, and optional SMS alerts for quotation updates, driver dispatch, and route delays. You may toggle SMS shipment notifications on or off at any time in your Profile settings.</string>
+    <string name="privacy_security_title">4. Data Protection &amp; Retention</string>
+    <string name="privacy_security_body">All workspace records are protected by row-level security (RLS) policies so customers can access only their own shipments, receipts, and delivery documents. Local recovery challenges and offline workspace tokens on your Android device are stored in encrypted storage and cleared automatically when you sign out.</string>
+    <string name="privacy_rights_title">5. Your Data Privacy Rights (RA 10173)</string>
+    <string name="privacy_rights_body">In accordance with the Philippine Data Privacy Act of 2012 (Republic Act No. 10173), you have the right to access, update, or request correction of your personal profile information and to contact the Mabutol Trucking Services Data Protection Officer through the published office channels in Help &amp; Support.</string>
 </resources>

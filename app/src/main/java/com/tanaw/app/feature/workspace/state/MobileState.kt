@@ -50,5 +50,7 @@ data class MobileState(
     val phoneChangeTarget: String? = null,
     val phoneChangePendingName: String? = null,
     val phoneChangePendingAddress: String? = null,
-    val phoneChangePendingCity: String? = null
+    val phoneChangePendingCity: String? = null,
+    val pendingOpenAlerts: Boolean = false,
+    val pendingNotificationShipmentId: String? = null,
 )

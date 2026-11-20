@@ -1,6 +1,9 @@
 package com.tanaw.app.feature.workspace.customer.screens
 
+import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -31,18 +33,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
+import com.tanaw.app.feature.workspace.customer.components.CustomerAvatarPhotoSheet
 import com.tanaw.app.feature.workspace.customer.components.CustomerMenuCard
 import com.tanaw.app.feature.workspace.customer.components.CustomerPersonalInfoCard
 import com.tanaw.app.feature.workspace.customer.components.CustomerProfileHeader
@@ -52,6 +59,7 @@ import com.tanaw.app.feature.workspace.customer.components.CustomerSubPanel
 import com.tanaw.app.feature.workspace.customer.components.CustomerTopBar
 import com.tanaw.app.feature.workspace.customer.dialogs.CustomerFieldEditDialog
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerAvatarRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerProfileRules
 import com.tanaw.app.feature.workspace.driver.rules.DriverProfileRules
 import com.tanaw.app.feature.workspace.state.MobileState
@@ -60,8 +68,12 @@ import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.rows
 import com.tanaw.app.feature.workspace.viewmodel.value
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import java.io.File
 
 @Composable
 internal fun CustomerProfile(
@@ -79,13 +91,88 @@ internal fun CustomerProfile(
     LaunchedEffect(panel) { onSubPanelChanged(panel != null) }
     var linkError by remember { mutableStateOf(false) }
     var infoDialog by remember { mutableStateOf<String?>(null) }
+    var showPhotoSheet by rememberSaveable { mutableStateOf(false) }
+    var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     val uri = LocalUriHandler.current
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val p = data.obj("profile")
     val c = data.obj("customer")
     val settings = DriverProfileRules.settings(data)
     val content = DriverProfileRules.content(data)
+
+    val avatarDataUri = p.value("avatar_url")
+    val avatarBitmap by produceState<Bitmap?>(initialValue = null, key1 = avatarDataUri) {
+        value = CustomerAvatarRules.decodeAvatarBitmapAsync(avatarDataUri, null)
+    }
+
+    val cameraErrorMsg = stringResource(R.string.profile_photo_camera_error)
+    val formatErrorMsg = stringResource(R.string.profile_photo_format_error)
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { captured ->
+        val path = pendingCameraPath
+        pendingCameraPath = null
+        if (!captured || path.isNullOrBlank()) {
+            path?.let { runCatching { File(it).delete() } }
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val file = File(path)
+            val rawBytes = withContext(Dispatchers.IO) {
+                runCatching { file.readBytes() }.getOrNull().also {
+                    runCatching { file.delete() }
+                }
+            }
+            if (rawBytes == null || !CustomerAvatarRules.isValidSourceSize(rawBytes.size)) {
+                infoDialog = cameraErrorMsg
+                return@launch
+            }
+            val processed = runCatching {
+                CustomerAvatarRules.processToSquareAvatarJpegAsync(rawBytes)
+            }.getOrNull()
+            if (processed == null) {
+                infoDialog = cameraErrorMsg
+            } else {
+                vm.saveCustomerAvatar(processed)
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { pickedUri ->
+        if (pickedUri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val mimeType = context.contentResolver.getType(pickedUri)
+            if (mimeType != null && !CustomerAvatarRules.isSupportedMimeType(mimeType)) {
+                infoDialog = formatErrorMsg
+                return@launch
+            }
+            val rawBytes = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(pickedUri)?.use { stream ->
+                        stream.readBytes()
+                    }
+                }.getOrNull()
+            }
+            if (rawBytes == null || !CustomerAvatarRules.isValidSourceSize(rawBytes.size)) {
+                infoDialog = formatErrorMsg
+                return@launch
+            }
+            val processed = runCatching {
+                CustomerAvatarRules.processToSquareAvatarJpegAsync(rawBytes)
+            }.getOrNull()
+            if (processed == null) {
+                infoDialog = formatErrorMsg
+            } else {
+                vm.saveCustomerAvatar(processed)
+            }
+        }
+    }
 
     var editingFieldKey by remember { mutableStateOf<String?>(null) }
     var editingFieldValue by remember { mutableStateOf("") }
@@ -117,6 +204,44 @@ internal fun CustomerProfile(
     val cityLengthError = stringResource(R.string.city_length_error)
     val provinceLengthError = stringResource(R.string.province_length_error)
     val phoneRequiredForAddress = stringResource(R.string.phone_required_for_address)
+
+    if (showPhotoSheet) {
+        CustomerAvatarPhotoSheet(
+            hasCurrentPhoto = avatarBitmap != null || avatarDataUri.isNotBlank(),
+            isBusy = state.busy,
+            onTakePhoto = {
+                showPhotoSheet = false
+                try {
+                    val userId = p.value("id").ifBlank { "customer" }
+                    val dir = File(context.cacheDir, "proof/$userId").apply { mkdirs() }
+                    val photoFile = File(dir, "avatar-capture-${System.currentTimeMillis()}.jpg")
+                    val photoUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.proof",
+                        photoFile,
+                    )
+                    pendingCameraPath = photoFile.absolutePath
+                    cameraLauncher.launch(photoUri)
+                } catch (_: Exception) {
+                    pendingCameraPath = null
+                    infoDialog = cameraErrorMsg
+                }
+            },
+            onChooseFromGallery = {
+                showPhotoSheet = false
+                try {
+                    galleryLauncher.launch("image/*")
+                } catch (_: Exception) {
+                    infoDialog = formatErrorMsg
+                }
+            },
+            onRemovePhoto = {
+                showPhotoSheet = false
+                vm.removeCustomerAvatar()
+            },
+            onDismiss = { showPhotoSheet = false },
+        )
+    }
 
     if (editingFieldKey != null) {
         val saveEdit: () -> Unit = {
@@ -312,7 +437,6 @@ internal fun CustomerProfile(
     val phoneAccountFallback = stringResource(R.string.phone_number_account)
     val noContactFallback = stringResource(R.string.no_contact_set)
     val noAddressFallback = stringResource(R.string.no_default_address_set)
-    val photoDialogInfo = stringResource(R.string.profile_photo_dialog_info)
     val emailLockedInfo = stringResource(R.string.email_locked_dialog_info)
 
     val fullName = p.value("full_name").ifBlank { defaultCustomerName }
@@ -346,7 +470,6 @@ internal fun CustomerProfile(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             if (showTopBar) {
-                // Screen Title when TopBar isn't pinned externally
                 Text(
                     text = stringResource(R.string.my_profile),
                     style = MaterialTheme.typography.headlineSmall,
@@ -363,7 +486,8 @@ internal fun CustomerProfile(
                 fullName = fullName,
                 email = email,
                 memberSince = memberSince,
-                onEditPhotoClick = { infoDialog = photoDialogInfo },
+                onEditPhotoClick = { showPhotoSheet = true },
+                avatarBitmap = avatarBitmap,
             )
 
             // ── Personal Information Section ──────────────────────────────────────────

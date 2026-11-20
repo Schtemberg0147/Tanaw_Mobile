@@ -28,6 +28,7 @@ import com.tanaw.app.feature.workspace.driver.rules.*
 import com.tanaw.app.feature.workspace.driver.screens.DriverUiRules
 import com.tanaw.app.feature.workspace.driver.store.*
 import com.tanaw.app.feature.workspace.model.RoutePreview
+import com.tanaw.app.feature.workspace.notifications.*
 import com.tanaw.app.feature.workspace.rules.*
 import com.tanaw.app.feature.workspace.state.*
 import com.tanaw.app.feature.workspace.store.*
@@ -93,6 +94,8 @@ class MobileWorkspaceViewModel @Inject constructor(
     private val incidentDraftStore=IncidentDraftStore(context)
     private val expenseDraftStore=ExpenseDraftStore(context)
     internal val bookingDraftStore=BookingDraftStore(context)
+    private val avatarStore=CustomerAvatarStore(context)
+    private val deviceNotifier=WorkspaceDeviceNotifier(context)
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
     fun clearRestoredBookingConfirmation() { mutable.update { it.copy(restoredBookingConfirmation = null) } }
     private var signupPhone: String = ""
@@ -354,7 +357,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                         val changing=mutable.value.passwordChangeOwner!=null || pendingPasswordChange!=null
                         if(changing)clearPasswordChallenge()
                         stopLive(stopTracking = true)
-                        loadedUser?.let {recoveryStore.clear(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
+                        loadedUser?.let {recoveryStore.clear(it);deviceNotifier.clearUserSession(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
                         mutable.update { if(changing)MobileState(page="login",message="Sign in again to manage your password.") else
                             it.copy(data=null,details=null,proof=null,proofTitle="",proofSubtitle="",history=null,historyLoading=false,historyError=null,conversationUnread=null,customerHistoryDocuments=emptyList(),notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
@@ -479,14 +482,34 @@ class MobileWorkspaceViewModel @Inject constructor(
         if(data.obj("profile").value("role")!="driver") {
             val (smsPrefs, ftlData) = coroutineScope {
                 val smsDeferred = async { readSmsPreferences(id) }
-                val ftlDeferred = async { readCustomerFtlData() }
+                val ftlDeferred = async { readCustomerFtlData(id) }
                 val reconcileDeferred = async { reconcileUncertainBooking(data, id) }
                 reconcileDeferred.await()
                 smsDeferred.await() to ftlDeferred.await()
             }
-            data = JsonObject(data + smsPrefs + ftlData)
+            val remoteAvatarUrl = (ftlData["avatar_url"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+            val resolvedAvatarUrl = if (remoteAvatarUrl.isNotBlank()) {
+                CustomerAvatarRules.fromDataUriOrBase64(remoteAvatarUrl)?.let { bytes ->
+                    avatarStore.writeBytesAsync(id, bytes)
+                }
+                remoteAvatarUrl
+            } else {
+                avatarStore.readDataUri(id).orEmpty()
+            }
+            val updatedProfile = if (resolvedAvatarUrl.isNotBlank()) {
+                JsonObject(data.obj("profile") + ("avatar_url" to JsonPrimitive(resolvedAvatarUrl)))
+            } else {
+                data.obj("profile")
+            }
+            val filteredFtlData = ftlData.filterKeys { it != "avatar_url" }
+            data = JsonObject(data + smsPrefs + filteredFtlData + ("profile" to updatedProfile))
         }
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
+            deviceNotifier.onWorkspaceNotificationsLoaded(
+                userId = id,
+                notificationRows = data.rows("notifications"),
+                isAlertsScreenOpen = customerAlertsScreenOpen
+            )
             val role = data.obj("profile").value("role")
             var autoMarkedIso: String? = null
             if (NotificationReadRules.shouldAutoMarkRead(customerAlertsScreenOpen, role, isOffline = false) &&
@@ -746,6 +769,10 @@ class MobileWorkspaceViewModel @Inject constructor(
         val role = mutable.value.data?.obj("profile")?.value("role").orEmpty()
         if (role == "driver") return
         customerAlertsScreenOpen = true
+        mutable.value.data?.rows("notifications").orEmpty().forEach { n ->
+            val nId = n.value("id")
+            if (nId.isNotBlank()) deviceNotifier.dismissNotification(nId)
+        }
         val uid = client.auth.currentUserOrNull()?.id ?: return
         val accountVersion = generation
         markNotificationsReadJob?.cancel()
@@ -1160,6 +1187,8 @@ class MobileWorkspaceViewModel @Inject constructor(
         recoveryStore.clear("phone_change_challenge")
         stopLive();loadedUser?.let {owner->
             recoveryStore.clear(owner)
+            deviceNotifier.clearUserSession(owner)
+            avatarStore.clear(owner)
             TrackingQueue(context).use {queue->queue.clearOwner(owner)}
             // Only this account's private, temporary camera files; uploaded proof stays on the server.
             java.io.File(context.cacheDir,"proof/$owner").deleteRecursively()
@@ -1358,7 +1387,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         )
     }
 
-    private suspend fun readCustomerFtlData(): Map<String, JsonElement> = coroutineScope {
+    private suspend fun readCustomerFtlData(userId: String): Map<String, JsonElement> = coroutineScope {
         val vehiclesDeferred = async {
             try {
                 client.from("vehicle_types").select(
@@ -1400,10 +1429,24 @@ class MobileWorkspaceViewModel @Inject constructor(
                 null
             }
         }
+        val avatarDeferred = async {
+            try {
+                client.from("users").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("avatar_url")
+                ) {
+                    filter { eq("id", userId) }
+                }.decodeAs<JsonArray>().firstOrNull()?.jsonObject?.value("avatar_url")?.takeIf { it.isNotBlank() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
         buildMap {
             vehiclesDeferred.await()?.takeIf { it.isNotEmpty() }?.let { put("vehicles", it) }
             pricingDeferred.await()?.takeIf { it.isNotEmpty() }?.let { put("pricing_rates", it) }
             shipmentsDeferred.await()?.let { put("shipments", it) }
+            avatarDeferred.await()?.let { put("avatar_url", JsonPrimitive(it)) }
         }
     }
     private suspend fun reconcileUncertainBooking(data: JsonObject, userId: String) {
@@ -1735,8 +1778,87 @@ class MobileWorkspaceViewModel @Inject constructor(
         },{reloadWorkspaceAndDetails(id)},{mutable.update{it.copy(offline=true,error=null,message="Proof saved. Refresh to reload office review status before another action.")}})
     }
     override fun onCleared() {liveJob?.cancel();pollJob?.cancel()}
+    fun saveCustomerAvatar(jpegBytes: ByteArray) = operation(allowOffline = true) {
+        val uid = client.auth.currentUserOrNull()?.id ?: loadedUser ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        require(jpegBytes.isNotEmpty())
+        val dataUri = CustomerAvatarRules.toDataUri(jpegBytes)
+        avatarStore.writeBytesAsync(uid, jpegBytes)
+        mutable.update { state ->
+            val currentData = state.data
+            val updatedData = currentData?.let { d ->
+                val updatedProfile = JsonObject(d.obj("profile") + ("avatar_url" to JsonPrimitive(dataUri)))
+                JsonObject(d + ("profile" to updatedProfile))
+            }
+            state.copy(
+                data = updatedData ?: currentData,
+                message = "Profile photo updated.",
+                error = null
+            )
+        }
+        if (!mutable.value.offline) {
+            try {
+                client.from("users").update(
+                    buildJsonObject { put("avatar_url", dataUri) }
+                ) {
+                    filter { eq("id", uid) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Local cache in CustomerAvatarStore preserves the photo on device even if sync is deferred.
+            }
+        }
+    }
+    fun removeCustomerAvatar() = operation(allowOffline = true) {
+        val uid = client.auth.currentUserOrNull()?.id ?: loadedUser ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        avatarStore.clear(uid)
+        mutable.update { state ->
+            val currentData = state.data
+            val updatedData = currentData?.let { d ->
+                val updatedProfile = JsonObject(d.obj("profile").filterKeys { it != "avatar_url" })
+                JsonObject(d + ("profile" to updatedProfile))
+            }
+            state.copy(
+                data = updatedData ?: currentData,
+                message = "Profile photo removed.",
+                error = null
+            )
+        }
+        if (!mutable.value.offline) {
+            try {
+                client.from("users").update(
+                    buildJsonObject { put("avatar_url", JsonNull) }
+                ) {
+                    filter { eq("id", uid) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {}
+        }
+    }
+    fun handleNotificationIntent(openAlerts: Boolean, shipmentId: String?, notificationId: String?) {
+        val cleanNotificationId = notificationId?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanShipmentId = shipmentId?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanNotificationId != null) {
+            deviceNotifier.dismissNotification(cleanNotificationId)
+        }
+        if (!openAlerts && cleanShipmentId == null) return
+        mutable.update {
+            it.copy(
+                pendingOpenAlerts = openAlerts,
+                pendingNotificationShipmentId = cleanShipmentId
+            )
+        }
+    }
+    fun consumePendingNotificationNavigation() {
+        mutable.update {
+            if (!it.pendingOpenAlerts && it.pendingNotificationShipmentId == null) it
+            else it.copy(pendingOpenAlerts = false, pendingNotificationShipmentId = null)
+        }
+    }
     fun markRead(id: String) = operation {
         val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        deviceNotifier.dismissNotification(id)
         client.from("notifications").update(buildJsonObject { put("read_at",java.time.Instant.now().toString()) }) { filter { eq("id",id);eq("user_id",uid) } }
         mutable.update { state ->
             val updatedList = state.notificationsPage?.map { n ->

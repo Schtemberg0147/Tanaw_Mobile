@@ -1,6 +1,12 @@
 package com.tanaw.app.feature.workspace.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -122,9 +128,14 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
             onGoogleSignIn = if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) ({ vm.googleSignIn(activityContext) }) else null,
         )
         legal?.let { title ->
+            val policySummary = if (title == "Privacy Policy") {
+                "Mabutol Trucking Services collects your contact information, default pickup address, and shipment booking records to fulfill Full Truckload (FTL) deliveries. Live truck GPS telemetry and Proof of Delivery photos are protected by row-level security (RLS) in accordance with the Philippine Data Privacy Act of 2012 (RA 10173). Full policy details are available under Profile > Privacy Policy."
+            } else {
+                "Tanaw provides scheduled Full Truckload (FTL) freight bookings across Luzon with 24h/48h advance lead-time scheduling (up to 14 days ahead). Pre-booking estimates show base linehaul only; official office quotations itemize Base Linehaul, Estimated Tolls, and any Mobilization Fee and must be confirmed before dispatch. Self-service cancellation is available prior to driver route start. Full terms are available under Profile > Terms of Service."
+            }
             InfoDialog(
                 title = title,
-                text = "The office has not published an approved $title in this app. Ask your administrator for the current document. No policy acceptance is recorded by opening this panel."
+                text = policySummary
             ) { legal = null }
         }
         return
@@ -143,8 +154,8 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         )
         if (terms) {
             InfoDialog(
-                title = "Before creating an account",
-                text = "Use accurate contact details. Requests require office review and a confirmed quotation before dispatch. Contact the office for privacy and service terms; the full policy has not been published in this app."
+                title = "Terms of Service & Privacy Policy",
+                text = "By creating an account, you agree to provide accurate contact and cargo weight details for scheduled Full Truckload (FTL) bookings (24h/48h minimum lead time). All bookings require an official itemized quotation confirmed prior to dispatch. Your personal data and shipment records are protected under the Data Privacy Act of 2012 (RA 10173). Full terms and privacy sections are available in Profile after sign-in."
             ) { terms = false }
         }
         return
@@ -237,6 +248,23 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     }
 
     val isCustomer = data.obj("profile").value("role") == "customer"
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = {}
+    )
+    var notificationPermissionPrompted by rememberSaveable(data.obj("profile").value("id")) { mutableStateOf(false) }
+    LaunchedEffect(data.obj("profile").value("id")) {
+        if (!notificationPermissionPrompted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionPrompted = true
+            val granted = ContextCompat.checkSelfPermission(
+                activityContext,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                runCatching { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            }
+        }
+    }
     val renderCustomerOrDefault: @Composable (@Composable () -> Unit) -> Unit = { content ->
         if (isCustomer) {
             TanawCustomerTheme { content() }
@@ -492,6 +520,22 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
     }
     val selectedShipment = detail?.let { selectedId ->
         allShipments.firstOrNull { it.value("id") == selectedId }
+    }
+
+    LaunchedEffect(state.pendingOpenAlerts, state.pendingNotificationShipmentId, allShipments) {
+        if (state.pendingOpenAlerts || state.pendingNotificationShipmentId != null) {
+            val targetShipmentId = state.pendingNotificationShipmentId?.takeIf { id ->
+                allShipments.any { it.value("id") == id }
+            }
+            if (targetShipmentId != null) {
+                tab = "Active"
+                detail = targetShipmentId
+            } else {
+                tab = "Alerts"
+                detail = null
+            }
+            vm.consumePendingNotificationNavigation()
+        }
     }
 
     val snackbarHostState = remember { SnackbarHostState() }

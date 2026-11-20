@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.tanaw.app.feature.workspace.notifications.WorkspaceDeviceNotifier
 import com.tanaw.app.feature.workspace.screens.MobileWorkspaceApp
 import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.ui.theme.TanawTheme
@@ -21,12 +22,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        intent?.dataString?.let { uri -> viewModel.handleDeepLink(uri) }
+        handleIncomingIntent(intent)
         setContent { TanawTheme { MobileWorkspaceApp(viewModel) } }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
         intent.dataString?.let { uri -> viewModel.handleDeepLink(uri) }
+        val openAlerts = intent.getBooleanExtra(WorkspaceDeviceNotifier.EXTRA_OPEN_ALERTS, false)
+        val shipmentId = intent.getStringExtra(WorkspaceDeviceNotifier.EXTRA_SHIPMENT_ID)
+        val notificationId = intent.getStringExtra(WorkspaceDeviceNotifier.EXTRA_NOTIFICATION_ID)
+        if (openAlerts || !shipmentId.isNullOrBlank() || !notificationId.isNullOrBlank()) {
+            viewModel.handleNotificationIntent(openAlerts, shipmentId, notificationId)
+        }
     }
 }
