@@ -282,94 +282,43 @@ $$;
 ```
 
 ### Client Compatibility
-The Android client implements `CustomerCancellationRules.kt` to enforce pre-transit rules and reason requirements on-device, and executes the cancellation via direct PostgREST table update (matching `mabutol-trucking-react` web behavior) with optimistic state updates in [MobileWorkspaceViewModel.kt](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/MobileWorkspaceViewModel.kt).
+The Android client implements `CustomerCancellationRules.kt` to enforce pre-transit rules and reason requirements on-device, and executes the cancellation via direct PostgREST table update (matching `mabutol-trucking-react` web behavior) with optimistic state updates in [MobileWorkspaceViewModel.kt](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/viewmodel/MobileWorkspaceViewModel.kt).
 
 ---
 
-## 4. Request C11: Customer-Visible Assigned Driver & Vehicle Summary in `mobile_shipment_details` / `mobile_workspace`
+## 4. Request FTL-01: Scheduled Full Truckload (FTL) Booking, Itemized Quotation, Quote Acceptance & Driver Telemetry Alignment
 
 ### Motivation
-The refactored customer Shipment Tracking bottom sheet prominently surfaces the assigned driver's name, truck type + plate number, and quick-action Call / SMS buttons in the Peek state.
+TANAW operates strictly for **scheduled Full Truckload (FTL)** deliveries (no LTL consolidation and no instant on-demand `"Pick-up now"` dispatch). Bookings require advance scheduling (`min_lead_time_hours` of `24` for standard trucks and `48` for Refrigerated Van / 10-Wheeler Flatbed, up to `14` days ahead), an office quotation with itemized fare components (`linehaul_amount`, `toll_amount`, `mobilization_fee`, `quote_expires_at`), customer quotation confirmation before dispatch, and driver telemetry/status hooks that feed backend chained-dispatch triggers.
 
-Currently:
-- `public.drivers` RLS only allows `"driver reads self"` and `"staff full access"`.
-- `public.trucks` RLS only allows `"Staff read trucks"` and `"driver reads own truck"`.
-- `mobile_workspace()` (`20261024155504_mobile_workable_system.sql`) only projects `id, shipment_id, status, assigned_at, departed_at, arrived_at, recipient_name, route_started_at, pickup_arrived_at, customer_showed_at` from `public.deliveries`.
-- `mobile_shipment_details(p_shipment)` (`20261024184621_mobile_shipment_details.sql`) returns `shipment_id, events, history, documents, position` without driver or vehicle fields.
+### Expected Schema & RPC Contract
 
-Because `mobile_workspace()` and `mobile_shipment_details()` are `SECURITY INVOKER` and `public.drivers`/`public.trucks` restrict customer direct selects, customers cannot see the assigned driver's name, contact phone, truck type, or plate number.
-
-### Proposed Schema / RPC Changes
-
-Keep general `public.drivers` and `public.trucks` RLS locked down, and expose only the assigned driver/vehicle summary for the customer's own shipment via a narrow `SECURITY DEFINER` projection inside `mobile_shipment_details(p_shipment uuid)` (or a restricted view/helper verifying `customer_id = public.my_customer_id()`):
-
-```sql
--- Narrow SECURITY DEFINER helper callable only for a shipment visible to the authenticated user
-CREATE OR REPLACE FUNCTION public.mobile_assigned_driver_summary(p_shipment uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-DECLARE
-  v_authorized boolean;
-BEGIN
-  SELECT EXISTS (
-    SELECT 1 FROM public.shipments s
-    WHERE s.id = p_shipment
-      AND (
-        s.customer_id = public.my_customer_id()
-        OR EXISTS (
-          SELECT 1 FROM public.deliveries d
-          JOIN public.drivers dr ON dr.id = d.driver_id
-          WHERE d.shipment_id = s.id AND dr.user_id = auth.uid()
-        )
-        OR EXISTS (
-          SELECT 1 FROM public.users u
-          WHERE u.id = auth.uid() AND u.role IN ('admin', 'staff') AND u.is_active
-        )
-      )
-  ) INTO v_authorized;
-
-  IF NOT v_authorized THEN
-    RETURN NULL;
-  END IF;
-
-  RETURN (
-    SELECT jsonb_build_object(
-      'driver', CASE WHEN dr.id IS NOT NULL THEN jsonb_build_object(
-        'full_name', dr.full_name,
-        'contact_number', dr.contact_number
-      ) ELSE NULL END,
-      'truck', CASE WHEN t.id IS NOT NULL THEN jsonb_build_object(
-        'vehicle_type', coalesce(vt.name, t.model),
-        'model', t.model,
-        'plate_number', t.plate_number
-      ) ELSE NULL END,
-      'driver_name', dr.full_name,
-      'driver_phone', dr.contact_number,
-      'truck_type', coalesce(vt.name, t.model),
-      'plate_number', t.plate_number
-    )
-    FROM public.deliveries d
-    LEFT JOIN public.drivers dr ON dr.id = d.driver_id
-    LEFT JOIN public.trucks t ON t.id = d.truck_id
-    LEFT JOIN public.vehicle_types vt ON vt.id = t.vehicle_type_id
-    WHERE d.shipment_id = p_shipment
-      AND d.status <> 'cancelled'
-    ORDER BY d.assigned_at DESC
-    LIMIT 1
-  );
-END;
-$$;
-
--- Include inside mobile_shipment_details(p_shipment):
--- 'assignment', public.mobile_assigned_driver_summary(p_shipment)
--- or merge 'driver' and 'truck' keys into the mobile_shipment_details JSONB response.
-```
-
-### Client Compatibility
-The Android client's `ShipmentTrackingPresentation.driverSummary` checks `detail`, `delivery`, `shipment`, and `routing` (including nested `driver` / `truck` objects and top-level `driver_name`, `driver_phone`, `truck_type`, `plate_number` keys). When absent, the Driver & Vehicle Card falls back cleanly to `"Assigned Driver"` / `"Awaiting Driver"`, `"Assigning vehicle details"`, and gracefully disables the Call/Message quick-action buttons.
+1. **`public.vehicle_types`:**
+   - `min_lead_time_hours integer NOT NULL DEFAULT 24` (`48` for Refrigerated Van and 10-Wheeler Flatbed)
+   - `loading_buffer_minutes integer NOT NULL DEFAULT 180`
+2. **`public.pricing_rates`:**
+   - `vehicle_type_id uuid`, `base_rate numeric`, `per_km_rate numeric`, `per_kg_rate numeric`, `min_charge numeric`, `free_deadhead_km numeric`, `deadhead_per_km_rate numeric`
+3. **`public.shipments`:**
+   - `scheduled_departure timestamptz` (required on booking creation)
+   - `estimated_arrival timestamptz` (`scheduled_departure + route_duration_minutes + vehicle_types.loading_buffer_minutes`)
+   - `linehaul_amount numeric` (strictly `pickup -> dropoff`)
+   - `toll_amount numeric`
+   - `mobilization_fee numeric` (optional surcharge when deadhead exceeds `free_deadhead_km`)
+   - `deadhead_km numeric` (internal-only; **never** returned to or rendered in customer UI)
+   - `quoted_amount numeric`, `override_amount numeric`, `final_amount numeric`, `quote_expires_at timestamptz`
+4. **`mobile_workspace()` & Live Table Enrichment:**
+   - The mobile app queries live `public.vehicle_types` (`min_lead_time_hours`, `loading_buffer_minutes`), `public.pricing_rates` (`base_rate`, `per_km_rate`, `per_kg_rate`, `min_charge`, `free_deadhead_km`, `deadhead_per_km_rate`), and `public.shipments` (`linehaul_amount`, `toll_amount`, `mobilization_fee`, `quoted_amount`, `override_amount`, `final_amount`, `quote_expires_at`, `distance_km`, `route_duration_minutes`, omitting `deadhead_km`) directly under RLS while falling back gracefully to `mobile_workspace()` fields.
+5. **`mobile_create_request(p_data jsonb)` & `stamp_shipment_estimated_arrival` Trigger:**
+   - Accepts `scheduled_departure` (and `departure` alias), `estimated_arrival`, `distance_km` (and `route_distance_km` alias), `route_duration_minutes`, and optional `estimated_linehaul`.
+   - Enforces `scheduled_departure` within `[now() + min_lead_time_hours, now() + interval '14 days']` and initializes shipment status to `pending` (live flow: `pending` → `quoted` → `booked`).
+   - `trg_stamp_shipment_estimated_arrival` computes `estimated_arrival = scheduled_departure + route_duration_minutes + vehicle_types.loading_buffer_minutes` when `estimated_arrival` is null.
+6. **Quote Acceptance & Office Review (`pending` → `quoted` → `booked`):**
+   - `public.shipment_status` includes `'quoted'` (`ALTER TYPE public.shipment_status ADD VALUE IF NOT EXISTS 'quoted'`).
+   - `review_booking_request` approves `'pending'` or `'quoted'` requests into `status = 'booked'`.
+   - `mobile_accept_shipment_quote(p_shipment uuid)` transitions customer-accepted quotes from `'quoted'` to `'booked'`.
+7. **Driver Tracking & Chained-Dispatch Triggers (`20261120120000_ftl_alignment_chained_dispatch.sql`):**
+   - `driver_record_position(p_delivery, p_sample, p_data)` inserts `{truck_id, delivery_id, latitude, longitude, recorded_at}` into `public.tracking_logs`, firing `trg_sync_truck_gps_from_tracking` to sync `trucks.current_lat`, `current_lng`, and `last_location_at`.
+   - `mobile_driver_action`, `driver_arrive_at_pickup`, `driver_submit_pod`, and `/functions/v1/delivery-routing` (`mode = 'eta'`) update `public.deliveries` (`delivered`, `completed`, etc.) and `public.delivery_route_eta` (`leg = 'destination'`), firing `trg_sync_truck_availability_on_delivery` and `trg_sync_truck_eta_from_route` to maintain `trucks.next_available_address`, `next_available_lat`, `next_available_lng`, and `next_available_at`.
 
 
 
