@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.dialogs
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -287,18 +286,10 @@ internal fun DriverFuelForm(
     }
 }
 
-@Preview(showBackground = true, name = "Driver Fuel Form Light")
+@Preview(showBackground = true, name = "Driver Fuel Form")
 @Composable
 private fun DriverFuelFormLightPreview() {
-    DriverTheme(darkTheme = false) {
-        DriverFuelForm("fixture", MobileState(), {}) { _, _, _ -> }
-    }
-}
-
-@Preview(showBackground = true, name = "Driver Fuel Form Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverFuelFormDarkPreview() {
-    DriverTheme(darkTheme = true) {
+    DriverTheme {
         DriverFuelForm("fixture", MobileState(), {}) { _, _, _ -> }
     }
 }

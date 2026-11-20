@@ -1,14 +1,12 @@
 package com.tanaw.app.feature.workspace.driver.components
 
 import android.content.Context
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -124,7 +122,6 @@ internal fun DriverEvidenceRecords(
     busy: Boolean,
     view: ((String, String, String) -> Unit)?
 ) {
-    val isDark = isSystemInDarkTheme()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         details.value("evidence_error").takeIf(String::isNotBlank)?.let { err ->
             Surface(
@@ -159,9 +156,9 @@ internal fun DriverEvidenceRecords(
                 val statusLabel = DriverEvidence.status(expense)
                 val statusValue = expense.value("status")
                 val (badgeBg, badgeFg) = when (statusValue) {
-                    "approved" -> (if (isDark) StatusGreenBgDark else SuccessBannerBg) to (if (isDark) StatusGreenDark else SuccessGreen)
-                    "rejected" -> (if (isDark) ErrorBgDark else ExpiredRedBg) to (if (isDark) ErrorRedDark else ExpiredRed)
-                    "pending" -> (if (isDark) WarningBgDark else ExpiringOrangeBg) to (if (isDark) WarningOrangeDark else ExpiringOrange)
+                    "approved" -> SuccessBannerBg to SuccessGreen
+                    "rejected" -> ExpiredRedBg to ExpiredRed
+                    "pending" -> ExpiringOrangeBg to ExpiringOrange
                     else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Surface(
@@ -247,16 +244,8 @@ internal fun DriverEvidenceRecords(
 
         details.rows("incidents").forEach { incident ->
             val resolved = incident.value("resolved_at").isNotBlank()
-            val badgeBg = if (resolved) {
-                if (isDark) StatusGreenBgDark else SuccessBannerBg
-            } else {
-                if (isDark) WarningBgDark else ExpiringOrangeBg
-            }
-            val badgeFg = if (resolved) {
-                if (isDark) StatusGreenDark else SuccessGreen
-            } else {
-                if (isDark) WarningOrangeDark else ExpiringOrange
-            }
+            val badgeBg = if (resolved) SuccessBannerBg else ExpiringOrangeBg
+            val badgeFg = if (resolved) SuccessGreen else ExpiringOrange
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(12.dp),
@@ -498,22 +487,10 @@ private fun previewEvidenceDetails(): JsonObject = buildJsonObject {
     })
 }
 
-@Preview(showBackground = true, name = "Driver Evidence Light")
+@Preview(showBackground = true, name = "Driver Evidence")
 @Composable
 private fun DriverEvidenceLightPreview() {
-    DriverTheme(darkTheme = false) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.padding(16.dp)) {
-                DriverEvidenceRecords("ship-1", previewEvidenceDetails(), false) { _, _, _ -> }
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Driver Evidence Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverEvidenceDarkPreview() {
-    DriverTheme(darkTheme = true) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Box(Modifier.padding(16.dp)) {
                 DriverEvidenceRecords("ship-1", previewEvidenceDetails(), false) { _, _, _ -> }

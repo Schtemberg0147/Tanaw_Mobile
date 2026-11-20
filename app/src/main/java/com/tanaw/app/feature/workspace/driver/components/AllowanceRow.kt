@@ -1,7 +1,6 @@
 package com.tanaw.app.feature.workspace.driver.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,12 +24,11 @@ fun AllowanceRow(
     formattedAllowance: String,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFEEF2FF))
+            .background(Color(0xFFEEF2FF))
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically

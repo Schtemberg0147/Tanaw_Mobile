@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.components
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -201,11 +200,11 @@ internal fun DriverTruckRestrictionCard(
     }
 }
 
-@Preview(showBackground = true, name = "Route Status Light")
+@Preview(showBackground = true, name = "Route Status")
 @Composable
 private fun DriverRouteStatusCardLightPreview() {
     val now = Instant.now()
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             DriverRouteStatusCard(
                 routing = buildJsonObject {
@@ -218,18 +217,6 @@ private fun DriverRouteStatusCardLightPreview() {
                 },
                 offline = false
             )
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Route Status Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverRouteStatusCardDarkPreview() {
-    DriverTheme(darkTheme = true) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DriverRouteStatusCard(routing = buildJsonObject {}, offline = false)
-            }
         }
     }
 }

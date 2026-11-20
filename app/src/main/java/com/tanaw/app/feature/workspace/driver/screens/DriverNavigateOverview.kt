@@ -1,10 +1,8 @@
 package com.tanaw.app.feature.workspace.driver.screens
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -196,7 +194,6 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
         }
     }
 
-    val isDark = isSystemInDarkTheme()
     val extendedColors = TanawTheme.extendedColors
     val showExpense = d.value("status") in listOf("in_transit", "delivered")
     val evaluatedRouting = DriverRouteStatus.forAssignment(routing, s, d)
@@ -207,9 +204,8 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Surface(
-            color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
-            shape = RoundedCornerShape(16.dp),
-            border = if (isDark) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
+            color = DriverNavy,
+            shape = RoundedCornerShape(16.dp)
         ) {
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -219,7 +215,7 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
                 ) {
                     Text(
                         s.value("tracking_number").ifBlank { "Current trip" },
-                        color = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),
+                        color = Color(0xFFC7DFFF),
                         style = MaterialTheme.typography.labelMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -227,42 +223,42 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
                     )
                     Spacer(Modifier.width(8.dp))
                     Surface(
-                        color = if (isDark) MaterialTheme.colorScheme.primaryContainer else Color.White.copy(alpha = 0.14f),
+                        color = Color.White.copy(alpha = 0.14f),
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
                             "Step ${stage + 1} of 6",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isDark) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                            color = Color.White
                         )
                     }
                 }
                 Text(
                     headings[stage],
-                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.White,
+                    color = Color.White,
                     style = MaterialTheme.typography.headlineSmall
                 )
                 Text(
                     next[stage],
-                    color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFE2ECF7),
+                    color = Color(0xFFE2ECF7),
                     style = MaterialTheme.typography.bodyMedium
                 )
-                HorizontalDivider(color = if (isDark) MaterialTheme.colorScheme.outlineVariant else Color.White.copy(alpha = .2f))
+                HorizontalDivider(color = Color.White.copy(alpha = .2f))
                 Text(
                     if (stage >= 4) "DESTINATION" else "PICKUP",
-                    color = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFFC7DFFF),
+                    color = Color(0xFFC7DFFF),
                     style = MaterialTheme.typography.labelSmall
                 )
                 Text(
                     s.value(if (stage >= 4) "dropoff_address" else "pickup_address").ifBlank { "Address unavailable — contact the office" },
-                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.White,
+                    color = Color.White,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     etaLine,
-                    color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFC7DFFF),
+                    color = Color(0xFFC7DFFF),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -438,7 +434,7 @@ internal fun normalizeRouteGeoJson(element: JsonElement?): String? = when (eleme
                                 else -> MaterialTheme.colorScheme.outlineVariant
                             }
                             val itemColor = if (recorded) {
-                                if (isDark) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color(0xFFEFF6FF)
+                                Color(0xFFEFF6FF)
                             } else {
                                 MaterialTheme.colorScheme.surfaceContainerHigh
                             }
@@ -548,10 +544,10 @@ private fun QuickOperationButton(
     }
 }
 
-@Preview(showBackground = true, name = "Driver Navigate Cockpit Light")
+@Preview(showBackground = true, name = "Driver Navigate Cockpit")
 @Composable
 private fun DriverNavigateOverviewLightPreview() {
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             DriverNavigateOverview(
                 s = buildJsonObject {
@@ -572,36 +568,6 @@ private fun DriverNavigateOverviewLightPreview() {
                 },
                 state = MobileState(),
                 actions = { _, _ -> DriverButton("I'VE ARRIVED AT PICK-UP") {} },
-                expense = {},
-                fuel = {},
-                onMessageOffice = {}
-            )
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Driver Navigate Cockpit Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverNavigateOverviewDarkPreview() {
-    DriverTheme(darkTheme = true) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            DriverNavigateOverview(
-                s = buildJsonObject {
-                    put("id", "shp-1")
-                    put("tracking_number", "TNW-2026-0042")
-                    put("pickup_address", "Cabanatuan City Hub, Nueva Ecija")
-                    put("dropoff_address", "Gapan City Distribution Centre, Nueva Ecija")
-                    put("distance_km", "38")
-                    put("route_duration_minutes", "75")
-                },
-                d = buildJsonObject {
-                    put("id", "del-1")
-                    put("shipment_id", "shp-1")
-                    put("status", "in_transit")
-                    put("route_started_at", "2026-11-15T01:00:00Z")
-                },
-                state = MobileState(),
-                actions = { _, _ -> DriverButton("MARK AS DELIVERED") {} },
                 expense = {},
                 fuel = {},
                 onMessageOffice = {}

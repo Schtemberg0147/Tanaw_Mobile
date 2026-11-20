@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.screens
 
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -272,31 +271,10 @@ private fun previewDriverProfileErrorData(): JsonObject = buildJsonObject {
     })
 }
 
-@Preview(showBackground = true, name = "Driver Profile Light")
+@Preview(showBackground = true, name = "Driver Profile")
 @Composable
 private fun DriverProfileLightPreview() {
-    DriverTheme(darkTheme = false) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                DriverProfile(
-                    data = previewDriverProfileData(),
-                    busy = false,
-                    offline = false,
-                    refresh = {},
-                    recover = {},
-                    logout = {},
-                    messages = {},
-                    onClearOffline = {}
-                )
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Driver Profile Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverProfileDarkPreview() {
-    DriverTheme(darkTheme = true) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 DriverProfile(
@@ -317,7 +295,7 @@ private fun DriverProfileDarkPreview() {
 @Preview(showBackground = true, name = "Driver Profile Offline & Errors")
 @Composable
 private fun DriverProfileOfflineErrorPreview() {
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 DriverProfile(
@@ -337,7 +315,7 @@ private fun DriverProfileOfflineErrorPreview() {
 @Preview(showBackground = true, name = "Driver Profile Help Sub-Panel")
 @Composable
 private fun DriverProfileHelpSubPanelPreview() {
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 DriverProfile(
@@ -358,7 +336,7 @@ private fun DriverProfileHelpSubPanelPreview() {
 @Preview(showBackground = true, name = "Driver Profile 200% Font Scale", fontScale = 2.0f)
 @Composable
 private fun DriverProfileLargeFontPreview() {
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 DriverProfile(

@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.components
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -484,33 +483,10 @@ private fun previewConversationPage(): JsonObject = buildJsonObject {
     })
 }
 
-@Preview(showBackground = true, name = "Driver Conversation Light")
+@Preview(showBackground = true, name = "Driver Conversation")
 @Composable
 private fun DriverConversationLightPreview() {
-    DriverTheme(darkTheme = false) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.height(520.dp).padding(16.dp)) {
-                DriverConversation(
-                    delivery = "del-1",
-                    offline = false,
-                    unread = 1,
-                    load = { previewConversationPage() },
-                    send = { _, _ -> },
-                    read = {},
-                    changed = {},
-                    expectedDriver = "driver-1",
-                    initiallyOpen = true,
-                    reference = "TNW-2026-0042"
-                )
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Driver Conversation Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverConversationDarkPreview() {
-    DriverTheme(darkTheme = true) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Box(Modifier.height(520.dp).padding(16.dp)) {
                 DriverConversation(

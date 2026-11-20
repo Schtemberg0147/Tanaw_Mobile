@@ -1,7 +1,6 @@
 package com.tanaw.app.feature.workspace.driver.screens
 
 import android.app.Activity
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -55,28 +54,23 @@ internal val DriverNavy=NavyPrimary
 
 internal val DriverLightColorScheme = LightColorScheme
 
-internal val DriverDarkColorScheme = DarkColorScheme
-
 @Composable internal fun DriverTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DriverDarkColorScheme else DriverLightColorScheme
-    val extendedColors = if (darkTheme) ExtendedDarkColors else ExtendedLightColors
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window
             if (window != null) {
                 val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.isAppearanceLightStatusBars = !darkTheme
-                insetsController.isAppearanceLightNavigationBars = !darkTheme
+                insetsController.isAppearanceLightStatusBars = true
+                insetsController.isAppearanceLightNavigationBars = true
             }
         }
     }
-    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+    CompositionLocalProvider(LocalExtendedColors provides ExtendedLightColors) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = DriverLightColorScheme,
             typography = Typography,
             content = content
         )
@@ -725,12 +719,10 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
 }
 
 @Composable private fun DriverComplete(s:JsonObject,d:JsonObject?,details:JsonObject?,home:()->Unit) {
-    val isDark = isSystemInDarkTheme()
-    val heroTextColor = if(isDark) MaterialTheme.colorScheme.onSurface else Color.White
+    val heroTextColor = Color.White
     Surface(
-        color=if(isDark) MaterialTheme.colorScheme.surfaceContainerHigh else DriverNavy,
-        shape=RoundedCornerShape(16.dp),
-        border=if(isDark) BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant) else null
+        color=DriverNavy,
+        shape=RoundedCornerShape(16.dp)
     ) {Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Surface(color=MapPinVehicle,shape=CircleShape,border=BorderStroke(4.dp,Color.White)) {Box(Modifier.size(80.dp),contentAlignment=Alignment.Center) {DriverAsset(R.drawable.figma_driver_966f6,33,24,tint=Color.White)}}
         Text(if(s.value("status")=="cancelled")"Trip Cancelled" else if(s.value("status")=="completed")"Delivery Complete!" else "Proof Submitted",color=heroTextColor,style=MaterialTheme.typography.headlineMedium)
@@ -959,7 +951,7 @@ internal fun DriverTopAppBar(
                     }
                 } else {
                     DriverAsset(
-                        id = if (isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.figma_driver_fac2b,
+                        id = R.drawable.figma_driver_fac2b,
                         width = 46,
                         description = "TANAW logo"
                     )
@@ -1016,28 +1008,10 @@ internal fun DriverTopAppBar(
     }
 }
 
-@Preview(showBackground = true, name = "Driver Top Bar Light")
+@Preview(showBackground = true, name = "Driver Top Bar")
 @Composable
 private fun DriverTopAppBarLightPreview() {
-    DriverTheme(darkTheme = false) {
-        DriverTopAppBar(
-            trackingNumber = null,
-            showMessages = true,
-            unreadMessagesCount = 2,
-            unreadAlertsCount = 1,
-            isBusy = false,
-            onSwitchTrip = {},
-            onOpenMessages = {},
-            onOpenAlerts = {},
-            onRefresh = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Driver Top Bar Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverTopAppBarDarkPreview() {
-    DriverTheme(darkTheme = true) {
+    DriverTheme {
         DriverTopAppBar(
             trackingNumber = null,
             showMessages = true,
@@ -1097,11 +1071,11 @@ private fun previewDriverWorkspaceData() = buildJsonObject {
     })
 }
 
-@Preview(showBackground = true, name = "Driver Home Light")
+@Preview(showBackground = true, name = "Driver Home")
 @Composable
 private fun DriverHomeLightPreview() {
     val data = previewDriverWorkspaceData()
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 DriverIdentity(data)
@@ -1114,11 +1088,11 @@ private fun DriverHomeLightPreview() {
     }
 }
 
-@Preview(showBackground = true, name = "Driver Trips Light")
+@Preview(showBackground = true, name = "Driver Trips")
 @Composable
 private fun DriverTripsLightPreview() {
     val data = previewDriverWorkspaceData()
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             DriverTrips(
                 data = data,

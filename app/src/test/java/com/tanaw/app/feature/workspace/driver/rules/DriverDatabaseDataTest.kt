@@ -261,4 +261,56 @@ class DriverDatabaseDataTest {
         assertFalse(result.containsKey("routing"))
         assertEquals("pending", result.value("status"))
     }
+
+    @Test fun customerDetailsMergesAssignmentSummaryInParallelWhenMissingFromDetails()=runTest {
+        val result=DriverDatabaseData.loadDetails(
+            shipmentId = "ship-cust-3",
+            role = "customer",
+            deliveryId = null,
+            readShipmentDetails = {
+                delay(150)
+                buildJsonObject { put("shipment_id", it); put("status", "delivered") }
+            },
+            readAssignmentSummary = {
+                delay(150)
+                buildJsonObject {
+                    put("driver_name", "Juan Dela Cruz")
+                    put("driver_phone", "09171234567")
+                    put("truck_type", "6-Wheeler Closed Van")
+                    put("plate_number", "ABC 1234")
+                }
+            }
+        )
+        assertEquals(150L, testScheduler.currentTime)
+        assertEquals("Juan Dela Cruz", result.obj("assignment").value("driver_name"))
+        assertEquals("ABC 1234", result.obj("assignment").value("plate_number"))
+    }
+
+    @Test fun customerDetailsPreservesEmbeddedAssignmentAndIsolatesSummaryFailure()=runTest {
+        val preserved=DriverDatabaseData.loadDetails(
+            shipmentId = "ship-cust-4",
+            role = "customer",
+            readShipmentDetails = {
+                buildJsonObject {
+                    put("shipment_id", it)
+                    put("assignment", buildJsonObject { put("driver_name", "Embedded Driver") })
+                }
+            },
+            readAssignmentSummary = {
+                buildJsonObject { put("driver_name", "Fallback Driver") }
+            }
+        )
+        assertEquals("Embedded Driver", preserved.obj("assignment").value("driver_name"))
+
+        val failedSummary=DriverDatabaseData.loadDetails(
+            shipmentId = "ship-cust-5",
+            role = "customer",
+            readShipmentDetails = {
+                buildJsonObject { put("shipment_id", it); put("status", "delivered") }
+            },
+            readAssignmentSummary = { error("rpc unavailable") }
+        )
+        assertEquals("delivered", failedSummary.value("status"))
+        assertTrue(failedSummary.obj("assignment").isEmpty())
+    }
 }

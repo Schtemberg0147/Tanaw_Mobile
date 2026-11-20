@@ -1,5 +1,6 @@
 package com.tanaw.app.feature.workspace.driver.rules
 
+import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.value
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -22,12 +23,25 @@ internal object DriverDatabaseData {
         readShipmentDetails: suspend (String) -> JsonObject,
         readFuelHistory: (suspend (String) -> JsonArray)? = null,
         readEvidence: (suspend (String) -> JsonObject)? = null,
-        readRouteStatus: (suspend (String) -> JsonObject)? = null
+        readRouteStatus: (suspend (String) -> JsonObject)? = null,
+        readAssignmentSummary: (suspend (String) -> JsonObject?)? = null
     ): JsonObject = coroutineScope {
         require(shipmentId.isNotBlank()) { "SHIPMENT_ID_REQUIRED" }
         val detailsDeferred = async { readShipmentDetails(shipmentId) }
 
         if (role != "driver") {
+            val assignmentDeferred = if (readAssignmentSummary != null) {
+                async {
+                    try {
+                        readAssignmentSummary(shipmentId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            } else null
+
             val routingDeferred = if (!deliveryId.isNullOrBlank() && readRouteStatus != null) {
                 async {
                     try {
@@ -40,7 +54,13 @@ internal object DriverDatabaseData {
                 }
             } else null
 
-            val details = detailsDeferred.await()
+            val baseDetails = detailsDeferred.await()
+            val assignment = assignmentDeferred?.await()
+            val details = if (assignment != null && assignment.isNotEmpty() && baseDetails.obj("assignment").isEmpty()) {
+                JsonObject(baseDetails + mapOf("assignment" to assignment))
+            } else {
+                baseDetails
+            }
             val priorRouting = previousDetails?.takeIf { it.value("shipment_id") == shipmentId }?.get("routing")
             if (routingDeferred != null && onFastDetailsReady != null) {
                 val initial = if (priorRouting != null) JsonObject(details + mapOf("routing" to priorRouting)) else details

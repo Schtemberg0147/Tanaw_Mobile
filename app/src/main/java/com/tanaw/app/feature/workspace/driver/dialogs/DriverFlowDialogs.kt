@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.dialogs
 
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -445,7 +444,6 @@ internal fun DriverProofForm(
     var confirmDiscard by remember { mutableStateOf(false) }
     var processing by remember { mutableStateOf(false) }
     val editable = !state.busy && !processing && !draft.frozen && restored.isSuccess
-    val isDark = isSystemInDarkTheme()
 
     fun persist(next: ProofDraft): Boolean {
         if (!store.save(owner, id, next)) {
@@ -564,9 +562,8 @@ internal fun DriverProofForm(
         }
         DriverTransaction("Delivery proof submitted", false, exitSubmitted, "BACK TO HOME", true, exitSubmitted) {
             Surface(
-                color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else NavyPrimary,
-                shape = RoundedCornerShape(16.dp),
-                border = if (isDark) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
+                color = NavyPrimary,
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(28.dp),
@@ -576,13 +573,13 @@ internal fun DriverProofForm(
                     DriverAsset(R.drawable.figma_driver_966f6, 33, 24)
                     Text(
                         text = "Proof Submitted!",
-                        color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.White,
+                        color = Color.White,
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = reference,
-                        color = if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFDBE8F5),
+                        color = Color(0xFFDBE8F5),
                         style = MaterialTheme.typography.titleSmall
                     )
                 }
@@ -710,16 +707,8 @@ internal fun DriverProofForm(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    val photoBg = if (preview != null) {
-                        if (isDark) StatusGreenBgDark else SuccessBannerBg
-                    } else {
-                        if (isDark) ErrorBgDark else ExpiredRedBg
-                    }
-                    val photoFg = if (preview != null) {
-                        if (isDark) StatusGreenDark else SuccessGreen
-                    } else {
-                        if (isDark) ErrorRedDark else ExpiredRed
-                    }
+                    val photoBg = if (preview != null) SuccessBannerBg else ExpiredRedBg
+                    val photoFg = if (preview != null) SuccessGreen else ExpiredRed
                     Surface(color = photoBg, shape = RoundedCornerShape(6.dp)) {
                         Text(
                             text = if (preview != null) "PHOTO ADDED" else "REQUIRED",
@@ -834,16 +823,8 @@ internal fun DriverProofForm(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    val sigBg = if (draft.strokes.isNotEmpty()) {
-                        if (isDark) StatusGreenBgDark else SuccessBannerBg
-                    } else {
-                        if (isDark) ErrorBgDark else ExpiredRedBg
-                    }
-                    val sigFg = if (draft.strokes.isNotEmpty()) {
-                        if (isDark) StatusGreenDark else SuccessGreen
-                    } else {
-                        if (isDark) ErrorRedDark else ExpiredRed
-                    }
+                    val sigBg = if (draft.strokes.isNotEmpty()) SuccessBannerBg else ExpiredRedBg
+                    val sigFg = if (draft.strokes.isNotEmpty()) SuccessGreen else ExpiredRed
                     Surface(color = sigBg, shape = RoundedCornerShape(6.dp)) {
                         Text(
                             text = if (draft.strokes.isNotEmpty()) "SIGNED" else "REQUIRED",
@@ -967,18 +948,10 @@ internal fun DriverProofForm(
     }
 }
 
-@Preview(showBackground = true, name = "Incident Form Light")
+@Preview(showBackground = true, name = "Incident Form")
 @Composable
 private fun DriverIncidentFormLightPreview() {
-    DriverTheme(darkTheme = false) {
-        DriverIncidentForm("fixture", MobileState(), {}) { _, _, _, _, _ -> }
-    }
-}
-
-@Preview(showBackground = true, name = "Incident Form Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun DriverIncidentFormDarkPreview() {
-    DriverTheme(darkTheme = true) {
+    DriverTheme {
         DriverIncidentForm("fixture", MobileState(), {}) { _, _, _, _, _ -> }
     }
 }

@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.driver.components
 
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -433,10 +432,10 @@ internal fun ExpenseReceiptSelector(
     }
 }
 
-@Preview(showBackground = true, name = "Receipt Selector Empty Light")
+@Preview(showBackground = true, name = "Receipt Selector Empty")
 @Composable
 private fun ExpenseReceiptSelectorEmptyPreview() {
-    DriverTheme(darkTheme = false) {
+    DriverTheme {
         Box(Modifier.padding(16.dp)) {
             ExpenseReceiptSelector(
                 receipt = null,
@@ -444,23 +443,6 @@ private fun ExpenseReceiptSelectorEmptyPreview() {
                 enabled = true,
                 onSelectClick = {}
             )
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Receipt Selector Empty Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun ExpenseReceiptSelectorEmptyDarkPreview() {
-    DriverTheme(darkTheme = true) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.padding(16.dp)) {
-                ExpenseReceiptSelector(
-                    receipt = null,
-                    preparingReceipt = false,
-                    enabled = true,
-                    onSelectClick = {}
-                )
-            }
         }
     }
 }
