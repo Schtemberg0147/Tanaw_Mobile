@@ -756,7 +756,617 @@ GRANT EXECUTE ON FUNCTION public.review_shipment_payment(uuid, text, text) TO au
 - The Android client subscribes to Realtime on `public.payments` so Admin Verify/Reject unlocks `START TRANSIT` or displays the rejection banner immediately without forcing manual reloads.
 - All payment submission retries use a stable encrypted local draft UUID (`PaymentDraftStore`) and idempotent storage upload at `<delivery_id>/payment-<request_id>.jpg`.
 
+---
 
+## 7. Request C12: Customer No-Show Flow, 3-Strike Standing, Booking Cooldowns, Permanent Suspension & In-App Appeals
 
+### Motivation
+When a driver arrives at a customer's pickup location and the customer fails to show up after the grace window, the platform needs a transparent, enforceable no-show and progressive strike system shared across **Tanaw Mobile** (Customer & Driver apps) and the **Web Admin Console (`mabutol-trucking-react`)**:
+1. **Grace & Final-Warning Windows:** After `pickup_arrived_at`, the customer has a standard grace period (`grace_ends_at`, default 15 min) followed by an extended wait window (`auto_cancel_at`, default 30 min total wait time). During the final 5 minutes before `auto_cancel_at`, the customer enters **Booking At Risk** with a live countdown.
+2. **Customer "I'm On My Way" Signal:** Customers in the post-grace window can tap **"I'm On My Way — Notify Driver"** to record `customer_on_way_at` and immediately alert the waiting driver.
+3. **Dual Cancellation Authority (Driver/Auto + Office):** Once `now() >= auto_cancel_at`, **both** the assigned driver (via mobile) and office/admin staff (via web) — as well as an optional scheduled auto-cancel job at `0:00` — can confirm the no-show cancellation atomically.
+4. **Progressive 3-Strike Penalties:**
+   - **Strike 1 of 3:** Shipment cancelled as `no_show` + **48-hour** booking cooldown (`booking_cooldown_until = now() + interval '48 hours'`).
+   - **Strike 2 of 3 (Final Warning):** Shipment cancelled as `no_show` + **72-hour** booking cooldown (`booking_cooldown_until = now() + interval '72 hours'`).
+   - **Strike 3 of 3:** **Permanent Account Suspension** (`standing_status = 'suspended'`, `suspended_at = now()`). Crucially, `public.users.is_active` remains `true` so `mobile_workspace()` can still load the customer's strike history and render the in-app **Account Suspended** screen & Appeal form, while `mobile_create_request()` hard-blocks new bookings.
+   - **Post-Reinstatement Rule:** Strikes do **not** reset after reinstatement (`standing_status = 'reinstated'`); a 4th confirmed no-show triggers permanent account review / re-suspension.
+5. **In-App Suspension Appeal Form:** Suspended customers can submit an appeal directly in the mobile app (`public.customer_appeals`), reviewed by admins within 3–5 business days.
+6. **Web Admin `STRIKE STATUS` Column:** The Customers table in `mabutol-trucking-react` displays a 3-circle strike status indicator (`0/3`, `1/3`, `2/3`, `3/3`) per customer, alongside strike history details and appeal review actions.
 
+### Proposed Schema Changes
+
+```sql
+-- 1. Standing & suspension fields on public.customers (keep public.users.is_active = true for suspended customers)
+ALTER TABLE public.customers
+    ADD COLUMN IF NOT EXISTS no_show_strike_count smallint NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS booking_cooldown_until timestamptz,
+    ADD COLUMN IF NOT EXISTS standing_status text NOT NULL DEFAULT 'active'
+        CHECK (standing_status IN ('active', 'suspended', 'reinstated')),
+    ADD COLUMN IF NOT EXISTS suspended_at timestamptz,
+    ADD COLUMN IF NOT EXISTS suspension_reason text,
+    ADD COLUMN IF NOT EXISTS reinstated_at timestamptz;
+
+-- 2. Delivery & shipment no-show tracking fields
+ALTER TABLE public.deliveries
+    ADD COLUMN IF NOT EXISTS customer_on_way_at timestamptz,
+    ADD COLUMN IF NOT EXISTS no_show_confirmed_at timestamptz;
+
+ALTER TABLE public.shipments
+    ADD COLUMN IF NOT EXISTS cancellation_type text
+        CHECK (cancellation_type IN ('customer', 'office', 'no_show', 'system'));
+
+-- 3. Immutable strike history ledger
+CREATE TABLE IF NOT EXISTS public.customer_no_show_strikes (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+    shipment_id uuid NOT NULL UNIQUE REFERENCES public.shipments(id) ON DELETE CASCADE,
+    delivery_id uuid REFERENCES public.deliveries(id) ON DELETE SET NULL,
+    strike_number smallint NOT NULL CHECK (strike_number >= 1),
+    confirmed_by uuid REFERENCES public.users(id),
+    confirmed_source text NOT NULL DEFAULT 'office'
+        CHECK (confirmed_source IN ('driver', 'office', 'system')),
+    confirmed_at timestamptz NOT NULL DEFAULT now(),
+    reason text NOT NULL DEFAULT 'Customer no-show at pick-up location',
+    attempt_notes text,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_no_show_strikes_customer
+    ON public.customer_no_show_strikes (customer_id, confirmed_at ASC);
+
+ALTER TABLE public.customer_no_show_strikes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "customers read own no-show strikes"
+ON public.customer_no_show_strikes
+FOR SELECT
+TO authenticated
+USING (customer_id = public.my_customer_id());
+
+CREATE POLICY "staff full access on no-show strikes"
+ON public.customer_no_show_strikes
+FOR ALL
+TO authenticated
+USING (public.get_user_role() IN ('admin', 'staff'));
+
+-- 4. In-app suspension appeals table
+CREATE TABLE IF NOT EXISTS public.customer_appeals (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+    user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    strike_count_at_appeal smallint NOT NULL,
+    reason text NOT NULL CHECK (length(trim(reason)) BETWEEN 10 AND 1500),
+    contact_number text,
+    status text NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'rejected')),
+    admin_notes text,
+    reviewed_by uuid REFERENCES public.users(id),
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_appeals_customer
+    ON public.customer_appeals (customer_id, created_at DESC);
+
+ALTER TABLE public.customer_appeals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "customers read own appeals"
+ON public.customer_appeals
+FOR SELECT
+TO authenticated
+USING (customer_id = public.my_customer_id());
+
+CREATE POLICY "staff full access on customer appeals"
+ON public.customer_appeals
+FOR ALL
+TO authenticated
+USING (public.get_user_role() IN ('admin', 'staff'));
+```
+
+### Proposed RPC Changes
+
+```sql
+-- 1. Customer taps "I'm On My Way — Notify Driver" during grace/at-risk wait window
+CREATE OR REPLACE FUNCTION public.customer_notify_on_the_way(p_delivery_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_customer_id uuid := public.my_customer_id();
+    v_delivery public.deliveries%ROWTYPE;
+    v_shipment public.shipments%ROWTYPE;
+    v_driver_user_id uuid;
+    v_now timestamptz := now();
+BEGIN
+    IF v_customer_id IS NULL THEN
+        RAISE EXCEPTION 'ACTIVE_ACCOUNT_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_delivery FROM public.deliveries WHERE id = p_delivery_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'DELIVERY_NOT_FOUND';
+    END IF;
+
+    SELECT * INTO v_shipment
+    FROM public.shipments
+    WHERE id = v_delivery.shipment_id AND customer_id = v_customer_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'SHIPMENT_NOT_FOUND';
+    END IF;
+
+    IF v_delivery.status <> 'assigned'
+       OR v_delivery.pickup_arrived_at IS NULL
+       OR v_delivery.customer_showed_at IS NOT NULL THEN
+        RAISE EXCEPTION 'NOT_IN_GRACE_WINDOW';
+    END IF;
+
+    IF v_delivery.customer_on_way_at IS NOT NULL THEN
+        RETURN jsonb_build_object(
+            'delivery_id', v_delivery.id,
+            'customer_on_way_at', v_delivery.customer_on_way_at,
+            'already_notified', true
+        );
+    END IF;
+
+    UPDATE public.deliveries
+    SET customer_on_way_at = v_now,
+        updated_at = v_now
+    WHERE id = v_delivery.id;
+
+    SELECT dr.user_id INTO v_driver_user_id
+    FROM public.drivers dr
+    WHERE dr.id = v_delivery.driver_id;
+
+    IF v_driver_user_id IS NOT NULL THEN
+        INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+        VALUES (
+            v_driver_user_id,
+            'delivery'::public.notification_type,
+            'Customer is on the way',
+            'The customer for ' || coalesce(v_shipment.tracking_number, 'your trip') ||
+            ' notified that they are heading to the pick-up location now.',
+            v_shipment.id
+        );
+    END IF;
+
+    RETURN jsonb_build_object(
+        'delivery_id', v_delivery.id,
+        'customer_on_way_at', v_now,
+        'already_notified', false
+    );
+END $$;
+
+REVOKE ALL ON FUNCTION public.customer_notify_on_the_way(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.customer_notify_on_the_way(uuid) TO authenticated;
+
+-- 2. Atomic No-Show Cancellation & Strike Issuance (callable by BOTH assigned driver after auto_cancel_at AND office admin/staff)
+CREATE OR REPLACE FUNCTION public.confirm_no_show_cancellation(
+    p_delivery_id uuid,
+    p_reason text DEFAULT NULL,
+    p_attempt_notes text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_role text;
+    v_delivery public.deliveries%ROWTYPE;
+    v_shipment public.shipments%ROWTYPE;
+    v_customer public.customers%ROWTYPE;
+    v_now timestamptz := now();
+    v_new_strikes smallint;
+    v_cooldown_until timestamptz;
+    v_new_standing text;
+    v_source text;
+    v_reason text := coalesce(nullif(btrim(p_reason), ''), 'Confirmed customer no-show after pickup wait period');
+BEGIN
+    SELECT role::text INTO v_role FROM public.users WHERE id = v_uid AND is_active;
+    IF v_role IS NULL THEN
+        RAISE EXCEPTION 'ACTIVE_ACCOUNT_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_delivery FROM public.deliveries WHERE id = p_delivery_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'DELIVERY_NOT_FOUND';
+    END IF;
+
+    IF v_delivery.status <> 'assigned' OR v_delivery.pickup_arrived_at IS NULL OR v_delivery.customer_showed_at IS NOT NULL THEN
+        RAISE EXCEPTION 'DELIVERY_CLOSED';
+    END IF;
+
+    IF v_role = 'driver' THEN
+        IF NOT EXISTS (SELECT 1 FROM public.drivers d WHERE d.id = v_delivery.driver_id AND d.user_id = v_uid) THEN
+            RAISE EXCEPTION 'ACTIVE_DRIVER_REQUIRED' USING ERRCODE = '42501';
+        END IF;
+        IF v_delivery.auto_cancel_at IS NULL OR v_now < v_delivery.auto_cancel_at THEN
+            RAISE EXCEPTION 'WAIT_PERIOD_NOT_FINISHED';
+        END IF;
+        v_source := 'driver';
+    ELSIF v_role IN ('admin', 'staff') THEN
+        v_source := 'office';
+    ELSE
+        RAISE EXCEPTION 'OFFICE_OR_DRIVER_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_shipment FROM public.shipments WHERE id = v_delivery.shipment_id FOR UPDATE;
+    SELECT * INTO v_customer FROM public.customers WHERE id = v_shipment.customer_id FOR UPDATE;
+
+    -- Cancel delivery & shipment
+    UPDATE public.deliveries
+    SET status = 'cancelled',
+        no_show_confirmed_at = v_now,
+        updated_at = v_now
+    WHERE id = v_delivery.id;
+
+    UPDATE public.shipments
+    SET status = 'cancelled',
+        cancellation_type = 'no_show',
+        cancelled_reason = v_reason,
+        cancelled_at = v_now,
+        updated_at = v_now
+    WHERE id = v_shipment.id;
+
+    -- Issue immutable strike record
+    v_new_strikes := coalesce(v_customer.no_show_strike_count, 0) + 1;
+
+    INSERT INTO public.customer_no_show_strikes (
+        customer_id, shipment_id, delivery_id, strike_number,
+        confirmed_by, confirmed_source, confirmed_at, reason, attempt_notes
+    )
+    VALUES (
+        v_customer.id, v_shipment.id, v_delivery.id, v_new_strikes,
+        v_uid, v_source, v_now, v_reason, nullif(btrim(coalesce(p_attempt_notes, '')), '')
+    )
+    ON CONFLICT (shipment_id) DO NOTHING;
+
+    IF v_new_strikes = 1 THEN
+        v_cooldown_until := v_now + interval '48 hours';
+        v_new_standing := 'active';
+    ELSIF v_new_strikes = 2 THEN
+        v_cooldown_until := v_now + interval '72 hours';
+        v_new_standing := 'active';
+    ELSE
+        -- Strike 3 (or 4th strike after reinstatement) => permanent suspension / admin review
+        v_cooldown_until := NULL;
+        v_new_standing := 'suspended';
+    END IF;
+
+    UPDATE public.customers
+    SET no_show_strike_count = v_new_strikes,
+        booking_cooldown_until = v_cooldown_until,
+        standing_status = v_new_standing,
+        suspended_at = CASE WHEN v_new_standing = 'suspended' THEN v_now ELSE suspended_at END,
+        suspension_reason = CASE
+            WHEN v_new_standing = 'suspended' AND v_new_strikes >= 4 THEN v_new_strikes || ' confirmed no-shows (post-reinstatement review)'
+            WHEN v_new_standing = 'suspended' THEN '3 confirmed no-shows'
+            ELSE suspension_reason
+        END,
+        updated_at = v_now
+    WHERE id = v_customer.id;
+
+    -- Notify customer
+    IF v_customer.user_id IS NOT NULL THEN
+        INSERT INTO public.notifications (user_id, type, title, body, shipment_id)
+        VALUES (
+            v_customer.user_id,
+            'shipment_status'::public.notification_type,
+            CASE
+                WHEN v_new_standing = 'suspended' THEN 'Account Suspended — Strike ' || v_new_strikes || ' of 3'
+                ELSE 'Booking Cancelled (No-Show) — Strike ' || v_new_strikes || ' of 3'
+            END,
+            CASE
+                WHEN v_new_strikes = 1 THEN 'Shipment ' || coalesce(v_shipment.tracking_number, '') || ' was cancelled due to no-show. Booking is paused for 48 hours.'
+                WHEN v_new_strikes = 2 THEN 'Final warning: Shipment ' || coalesce(v_shipment.tracking_number, '') || ' was cancelled due to no-show. Booking is paused for 72 hours.'
+                ELSE 'Your account has been suspended after ' || v_new_strikes || ' confirmed no-shows. Open the app to submit an appeal.'
+            END,
+            v_shipment.id
+        );
+    END IF;
+
+    RETURN jsonb_build_object(
+        'shipment_id', v_shipment.id,
+        'strike_number', v_new_strikes,
+        'standing_status', v_new_standing,
+        'booking_cooldown_until', v_cooldown_until
+    );
+END $$;
+
+REVOKE ALL ON FUNCTION public.confirm_no_show_cancellation(uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.confirm_no_show_cancellation(uuid, text, text) TO authenticated;
+
+-- Note: Update driver_milestone(p_delivery, 'no_show') to delegate to confirm_no_show_cancellation(p_delivery)
+-- when driver cancellation is enabled, and optionally schedule a pg_cron job calling
+-- confirm_no_show_cancellation for expired deliveries where now() >= auto_cancel_at.
+
+-- 3. In-app Suspension Appeal Submission RPC
+CREATE OR REPLACE FUNCTION public.customer_submit_suspension_appeal(
+    p_reason text,
+    p_contact_number text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_customer public.customers%ROWTYPE;
+    v_reason text := btrim(coalesce(p_reason, ''));
+    v_contact text := nullif(btrim(coalesce(p_contact_number, '')), '');
+    v_appeal public.customer_appeals%ROWTYPE;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'ACTIVE_ACCOUNT_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_customer FROM public.customers WHERE user_id = v_uid FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'CUSTOMER_PROFILE_REQUIRED';
+    END IF;
+
+    IF v_customer.standing_status <> 'suspended' THEN
+        RAISE EXCEPTION 'ACCOUNT_NOT_SUSPENDED';
+    END IF;
+
+    IF length(v_reason) < 10 OR length(v_reason) > 1500 THEN
+        RAISE EXCEPTION 'APPEAL_REASON_REQUIRED';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.customer_appeals
+        WHERE customer_id = v_customer.id AND status = 'pending'
+    ) THEN
+        RAISE EXCEPTION 'APPEAL_ALREADY_PENDING';
+    END IF;
+
+    INSERT INTO public.customer_appeals (
+        customer_id, user_id, strike_count_at_appeal, reason, contact_number
+    )
+    VALUES (
+        v_customer.id, v_uid, coalesce(v_customer.no_show_strike_count, 3),
+        v_reason, coalesce(v_contact, v_customer.phone)
+    )
+    RETURNING * INTO v_appeal;
+
+    INSERT INTO public.notifications (user_id, type, title, body)
+    SELECT
+        u.id,
+        'system'::public.notification_type,
+        'New suspension appeal submitted',
+        coalesce(v_customer.name, 'A customer') || ' submitted a suspension appeal (' ||
+        v_appeal.strike_count_at_appeal || ' strikes). Review within 3-5 business days.'
+    FROM public.users u
+    WHERE u.is_active AND u.role IN ('admin', 'staff');
+
+    RETURN jsonb_build_object(
+        'id', v_appeal.id,
+        'status', v_appeal.status,
+        'created_at', v_appeal.created_at
+    );
+END $$;
+
+REVOKE ALL ON FUNCTION public.customer_submit_suspension_appeal(text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.customer_submit_suspension_appeal(text, text) TO authenticated;
+
+-- 4. Office Appeal Review & Reinstatement (preserves strike history; strikes do NOT reset)
+CREATE OR REPLACE FUNCTION public.office_review_customer_appeal(
+    p_appeal_id uuid,
+    p_decision text,
+    p_admin_notes text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_appeal public.customer_appeals%ROWTYPE;
+    v_customer public.customers%ROWTYPE;
+    v_notes text := nullif(btrim(coalesce(p_admin_notes, '')), '');
+BEGIN
+    IF v_uid IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND is_active AND role IN ('admin', 'staff')
+    ) THEN
+        RAISE EXCEPTION 'OFFICE_ACCESS_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_appeal FROM public.customer_appeals WHERE id = p_appeal_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'APPEAL_NOT_FOUND'; END IF;
+    IF v_appeal.status <> 'pending' THEN RAISE EXCEPTION 'APPEAL_ALREADY_REVIEWED'; END IF;
+
+    SELECT * INTO v_customer FROM public.customers WHERE id = v_appeal.customer_id FOR UPDATE;
+
+    IF p_decision = 'approve' THEN
+        UPDATE public.customer_appeals
+        SET status = 'approved', admin_notes = v_notes, reviewed_by = v_uid, reviewed_at = now(), updated_at = now()
+        WHERE id = v_appeal.id;
+
+        UPDATE public.customers
+        SET standing_status = 'reinstated',
+            booking_cooldown_until = NULL,
+            reinstated_at = now(),
+            updated_at = now()
+        WHERE id = v_customer.id;
+
+        INSERT INTO public.notifications (user_id, type, title, body)
+        VALUES (
+            v_customer.user_id,
+            'system'::public.notification_type,
+            'Account reinstated',
+            'Your suspension appeal was approved. Note: prior strikes remain on record; a subsequent no-show triggers permanent account review.'
+        );
+    ELSIF p_decision = 'reject' THEN
+        UPDATE public.customer_appeals
+        SET status = 'rejected', admin_notes = v_notes, reviewed_by = v_uid, reviewed_at = now(), updated_at = now()
+        WHERE id = v_appeal.id;
+
+        INSERT INTO public.notifications (user_id, type, title, body)
+        VALUES (
+            v_customer.user_id,
+            'system'::public.notification_type,
+            'Suspension appeal declined',
+            coalesce('Your appeal was not approved: ' || v_notes, 'Your suspension appeal was declined by administration.')
+        );
+    ELSE
+        RAISE EXCEPTION 'INVALID_APPEAL_DECISION';
+    END IF;
+
+    RETURN jsonb_build_object('id', v_appeal.id, 'status', CASE WHEN p_decision = 'approve' THEN 'approved' ELSE 'rejected' END);
+END $$;
+
+REVOKE ALL ON FUNCTION public.office_review_customer_appeal(uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.office_review_customer_appeal(uuid, text, text) TO authenticated;
+
+-- 5. Booking gate inside mobile_create_request(p_request_id, p_data)
+-- Immediately after loading customer row:
+--   IF v_customer.standing_status = 'suspended' THEN
+--       RAISE EXCEPTION 'ACCOUNT_SUSPENDED';
+--   END IF;
+--   IF v_customer.booking_cooldown_until IS NOT NULL AND v_customer.booking_cooldown_until > now() THEN
+--       RAISE EXCEPTION 'BOOKING_COOLDOWN_ACTIVE';
+--   END IF;
+
+-- 6. mobile_workspace() enrichment
+-- - Include in customer JSON: no_show_strike_count, booking_cooldown_until, standing_status, suspended_at, suspension_reason, reinstated_at
+-- - Include in deliveries JSON: grace_ends_at, auto_cancel_at, customer_on_way_at, no_show_confirmed_at
+-- - Include in shipments JSON: cancellation_type, cancelled_at
+-- - Add top-level arrays:
+--     'customer_strikes' (from public.customer_no_show_strikes joined with shipments.tracking_number, ORDER BY confirmed_at ASC)
+--     'customer_appeals' (from public.customer_appeals, ORDER BY created_at DESC LIMIT 5)
+```
+
+### Web Admin Specification (`mabutol-trucking-react`)
+1. **Customers Table — `STRIKE STATUS` Column:**
+   - Render a reusable `<StrikeStatusIndicator count={customer.no_show_strike_count} max={3} />` component matching the 3-circle indicator (`○ ○ ○` for `0/3`, `(!) ○ ○` for `1/3`, `(!) (!) ○` for `2/3`, `(!) (!) (!)` for `3/3`).
+   - Filled circles use `#B91C1C` with crisp white `!` glyph (`aria-hidden="true"`); hollow circles use `1.5px solid #64748B`; wrapper provides `aria-label="${count} of 3 no-show strikes"` and tooltip with strike dates & cooldown/suspension status.
+   - Add table filter chips: `All` · `Has Strikes (1–2)` · `Suspended (3/3)`.
+2. **Customer Detail Drawer & Appeals Queue:**
+   - Show chronological `STRIKE HISTORY` (Strike 1, Strike 2, Strike 3 with dates & shipment tracking numbers), active booking cooldown timer, and pending `customer_appeals` with **Approve & Reinstate** (`office_review_customer_appeal(id, 'approve', notes)`) and **Decline** (`office_review_customer_appeal(id, 'reject', notes)`) buttons.
+3. **Dispatch / Active Deliveries No-Show Action:**
+   - Surface a **"Confirm No-Show & Issue Strike"** action (`confirm_no_show_cancellation(delivery_id, reason, attempt_notes)`) when a delivery is waiting past grace/wait threshold or flagged by the driver.
+
+### Client Compatibility (`Tanaw_Mobile`)
+- `MobileWorkspaceViewModel.readCustomerFtlData` fetches standing fields (`customers`), `customer_no_show_strikes`, `customer_appeals`, and pickup wait timestamps (`deliveries`) with non-blocking fallbacks so older backend revisions continue working seamlessly until this migration is applied.
+
+---
+
+## 8. Request S01–S06: Database Privilege, RLS, Atomic Mutation & Edge Function Security Hardening
+
+### Motivation
+A comprehensive defensive security audit of the bundled Supabase schema snapshot (`supabase/migrations/live_schema_dump.sql`), early migrations (`07_driver_locations.sql`), and admin Edge Function (`supabase/functions/create-driver-user/index.ts`) identified six server-side privilege, RLS, and atomicity gaps that should be hardened in `mabutol-trucking-react`:
+
+1. **`S01` — Unauthenticated Role Check in `driver_set_delivery_status` (`live_schema_dump.sql` L271–286 & L4785):**
+   - `public.driver_set_delivery_status(p_delivery_id uuid, p_status text)` is `SECURITY DEFINER` and granted to `authenticated`, but does not check `auth.uid()` or verify that the caller owns the delivery (`driver_id = public.my_driver_id()`). Any authenticated user (including a customer) could invoke it directly to change arbitrary delivery statuses and by trigger mark shipments `completed` or `in_transit`.
+2. **`S02` — Direct Customer `INSERT` on `public.shipments` Bypassing `mobile_create_request` (`live_schema_dump.sql` L2095):**
+   - The RLS policy `"customer books own shipment"` allows any authenticated customer to `INSERT` directly into `public.shipments` with only `WITH CHECK (customer_id = public.my_customer_id())`, bypassing `mobile_create_request()` validation, booking cooldowns (`booking_cooldown_until`), and account suspension checks (`standing_status = 'suspended'`), and allowing caller-supplied `final_amount`, `quoted_amount`, or `payment_state = 'paid'`.
+3. **`S03` — Unrestricted Column Updates on `public.users` (`live_schema_dump.sql` L2062 & L2423):**
+   - The `"update own profile"` policy and trigger `prevent_users_privilege_escalation` block changes to `role` and `is_active`, but allow direct `UPDATE` to `phone`, `email`, and unbounded `avatar_url` strings—allowing a user to desynchronize `public.users.phone`/`email` from verified `auth.users` identity or store multi-megabyte strings in `avatar_url`.
+4. **`S04` — Missing Delivery Ownership Verification in `driver_locations` Direct `INSERT` Policy (`07_driver_locations.sql` L24–26):**
+   - Policy `"Drivers can insert their own location"` checks `driver_id IN (SELECT id FROM public.drivers WHERE user_id = auth.uid())` without verifying that `delivery_id` is assigned to that driver and currently active (telemetry should flow exclusively through `driver_record_position`).
+5. **`S05` — Atomic `mobile_cancel_shipment` (Including `'quoted'`) and `mobile_accept_shipment_quote` With Direct `UPDATE` Lockdown:**
+   - Ensure `mobile_cancel_shipment(p_shipment, p_reason)` permits `'quoted'` in addition to `'pending'`, `'booked'`, and `'assigned'` (matching `CustomerCancellationRules.CANCELLABLE_SHIPMENT_STATUSES`), and ensure `mobile_accept_shipment_quote(p_shipment)` enforces `quote_expires_at > now()` atomically on the server using the database clock (`now()`). Once both RPCs are deployed, revoke direct customer `UPDATE` privileges on `public.shipments`.
+6. **`S06` — Edge Function Hardening (`create-driver-user` & `mobile-email-login`):**
+   - In `create-driver-user/index.ts`: pin `@supabase/supabase-js` to an exact semver version (e.g., `2.49.1`), restrict `Access-Control-Allow-Origin` to the configured admin console origin, enforce `req.method === 'POST'`, require password complexity (`>= 8` chars) and valid email/phone formats, roll back (`supabaseAdmin.auth.admin.deleteUser(newUserId)`) if `public.users` or `public.drivers` upsert fails so no orphaned auth account remains, and return sanitized error codes instead of raw database messages.
+   - In `mobile-email-login`: verify per-IP and per-account rate limiting and uniform error responses so invalid emails and wrong passwords cannot be distinguished for account enumeration.
+
+### Proposed Hardening Migration (`mabutol-trucking-react`)
+
+```sql
+-- 1. S01: Revoke direct authenticated execution on internal/legacy driver_set_delivery_status
+-- (All mobile driver transitions go through mobile_driver_action / driver_milestone / driver_submit_pod)
+REVOKE ALL ON FUNCTION public.driver_set_delivery_status(uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.driver_set_delivery_status(uuid, text) TO service_role;
+
+-- 2. S02 & S05: Remove direct customer INSERT and UPDATE policies on public.shipments
+-- (Bookings must go through mobile_create_request; cancellations and quote acceptance go through RPCs)
+DROP POLICY IF EXISTS "customer books own shipment" ON public.shipments;
+DROP POLICY IF EXISTS "customer cancels own pending shipment" ON public.shipments;
+
+-- Ensure mobile_cancel_shipment includes 'quoted' alongside 'pending', 'booked', 'assigned'
+-- (Update status check in Request C10's mobile_cancel_shipment):
+--   IF v_shipment.status NOT IN ('pending', 'quoted', 'booked', 'assigned') THEN
+--       RAISE EXCEPTION 'SHIPMENT_NOT_CANCELLABLE';
+--   END IF;
+
+-- Atomic server-side quote acceptance RPC
+CREATE OR REPLACE FUNCTION public.mobile_accept_shipment_quote(p_shipment uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_customer_id uuid := public.my_customer_id();
+    v_shipment public.shipments%ROWTYPE;
+BEGIN
+    IF v_customer_id IS NULL THEN
+        RAISE EXCEPTION 'ACTIVE_ACCOUNT_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+
+    SELECT * INTO v_shipment
+    FROM public.shipments
+    WHERE id = p_shipment AND customer_id = v_customer_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'SHIPMENT_NOT_FOUND';
+    END IF;
+
+    IF v_shipment.status IN ('booked', 'confirmed') THEN
+        RAISE EXCEPTION 'ALREADY_ACCEPTED';
+    END IF;
+
+    IF v_shipment.status <> 'quoted' THEN
+        RAISE EXCEPTION 'QUOTE_NOT_AVAILABLE';
+    END IF;
+
+    IF v_shipment.quote_expires_at IS NOT NULL AND now() >= v_shipment.quote_expires_at THEN
+        RAISE EXCEPTION 'QUOTE_EXPIRED';
+    END IF;
+
+    UPDATE public.shipments
+    SET status = 'booked',
+        updated_at = now()
+    WHERE id = p_shipment;
+
+    RETURN jsonb_build_object(
+        'shipment_id', p_shipment,
+        'status', 'booked',
+        'updated_at', now()
+    );
+END $$;
+
+REVOKE ALL ON FUNCTION public.mobile_accept_shipment_quote(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.mobile_accept_shipment_quote(uuid) TO authenticated;
+
+-- 3. S03: Bound avatar_url length on public.users and prevent unverified email/phone spoofing
+ALTER TABLE public.users
+    DROP CONSTRAINT IF EXISTS users_avatar_url_max_length,
+    ADD CONSTRAINT users_avatar_url_max_length CHECK (avatar_url IS NULL OR length(avatar_url) <= 750000);
+
+-- 4. S04: Tighten driver_locations direct INSERT policy (or require driver_record_position RPC)
+DROP POLICY IF EXISTS "Drivers can insert their own location" ON public.driver_locations;
+CREATE POLICY "Drivers can insert their own location"
+ON public.driver_locations
+FOR INSERT
+TO authenticated
+WITH CHECK (
+    driver_id = public.my_driver_id()
+    AND EXISTS (
+        SELECT 1 FROM public.deliveries d
+        WHERE d.id = delivery_id
+          AND d.driver_id = public.my_driver_id()
+          AND d.status IN ('assigned', 'loading', 'in_transit')
+    )
+);
+```
+
+### Client Compatibility (`Tanaw_Mobile`)
+- `MobileWorkspaceViewModel.cancelShipment` and `MobileWorkspaceViewModel.acceptQuote` now invoke `mobile_cancel_shipment` and `mobile_accept_shipment_quote` first, falling back to a direct PostgREST `UPDATE` **only** on `PGRST202` (function not yet deployed). Once the migration above is applied in `mabutol-trucking-react`, all mutations execute atomically through the `SECURITY DEFINER` RPCs.
 

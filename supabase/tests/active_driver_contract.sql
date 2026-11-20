@@ -50,6 +50,22 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='delivery_expenses' AND cmd='INSERT')
  OR NOT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='storage' AND tablename='objects' AND cmd='SELECT' AND policyname='authorized recorded incident photo or receipt') THEN
   RAISE EXCEPTION 'DRIVER_CONTRACT_EVIDENCE_POLICY_MISSING';END IF;
+ -- Negative privilege assertions: anon must never execute mobile/driver RPCs
+ FOREACH signature IN ARRAY ARRAY[
+  'public.mobile_workspace()', 'public.mobile_shipment_details(uuid)',
+  'public.mobile_create_request(uuid,jsonb)', 'public.mobile_save_profile(text,text,text,text)',
+  'public.mobile_driver_action(uuid,text)', 'public.driver_milestone(uuid,text,jsonb)',
+  'public.driver_arrive_at_pickup(uuid,numeric,numeric)',
+  'public.driver_record_position(uuid,uuid,jsonb)',
+  'public.driver_report_incident_evidence(uuid,uuid,public.incident_category,text,integer,text[])',
+  'public.driver_submit_pod(uuid,text,text,text)',
+  'public.mobile_delivery_evidence_file(uuid,text,uuid)'
+ ] LOOP
+  proc:=to_regprocedure(signature);
+  IF proc IS NOT NULL AND has_function_privilege('anon',proc,'EXECUTE') THEN
+   RAISE EXCEPTION 'DRIVER_CONTRACT_ANON_EXECUTE_LEAK: %',signature;
+  END IF;
+ END LOOP;
 END $$;
 ROLLBACK;
 SELECT 'PASS: active driver contract, canonical dispatcher, private evidence and RLS prerequisites' result;
