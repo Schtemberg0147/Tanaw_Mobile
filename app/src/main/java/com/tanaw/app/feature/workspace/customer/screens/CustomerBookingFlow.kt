@@ -16,6 +16,7 @@ import com.tanaw.app.core.validation.MobileValidation
 import com.tanaw.app.feature.workspace.customer.components.PickupTimeBottomSheet
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
 import com.tanaw.app.feature.workspace.customer.rules.MobileBookingRules
 import com.tanaw.app.feature.workspace.customer.store.BookingDraft
 import com.tanaw.app.feature.workspace.model.RoutePreview
@@ -318,6 +319,9 @@ fun CustomerBookingFlow(
     }
     val hasValidSchedule = scheduledDeparture.isNotBlank() &&
         MobileBookingRules.departure(scheduledDeparture, bookingClock, minLeadTimeHours.toLong()) != null
+    val customerStanding = remember(data, bookingClock) {
+        CustomerNoShowRules.evaluateStanding(data, bookingClock)
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         when (step) {
@@ -359,6 +363,7 @@ fun CustomerBookingFlow(
                     scheduleAdjustmentNotice = scheduleAdjustmentNotice,
                     pricingRates = pricingRates,
                     isScheduleSet = hasValidSchedule,
+                    customerStanding = customerStanding,
                     onDestinationClick = { setStep(CustomerBookingStep.DESTINATION_MAP) },
                     onSwapLocations = {
                         val tmpAddr = pickup

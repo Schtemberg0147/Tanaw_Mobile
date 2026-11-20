@@ -19,9 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.DirectionsRun
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.DirectionsRun
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -342,7 +342,7 @@ internal fun PickupWaitRiskPanel(
                         .testTag("NotifyDriverOnWayButton")
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.DirectionsRun,
+                        imageVector = Icons.AutoMirrored.Outlined.DirectionsRun,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )

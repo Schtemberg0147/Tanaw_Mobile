@@ -185,6 +185,12 @@ object MobileErrorClassifier {
             detail.contains("PAYMENT_PROOF_REQUIRED") -> "Attach a clear photo of the customer-signed receipt before submitting."
             detail.contains("PAYMENT_REFERENCE_REQUIRED") -> "Enter the transaction reference number for this payment method."
             detail.contains("INVALID_PAYMENT_STATE") -> "Payment can only be recorded while the trip is in loading status."
+            detail.contains("ACCOUNT_SUSPENDED") -> "Your account is permanently suspended due to confirmed no-shows. Submit an appeal for office review."
+            detail.contains("BOOKING_COOLDOWN_ACTIVE") -> "Booking is temporarily paused due to a recent no-show strike. Please try again after your cooldown ends."
+            detail.contains("NOT_IN_GRACE_WINDOW") -> "Driver notification is only available while the driver is waiting at pick-up."
+            detail.contains("APPEAL_REASON_REQUIRED") -> "Please provide a detailed explanation (at least 10 characters) for your appeal."
+            detail.contains("APPEAL_ALREADY_PENDING") -> "You already have a suspension appeal under review."
+            detail.contains("ACCOUNT_NOT_SUSPENDED") -> "Your account is no longer suspended. Refresh to return to your workspace."
             detail.contains("INVALID_") || error is IllegalArgumentException -> "Check the entered details and try again."
             isAuthError(error) -> "Your session could not be verified. Sign in again to verify access."
             else -> "Unable to complete the request. Check your connection, refresh and try again."
@@ -216,6 +222,12 @@ object MobileErrorClassifier {
                 msg.contains("PAYMENT_PROOF_REQUIRED") ||
                 msg.contains("PAYMENT_REFERENCE_REQUIRED") ||
                 msg.contains("INVALID_PAYMENT_STATE") ||
+                msg.contains("ACCOUNT_SUSPENDED") ||
+                msg.contains("BOOKING_COOLDOWN_ACTIVE") ||
+                msg.contains("NOT_IN_GRACE_WINDOW") ||
+                msg.contains("APPEAL_REASON_REQUIRED") ||
+                msg.contains("APPEAL_ALREADY_PENDING") ||
+                msg.contains("ACCOUNT_NOT_SUSPENDED") ||
                 msg.contains("INVALID_CONTACT") ||
                 msg.contains("INVALID_PHONE") ||
                 msg.contains("ACTIVE_ACCOUNT_REQUIRED") ||

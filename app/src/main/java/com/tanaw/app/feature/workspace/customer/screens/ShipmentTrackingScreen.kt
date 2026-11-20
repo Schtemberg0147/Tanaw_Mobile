@@ -76,6 +76,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tanaw.app.feature.workspace.customer.components.PickupWaitRiskPanel
+import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.tracking.CustomerEtaPresentation
 import com.tanaw.app.feature.workspace.tracking.PositionFreshness
@@ -148,7 +150,8 @@ internal fun ShipmentTrackingScreen(
     vehicles: List<JsonObject> = emptyList(),
     customerCancellationSlot: (@Composable () -> Unit)? = null,
     initialExpanded: Boolean = false,
-    onAcceptQuote: (() -> Unit)? = null
+    onAcceptQuote: (() -> Unit)? = null,
+    onNotifyOnWay: ((deliveryId: String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val primaryDelivery = deliveries.firstOrNull()
@@ -200,6 +203,9 @@ internal fun ShipmentTrackingScreen(
     val showCancelAction = remember(shipment, deliveries) {
         ShipmentTrackingPresentation.shouldShowCancelAction(shipment, deliveries)
     }
+    val pickupWaitState = remember(shipment, primaryDelivery, now) {
+        CustomerNoShowRules.evaluatePickupWait(shipment, primaryDelivery, now)
+    }
 
     var recenterTrigger by remember { mutableIntStateOf(0) }
     var showFullEventLog by rememberSaveable(shipment.value("id")) { mutableStateOf(false) }
@@ -234,10 +240,16 @@ internal fun ShipmentTrackingScreen(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val peekHeight = (maxHeight * 0.46f)
-            .coerceIn(286.dp, 376.dp)
-            .coerceAtMost(maxHeight * 0.56f)
-        val mapViewportHeight = (maxHeight - peekHeight + 24.dp).coerceAtLeast(260.dp)
+        val peekHeight = if (pickupWaitState.isUrgentBannerVisible) {
+            (maxHeight * 0.56f)
+                .coerceIn(348.dp, 444.dp)
+                .coerceAtMost(maxHeight * 0.64f)
+        } else {
+            (maxHeight * 0.46f)
+                .coerceIn(286.dp, 376.dp)
+                .coerceAtMost(maxHeight * 0.56f)
+        }
+        val mapViewportHeight = (maxHeight - peekHeight + 24.dp).coerceAtLeast(220.dp)
         val expandedSheetMaxHeight = (maxHeight - 92.dp).coerceAtLeast(320.dp)
 
         BottomSheetScaffold(
@@ -271,14 +283,29 @@ internal fun ShipmentTrackingScreen(
                         .fillMaxWidth()
                         .heightIn(max = expandedSheetMaxHeight)
                 ) {
-                    PeekStatusSection(
-                        summary = sheetSummary,
-                        driverSummary = driverSummary,
-                        isExpanded = sheetState.currentValue == SheetValue.Expanded,
-                        onToggleExpand = toggleSheet,
-                        onCallDriver = { driverSummary.phoneNumber?.let(openDialer) },
-                        onMessageDriver = { driverSummary.phoneNumber?.let(openSms) }
-                    )
+                    if (pickupWaitState.isUrgentBannerVisible) {
+                        PickupWaitRiskPanel(
+                            waitState = pickupWaitState,
+                            driverSummary = driverSummary,
+                            busy = busy,
+                            offline = offline,
+                            onNotifyOnWay = {
+                                if (pickupWaitState.deliveryId.isNotBlank()) {
+                                    onNotifyOnWay?.invoke(pickupWaitState.deliveryId)
+                                }
+                            },
+                            onCallDriver = { driverSummary.phoneNumber?.let(openDialer) }
+                        )
+                    } else {
+                        PeekStatusSection(
+                            summary = sheetSummary,
+                            driverSummary = driverSummary,
+                            isExpanded = sheetState.currentValue == SheetValue.Expanded,
+                            onToggleExpand = toggleSheet,
+                            onCallDriver = { driverSummary.phoneNumber?.let(openDialer) },
+                            onMessageDriver = { driverSummary.phoneNumber?.let(openSms) }
+                        )
+                    }
 
                     HorizontalDivider(
                         color = TrackingDivider,
@@ -584,13 +611,15 @@ internal fun ShipmentTrackingScreen(
                 ) {
                     mapSlot(recenterTrigger, Modifier.fillMaxSize())
 
-                    FloatingEtaPill(
-                        etaPill = etaPill,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .statusBarsPadding()
-                            .padding(top = 68.dp, start = 16.dp, end = 16.dp)
-                    )
+                    if (!pickupWaitState.isUrgentBannerVisible) {
+                        FloatingEtaPill(
+                            etaPill = etaPill,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .statusBarsPadding()
+                                .padding(top = 68.dp, start = 16.dp, end = 16.dp)
+                        )
+                    }
 
                     RecenterMapButton(
                         onClick = { recenterTrigger++ },

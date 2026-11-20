@@ -63,10 +63,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
+import com.tanaw.app.feature.workspace.customer.components.BookingCooldownBanner
 import com.tanaw.app.feature.workspace.customer.components.CustomerTopBar
 import com.tanaw.app.feature.workspace.customer.components.LocationSelectorField
 import com.tanaw.app.feature.workspace.customer.components.VehicleSelectionCard
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerStandingSummary
 import com.tanaw.app.feature.workspace.customer.store.BookingDraft
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.feature.workspace.viewmodel.value
@@ -114,7 +116,8 @@ internal fun CustomerBookingHomeContent(
     leadTimeHelperText: String = CustomerBookingRules.leadTimeHelperText(24),
     scheduleAdjustmentNotice: String? = null,
     pricingRates: List<JsonObject> = emptyList(),
-    isScheduleSet: Boolean = true
+    isScheduleSet: Boolean = true,
+    customerStanding: CustomerStandingSummary = CustomerStandingSummary()
 ) {
     val selectedVehicle = vehicles.firstOrNull { it.value("id") == selectedVehicleId }
     val selectedEstimate = remember(selectedVehicle, pricingRates, routePreview?.distanceKm) {
@@ -172,6 +175,10 @@ internal fun CustomerBookingHomeContent(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+            }
+
+            if (customerStanding.isInCooldown) {
+                BookingCooldownBanner(standing = customerStanding)
             }
 
             availableDraft?.let { draft ->
@@ -723,19 +730,26 @@ internal fun CustomerBookingHomeContent(
                         )
                         Text(
                             text = when {
+                                customerStanding.isBookingBlocked -> {
+                                    if (customerStanding.cooldownRemainingText.isNotBlank()) {
+                                        "Booking paused · ${customerStanding.cooldownRemainingText}"
+                                    } else {
+                                        "Booking temporarily unavailable"
+                                    }
+                                }
                                 !routeReady -> "Select pick-up & destination to continue"
                                 !isScheduleSet -> "Select a pick-up schedule to continue"
                                 else -> stringResource(R.string.estimated_upon_review)
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (customerStanding.isBookingBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Button(
                         onClick = onContinue,
-                        enabled = !busy,
+                        enabled = !busy && !customerStanding.isBookingBlocked,
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,

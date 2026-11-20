@@ -215,6 +215,18 @@ class MobileErrorClassifierTest {
             "Too many requests. Please wait before trying again.",
             MobileErrorClassifier.friendlyMessage(Exception("rate limit exceeded (429)"))
         )
+        assertEquals(
+            "Your account is permanently suspended due to confirmed no-shows. Submit an appeal for office review.",
+            MobileErrorClassifier.friendlyMessage(Exception("ACCOUNT_SUSPENDED"))
+        )
+        assertEquals(
+            "Booking is temporarily paused due to a recent no-show strike. Please try again after your cooldown ends.",
+            MobileErrorClassifier.friendlyMessage(Exception("BOOKING_COOLDOWN_ACTIVE"))
+        )
+        assertEquals(
+            "You already have a suspension appeal under review.",
+            MobileErrorClassifier.friendlyMessage(Exception("APPEAL_ALREADY_PENDING"))
+        )
     }
 
     @Test
