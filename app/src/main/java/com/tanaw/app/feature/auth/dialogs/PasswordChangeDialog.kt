@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.auth.dialogs
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -358,34 +357,15 @@ internal fun PasswordChangeDialog(
     }
 }
 
-@Preview(showBackground = true, name = "Password Change Light")
+@Preview(showBackground = true, name = "Password Change")
 @Composable
 private fun PasswordChangeDialogLightPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawTheme {
         PasswordChangeDialog(
             state = MobileState(
                 email = "09123456789",
                 passwordChangeOwner = "user-1",
                 passwordChangeCodeSent = true
-            ),
-            cancel = {},
-            request = {},
-            canVerify = { it.length == 6 },
-            update = { _, _, _ -> }
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Password Change Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun PasswordChangeDialogDarkPreview() {
-    TanawTheme(darkTheme = true) {
-        PasswordChangeDialog(
-            state = MobileState(
-                email = "09123456789",
-                passwordChangeOwner = "user-1",
-                passwordChangeCodeSent = true,
-                error = "Verification failed. Retry."
             ),
             cancel = {},
             request = {},

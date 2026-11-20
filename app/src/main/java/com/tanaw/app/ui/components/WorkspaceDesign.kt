@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,9 +50,9 @@ fun StatusBadge(
             extendedColors.successBannerBackground to extendedColors.onSuccessBannerText
         "cancelled", "delayed", "correction_requested", "expired", "rejected" ->
             MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.error
-        "pending", "loading", "expiring", "unread" ->
+        "pending", "loading", "expiring", "unread", "quoted" ->
             extendedColors.warningContainer to extendedColors.onWarningContainer
-        "booked", "assigned", "en_route_to_pickup", "arrived_at_pickup", "in_transit", "arrived_at_destination" ->
+        "booked", "confirmed", "assigned", "en_route_to_pickup", "arrived_at_pickup", "in_transit", "arrived_at_destination" ->
             extendedColors.infoContainer to extendedColors.onInfoContainer
         else ->
             MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
@@ -152,7 +153,8 @@ fun KeyValueRow(
     value: String,
     modifier: Modifier = Modifier,
     valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    boldValue: Boolean = false
+    boldValue: Boolean = false,
+    valueFontFamily: FontFamily? = null
 ) {
     Row(
         modifier              = modifier.fillMaxWidth(),
@@ -168,6 +170,7 @@ fun KeyValueRow(
         Text(
             text       = value,
             style      = MaterialTheme.typography.bodyMedium,
+            fontFamily = valueFontFamily ?: MaterialTheme.typography.bodyMedium.fontFamily,
             fontWeight = if (boldValue) FontWeight.Bold else FontWeight.Medium,
             color      = valueColor,
             textAlign  = TextAlign.End,
@@ -176,10 +179,10 @@ fun KeyValueRow(
     }
 }
 
-@Preview(showBackground = true, name = "Workspace Design Light")
+@Preview(showBackground = true, name = "Workspace Design")
 @Composable
 private fun WorkspaceDesignLightPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawTheme {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             TanawSubScreenTopBar(
                 title = "TNW-2026-0042",
@@ -200,29 +203,6 @@ private fun WorkspaceDesignLightPreview() {
                     KeyValueRow(label = "Quoted Amount", value = "₱12,500.00", boldValue = true)
                     KeyValueRow(label = "Pickup", value = "Brgy. Poblacion, Makati City")
                     SupportingText("Amounts in PHP · Philippine time")
-                }
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Workspace Design Dark")
-@Composable
-private fun WorkspaceDesignDarkPreview() {
-    TanawTheme(darkTheme = true) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                TanawSubScreenTopBar(
-                    title = "TNW-2026-0042",
-                    onBack = {},
-                    trailing = { StatusBadge("in_transit") },
-                    busy = true
-                )
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    WorkspaceCard {
-                        KeyValueRow(label = "Quoted Amount", value = "₱12,500.00", boldValue = true)
-                        SupportingText("Amounts in PHP · Philippine time")
-                    }
                 }
             }
         }

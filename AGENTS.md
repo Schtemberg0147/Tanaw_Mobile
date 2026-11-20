@@ -94,6 +94,11 @@ These are the targets for new code. Existing active code does not fully follow t
 - User-facing text for new code goes in `res/values/strings.xml`. Existing workspace text mixes hardcoded strings in Kotlin and `strings.xml` entries (used primarily by customer booking screens). Match the file you are editing, and do not mass-extract strings in an unrelated diff.
 - Give composables a `modifier: Modifier = Modifier` parameter.
 
+## Tanaw Single-Theme UI Rule
+- **Single Theme Only:** Never implement or switch to Dark Mode (`isSystemInDarkTheme()` must not be used). The app uses one unified light visual identity across all screens.
+- **Strict Brand Palette:** Use `#002D54` (Deep Navy) as primary, `#0383D5` (Electric Blue) as secondary, `#F97316` (Orange) for destination markers, `#F8FAFC` for screen backgrounds, `#FFFFFF` with `#E2E8F0` borders for cards/sheets, and `#F1F5F9` for inputs. Never use `#00ADB5` teal or `#222831` dark slate.
+- **Typography:** Always use `Plus Jakarta Sans` for headings, `Inter` for UI/body, and `JetBrains Mono` for shipment IDs, prices, timestamps, and metrics.
+
 ## Working rules
 - One feature or bug per task. Keep diffs small and focused.
 - Match existing naming, formatting, and patterns. Reuse existing components.

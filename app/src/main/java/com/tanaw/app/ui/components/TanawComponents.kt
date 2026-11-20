@@ -317,10 +317,10 @@ fun TermsFooter(
     }
 }
 
-@Preview(showBackground = true, name = "Tanaw Components Light")
+@Preview(showBackground = true, name = "Tanaw Components")
 @Composable
 private fun TanawComponentsLightPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawTheme {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -335,23 +335,6 @@ private fun TanawComponentsLightPreview() {
             TanawTextLink(text = "Forgot Password?", onClick = {})
             TanawPrimaryButton(text = "Continue", onClick = {})
             TanawOutlinedButton(text = "Create Account", onClick = {})
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Tanaw Components Dark")
-@Composable
-private fun TanawComponentsDarkPreview() {
-    TanawTheme(darkTheme = true) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                SuccessBanner(message = "Profile saved and verified.", onDismiss = {})
-                TanawTextLink(text = "Use email address instead", onClick = {})
-                TanawPrimaryButton(text = "Continue", onClick = {})
-            }
         }
     }
 }

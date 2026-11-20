@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.auth.screens
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -174,9 +173,7 @@ fun CreateAccountScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Image(
-                painter            = painterResource(
-                    id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo
-                ),
+                painter            = painterResource(id = R.drawable.ic_tanaw_logo),
                 contentDescription = "TANAW logo",
                 modifier           = Modifier.size(48.dp)
             )
@@ -638,22 +635,10 @@ fun CreateAccountScreen(
 }
 
 // ─── Previews ─────────────────────────────────────────────────────────────────
-@Preview(showBackground = true, name = "Create Account Light")
+@Preview(showBackground = true, name = "Create Account")
 @Composable
 fun CreateAccountScreenLightPreview() {
-    TanawTheme(darkTheme = false) {
-        CreateAccountScreen(
-            onVerifyAndContinue = { _, _, _, _, _, _ -> },
-            onSignIn            = {},
-            onTermsClick        = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Create Account Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-fun CreateAccountScreenDarkPreview() {
-    TanawTheme(darkTheme = true) {
+    TanawTheme {
         CreateAccountScreen(
             onVerifyAndContinue = { _, _, _, _, _, _ -> },
             onSignIn            = {},

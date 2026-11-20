@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.auth.screens
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -1120,10 +1119,10 @@ fun VerifyRecoveryCodeScreen(
     }
 }
 
-@Preview(showBackground = true, name = "Verification Code Light")
+@Preview(showBackground = true, name = "Verification Code")
 @Composable
 private fun VerificationCodeScreenLightPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawTheme {
         VerificationCodeScreen(
             title = "Verify Phone",
             headline = "Verify your number",
@@ -1134,25 +1133,6 @@ private fun VerificationCodeScreenLightPreview() {
             onVerify = {},
             onResend = {},
             onBackToSignIn = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Verification Code Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun VerificationCodeScreenDarkPreview() {
-    TanawTheme(darkTheme = true) {
-        VerificationCodeScreen(
-            title = "Verify Phone",
-            headline = "Verify your number",
-            subtitle = "Enter the 6-digit SMS code sent to",
-            targetLabel = "+63 912 345 6789",
-            code = "123456",
-            onCodeChange = {},
-            onVerify = {},
-            onResend = {},
-            onBackToSignIn = {},
-            canVerify = true
         )
     }
 }

@@ -28,8 +28,10 @@ import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.*
 import java.net.URL
 import java.net.URLEncoder
@@ -73,9 +75,9 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
  val isVehicle=label=="Vehicle" || label=="Last recorded vehicle position"
  val isDestination=label=="Destination"
  val markerColor=when {
-  isDestination -> android.graphics.Color.rgb(37,99,235)
-  isVehicle -> android.graphics.Color.rgb(22,163,74)
-  else -> android.graphics.Color.rgb(220,38,38)
+  isDestination -> android.graphics.Color.rgb(249,115,22) // #F97316 Destination Orange
+  isVehicle -> android.graphics.Color.rgb(0,45,84) // #002D54 Deep Navy
+  else -> android.graphics.Color.rgb(220,38,38) // #DC2626 Pickup Red
  }
  paint.color=markerColor
  val path=android.graphics.Path().apply {moveTo(16f,41f);lineTo(3f,22f);cubicTo(-9f,-6f,41f,-6f,29f,22f);close()}
@@ -95,6 +97,86 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
  return bitmap
 }
 
+internal fun topDownTruckIcon(context:android.content.Context):android.graphics.Bitmap {
+ val scale=context.resources.displayMetrics.density
+ val bitmap=createBitmap((36*scale).toInt(),(52*scale).toInt())
+ val canvas=android.graphics.Canvas(bitmap);canvas.scale(scale,scale)
+ val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+ // Soft drop shadow beneath the truck
+ paint.style=android.graphics.Paint.Style.FILL
+ paint.color=android.graphics.Color.argb(90,0,45,84)
+ canvas.drawRoundRect(android.graphics.RectF(7.5f,4.5f,29.5f,48.5f),5.5f,5.5f,paint)
+
+ // Wheels peeking on the sides
+ paint.color=android.graphics.Color.rgb(15,23,42)
+ canvas.drawRoundRect(android.graphics.RectF(7.5f,10f,10.5f,16f),1.2f,1.2f,paint)
+ canvas.drawRoundRect(android.graphics.RectF(25.5f,10f,28.5f,16f),1.2f,1.2f,paint)
+ canvas.drawRoundRect(android.graphics.RectF(7.2f,34f,10.2f,41.5f),1.2f,1.2f,paint)
+ canvas.drawRoundRect(android.graphics.RectF(25.8f,34f,28.8f,41.5f),1.2f,1.2f,paint)
+
+ // Navy-accented side mirrors
+ paint.color=android.graphics.Color.rgb(0,45,84)
+ canvas.drawRoundRect(android.graphics.RectF(6f,12.8f,9.4f,15.2f),1f,1f,paint)
+ canvas.drawRoundRect(android.graphics.RectF(26.6f,12.8f,30f,15.2f),1f,1f,paint)
+
+ // Cab chassis (front points North / top for 0-degree rotation)
+ val cabRect=android.graphics.RectF(10f,5f,26f,18.2f)
+ paint.color=android.graphics.Color.rgb(248,250,252)
+ canvas.drawRoundRect(cabRect,4.5f,4.5f,paint)
+ paint.style=android.graphics.Paint.Style.STROKE
+ paint.strokeWidth=1.2f
+ paint.color=android.graphics.Color.rgb(0,45,84)
+ canvas.drawRoundRect(cabRect,4.5f,4.5f,paint)
+
+ // Front LED headlights (Electric Blue)
+ paint.style=android.graphics.Paint.Style.FILL
+ paint.color=android.graphics.Color.rgb(3,131,213)
+ canvas.drawRoundRect(android.graphics.RectF(11.6f,5.4f,14.6f,6.9f),0.8f,0.8f,paint)
+ canvas.drawRoundRect(android.graphics.RectF(21.4f,5.4f,24.4f,6.9f),0.8f,0.8f,paint)
+
+ // Panoramic dark navy windshield with electric blue highlight line
+ paint.color=android.graphics.Color.rgb(0,45,84)
+ canvas.drawRoundRect(android.graphics.RectF(11.4f,8.2f,24.6f,13.6f),2.4f,2.4f,paint)
+ paint.style=android.graphics.Paint.Style.STROKE
+ paint.strokeWidth=0.9f
+ paint.color=android.graphics.Color.argb(200,3,131,213)
+ canvas.drawLine(12.6f,9.4f,23.4f,9.4f,paint)
+
+ // Cab roof accent vent
+ paint.style=android.graphics.Paint.Style.FILL
+ paint.color=android.graphics.Color.rgb(3,131,213)
+ canvas.drawRoundRect(android.graphics.RectF(15f,14.8f,21f,16.7f),0.9f,0.9f,paint)
+
+ // Cargo box (rear)
+ val cargoRect=android.graphics.RectF(9f,19f,27f,46.2f)
+ paint.color=android.graphics.Color.WHITE
+ canvas.drawRoundRect(cargoRect,3.2f,3.2f,paint)
+ paint.style=android.graphics.Paint.Style.STROKE
+ paint.strokeWidth=1.2f
+ paint.color=android.graphics.Color.rgb(0,45,84)
+ canvas.drawRoundRect(cargoRect,3.2f,3.2f,paint)
+
+ // Navy cargo header band & subtle roof ribs
+ paint.style=android.graphics.Paint.Style.FILL
+ paint.color=android.graphics.Color.rgb(0,45,84)
+ canvas.drawRoundRect(android.graphics.RectF(9.8f,19.8f,26.2f,23.4f),1.4f,1.4f,paint)
+
+ paint.style=android.graphics.Paint.Style.STROKE
+ paint.strokeWidth=0.9f
+ paint.color=android.graphics.Color.rgb(203,213,225)
+ canvas.drawLine(13.5f,25.6f,13.5f,43.2f,paint)
+ canvas.drawLine(18f,25.6f,18f,43.2f,paint)
+ canvas.drawLine(22.5f,25.6f,22.5f,43.2f,paint)
+
+ // Rear orange accent indicator bar
+ paint.style=android.graphics.Paint.Style.FILL
+ paint.color=android.graphics.Color.rgb(249,115,22)
+ canvas.drawRoundRect(android.graphics.RectF(12.5f,44.3f,23.5f,45.4f),0.6f,0.6f,paint)
+
+ return bitmap
+}
+
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 @Composable fun ShipmentMap(
  points:List<Pair<String,LatLng>>,
@@ -105,37 +187,44 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
  showCaptionText:Boolean=true,
  recenterTrigger:Int=0,
  boundsPaddingPx:Int=50,
- boundsPaddingTopPx:Int=50
+ boundsPaddingTopPx:Int=50,
+ vehicleHeadingDeg:Float?=null
 ) {
  val context=LocalContext.current;val lifecycle=LocalLifecycleOwner.current.lifecycle
  val callback by rememberUpdatedState(onSelect)
  val currentPoints by rememberUpdatedState(points)
  val currentGeometry by rememberUpdatedState(geometry)
- val pinIcons=remember(context) {mapOf("Pickup" to pinIcon(context,"Pickup"),"Destination" to pinIcon(context,"Destination"),"Vehicle" to pinIcon(context,"Vehicle"))}
+ val currentHeading by rememberUpdatedState(vehicleHeadingDeg)
+ val pinIcons=remember(context,vehicleHeadingDeg!=null) {
+  mapOf(
+   "Pickup" to pinIcon(context,"Pickup"),
+   "Destination" to pinIcon(context,"Destination"),
+   "Vehicle" to if(vehicleHeadingDeg!=null) topDownTruckIcon(context) else pinIcon(context,"Vehicle")
+  )
+ }
  var fallback by remember {mutableStateOf(BuildConfig.MAPTILER_KEY.isBlank())}
  var ready by remember {mutableStateOf(false)}
  var failed by remember {mutableStateOf(false)}
  var requested by remember {mutableStateOf(false)}
  var routeError by remember {mutableStateOf<String?>(null)}
  var previous by remember {mutableStateOf<List<Triple<String,Double,Double>>?>(null)}
+ var previousHeading by remember {mutableStateOf<Float?>(null)}
  var previousGeometry by remember {mutableStateOf<String?>(null)}
  val view=remember {MapLibre.getInstance(context);MapView(context).apply {onCreate(null)}}
  val attached=remember {booleanArrayOf(true)}
  fun render(map:org.maplibre.android.maps.MapLibreMap,style:org.maplibre.android.maps.Style) {
   val locations=currentPoints
   val signature=locations.map {(label,point)->Triple(label,point.latitude,point.longitude)}
+  val heading=currentHeading
   val road=currentGeometry?.takeUnless{it.isBlank() || it=="null"}
-  if(previous!=signature) {
+  if(previous!=signature || previousHeading!=heading) {
    val old=previous
    pinIcons.forEach {(label,bitmap)->style.addImage("shipment-pin-$label",bitmap)}
-   val pins=buildJsonObject {
+   val isVehicleLabel:(String)->Boolean={it=="Vehicle" || it=="Last recorded vehicle position"}
+   val stopPins=buildJsonObject {
     put("type","FeatureCollection")
-    put("features",buildJsonArray {locations.forEach {(label,point)->
-     val iconName=when {
-      label=="Destination" -> "Destination"
-      label=="Vehicle" || label=="Last recorded vehicle position" -> "Vehicle"
-      else -> "Pickup"
-     }
+    put("features",buildJsonArray {locations.filterNot{isVehicleLabel(it.first)}.forEach {(label,point)->
+     val iconName=if(label=="Destination") "Destination" else "Pickup"
      add(buildJsonObject {
       put("type","Feature")
       put("properties",buildJsonObject {put("icon","shipment-pin-$iconName")})
@@ -143,9 +232,48 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
      })
     }})
    }.toString()
-   style.getSourceAs<GeoJsonSource>("shipment-stops")?.setGeoJson(pins) ?: style.addSource(GeoJsonSource("shipment-stops",pins))
-   if(style.getLayer("shipment-stop-pins")==null)style.addLayer(SymbolLayer("shipment-stop-pins","shipment-stops").withProperties(iconImage(Expression.get("icon")),iconAnchor("bottom"),iconAllowOverlap(true),iconIgnorePlacement(true)))
-   val isVehicleLabel:(String)->Boolean={it=="Vehicle" || it=="Last recorded vehicle position"}
+   style.getSourceAs<GeoJsonSource>("shipment-stops")?.setGeoJson(stopPins) ?: style.addSource(GeoJsonSource("shipment-stops",stopPins))
+   if(style.getLayer("shipment-stop-pins")==null) {
+    style.addLayer(
+     SymbolLayer("shipment-stop-pins","shipment-stops").withProperties(
+      iconImage(Expression.get("icon")),
+      iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+      iconAllowOverlap(true),
+      iconIgnorePlacement(true)
+     )
+    )
+   }
+   val vehiclePins=buildJsonObject {
+    put("type","FeatureCollection")
+    put("features",buildJsonArray {locations.filter{isVehicleLabel(it.first)}.forEach {(_,point)->
+     add(buildJsonObject {
+      put("type","Feature")
+      put("properties",buildJsonObject {put("bearing",(heading ?: 0f).toDouble())})
+      put("geometry",buildJsonObject {put("type","Point");put("coordinates",buildJsonArray {add(point.longitude);add(point.latitude)})})
+     })
+    }})
+   }.toString()
+   style.getSourceAs<GeoJsonSource>("shipment-vehicle")?.setGeoJson(vehiclePins) ?: style.addSource(GeoJsonSource("shipment-vehicle",vehiclePins))
+   if(style.getLayer("shipment-vehicle-pin")==null) {
+    val vehicleProps = if(heading != null) {
+     arrayOf(
+      iconImage("shipment-pin-Vehicle"),
+      iconAnchor(Property.ICON_ANCHOR_CENTER),
+      iconRotate(Expression.get("bearing")),
+      iconRotationAlignment(Expression.literal(Property.ICON_ROTATION_ALIGNMENT_MAP)),
+      iconAllowOverlap(true),
+      iconIgnorePlacement(true)
+     )
+    } else {
+     arrayOf(
+      iconImage("shipment-pin-Vehicle"),
+      iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+      iconAllowOverlap(true),
+      iconIgnorePlacement(true)
+     )
+    }
+    style.addLayer(SymbolLayer("shipment-vehicle-pin","shipment-vehicle").withProperties(*vehicleProps))
+   }
    val stopSignature=signature.filter{!isVehicleLabel(it.first)}
    val oldStopSignature=old?.filter{!isVehicleLabel(it.first)}
    val isInitialOrStopsChanged=old.isNullOrEmpty() || oldStopSignature!=stopSignature
@@ -160,13 +288,38 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
     }
    }
    previous=signature
+   previousHeading=heading
   }
   try {
    if(road==null) {
-    style.removeLayer("shipment-route-line");style.removeSource("shipment-route");previousGeometry=null;routeError=null
+    style.removeLayer("shipment-route-glow");style.removeLayer("shipment-route-line");style.removeSource("shipment-route");previousGeometry=null;routeError=null
    } else if(previousGeometry!=road || style.getLayer("shipment-route-line")==null) {
-    style.getSourceAs<GeoJsonSource>("shipment-route")?.setGeoJson(road) ?: style.addSource(GeoJsonSource("shipment-route",road))
-    if(style.getLayer("shipment-route-line")==null)style.addLayerBelow(LineLayer("shipment-route-line","shipment-route").withProperties(lineColor("#2563eb"),lineWidth(5f)),"shipment-stop-pins")
+    style.getSourceAs<GeoJsonSource>("shipment-route")?.setGeoJson(road)
+     ?: style.addSource(GeoJsonSource("shipment-route",road,GeoJsonOptions().withLineMetrics(true)))
+    if(style.getLayer("shipment-route-glow")==null) {
+     style.addLayerBelow(
+      LineLayer("shipment-route-glow","shipment-route").withProperties(
+       lineColor("#0383D5"),
+       lineWidth(9f),
+       lineOpacity(0.20f),
+       lineBlur(Expression.literal(3f)),
+       lineCap(Property.LINE_CAP_ROUND),
+       lineJoin(Expression.literal(Property.LINE_JOIN_ROUND))
+      ),
+      "shipment-stop-pins"
+     )
+    }
+    if(style.getLayer("shipment-route-line")==null) {
+     style.addLayerBelow(
+      LineLayer("shipment-route-line","shipment-route").withProperties(
+       lineColor("#0383D5"),
+       lineWidth(5f),
+       lineCap(Property.LINE_CAP_ROUND),
+       lineJoin(Expression.literal(Property.LINE_JOIN_ROUND))
+      ),
+      "shipment-stop-pins"
+     )
+    }
     previousGeometry=road;routeError=null
    }
   } catch(_:Exception) {routeError="Route line could not be displayed. Refresh the trip and retry."}
@@ -175,7 +328,7 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
   if(!attached[0])return
   // Styles load asynchronously and replace custom layers. Draw using the latest data here,
   // not only in AndroidView.update, which may have run before the style existed.
-  previous=null;previousGeometry=null;ready=true;failed=false
+  previous=null;previousHeading=null;previousGeometry=null;ready=true;failed=false
   render(map,style)
  }
  DisposableEffect(view,lifecycle) {
@@ -186,7 +339,12 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
   }
   view.addOnDidFailLoadingMapListener { _ ->
    ready=false
-   if(!fallback) {fallback=true;view.getMapAsync {map->map.setStyle(STREET_MAP){style->loaded(map,style)}}} else failed=true
+   if(!fallback) {
+    fallback=true
+    view.getMapAsync {map->
+     map.setStyle(STREET_MAP){style->loaded(map,style)}
+    }
+   } else failed=true
   }
   view.setOnTouchListener {_,event ->
    view.parent?.requestDisallowInterceptTouchEvent(event.actionMasked!=android.view.MotionEvent.ACTION_UP && event.actionMasked!=android.view.MotionEvent.ACTION_CANCEL)
@@ -209,12 +367,19 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
    if(!requested) {
     requested=true
     if(styleJson!=null)map.setStyle(org.maplibre.android.maps.Style.Builder().fromJson(styleJson)){style->loaded(map,style)}
-    else map.setStyle(if(fallback)STREET_MAP else "https://api.maptiler.com/maps/streets-v2/style.json?key=${BuildConfig.MAPTILER_KEY}"){style->loaded(map,style)}
+    else {
+     val resolvedUrl=if(fallback) {
+      STREET_MAP
+     } else {
+      "https://api.maptiler.com/maps/streets-v2/style.json?key=${BuildConfig.MAPTILER_KEY}"
+     }
+     map.setStyle(resolvedUrl){style->loaded(map,style)}
+    }
    }
    else if(ready)map.getStyle {style->render(map,style)}
   }
  })
- LaunchedEffect(points.map{Triple(it.first,it.second.latitude,it.second.longitude)},geometry,ready) {
+ LaunchedEffect(points.map{Triple(it.first,it.second.latitude,it.second.longitude)},geometry,ready,vehicleHeadingDeg) {
   if(ready)view.getMapAsync {map->map.getStyle {style->render(map,style)}}
  }
  LaunchedEffect(recenterTrigger,ready) {
@@ -235,7 +400,7 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
   else if(!ready)SupportingText("Loading street map…")
   else if(onSelect!=null)SupportingText("Map ready · drag to move, pinch to zoom, tap to place a pin.")
   else SupportingText(routeError ?: if(previousGeometry!=null)"Route line displayed · ${points.size} saved stops" else "Saved stops displayed · no road route loaded")
-  if(points.any { it.first == "Vehicle" || it.first == "Last recorded vehicle position" }) SupportingText("Red: pickup · Blue: destination · Green: last recorded vehicle position")
+  if(points.any { it.first == "Vehicle" || it.first == "Last recorded vehicle position" }) SupportingText("Red: pickup · Orange: destination · Navy: last recorded vehicle position")
   if(fallback)SupportingText("© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors")
  }
 }

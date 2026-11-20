@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.auth.components
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -96,24 +95,10 @@ fun GoogleSignInButton(
     }
 }
 
-@Preview(showBackground = true, name = "Google Sign-In Light")
+@Preview(showBackground = true, name = "Google Sign-In")
 @Composable
 private fun GoogleSignInButtonLightPreview() {
-    TanawTheme(darkTheme = false) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            GoogleSignInButton(
-                enabled = true,
-                onClick = {},
-                modifier = Modifier.padding(24.dp)
-            )
-        }
-    }
-}
-
-@Preview(showBackground = true, name = "Google Sign-In Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun GoogleSignInButtonDarkPreview() {
-    TanawTheme(darkTheme = true) {
+    TanawTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             GoogleSignInButton(
                 enabled = true,

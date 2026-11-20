@@ -1,9 +1,7 @@
 package com.tanaw.app.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,7 +20,7 @@ data class ExtendedColors(
     val onWarningContainer: Color = ExpiringOrange,
     val infoContainer: Color = OngoingBlueBg,
     val onInfoContainer: Color = OngoingBlue,
-    val decorativeOrange: Color = OrangeAccent
+    val decorativeOrange: Color = DestinationOrange
 )
 
 val LocalExtendedColors = staticCompositionLocalOf {
@@ -33,56 +31,35 @@ val LocalExtendedColors = staticCompositionLocalOf {
         onWarningContainer = ExpiringOrange,
         infoContainer = OngoingBlueBg,
         onInfoContainer = OngoingBlue,
-        decorativeOrange = OrangeAccent
+        decorativeOrange = DestinationOrange
     )
 }
 
 val LightColorScheme = lightColorScheme(
-    primary              = NavyPrimary,
-    onPrimary            = Color.White,
-    primaryContainer     = PrimaryContainerLight,
-    onPrimaryContainer   = NavyPrimary,
-    secondary            = OrangeAccessible,
-    onSecondary          = Color.White,
-    secondaryContainer   = OrangeSpecialTagBg,
-    onSecondaryContainer = OnSecondaryContainerLight,
-    background           = BackgroundGray,
-    onBackground         = TextDark,
-    surface              = Color.White,
-    onSurface            = TextDark,
-    surfaceContainerHigh = InputGray,
-    surfaceVariant       = BorderGray,
-    onSurfaceVariant     = HintGray,
-    outline              = OutlineGray,
-    outlineVariant       = BorderGray,
-    error                = ExpiredRed,
-    onError              = Color.White,
-    errorContainer       = ExpiredRedBg,
-    onErrorContainer     = ExpiredRed
-)
-
-val DarkColorScheme = darkColorScheme(
-    primary              = NavyPrimaryDark,
-    onPrimary            = OnPrimaryDark,
-    primaryContainer     = PrimaryContainerDark,
-    onPrimaryContainer   = OnPrimaryContainerDark,
-    secondary            = OrangeAccentDark,
-    onSecondary          = OnSecondaryDark,
-    secondaryContainer   = OrangeSpecialTagBgDark,
-    onSecondaryContainer = OrangeSpecialTagBg,
-    background           = BackgroundDark,
-    onBackground         = TextLight,
-    surface              = SurfaceDark,
-    onSurface            = TextLight,
-    surfaceContainerHigh = InputDark,
-    surfaceVariant       = SurfaceVariantDark,
-    onSurfaceVariant     = HintDark,
-    outline              = OutlineDark,
-    outlineVariant       = DriverLineDark,
-    error                = ErrorRedDark,
-    onError              = Color(0xFF690005),
-    errorContainer       = ErrorBgDark,
-    onErrorContainer     = ErrorRedDark
+    primary                 = NavyPrimary,
+    onPrimary               = Color.White,
+    primaryContainer        = PrimaryContainerLight,
+    onPrimaryContainer      = NavyPrimary,
+    secondary               = ElectricBlueSecondary,
+    onSecondary             = Color.White,
+    secondaryContainer      = SecondaryContainerLight,
+    onSecondaryContainer    = OnSecondaryContainerBlue,
+    tertiary                = DestinationOrange,
+    onTertiary              = Color.White,
+    background              = BackgroundGray,
+    onBackground            = TextDark,
+    surface                 = Color.White,
+    onSurface               = TextDark,
+    surfaceContainerHigh    = InputGray,
+    surfaceContainerHighest = BorderGray,
+    surfaceVariant          = InputGray,
+    onSurfaceVariant        = HintGray,
+    outline                 = OutlineGray,
+    outlineVariant          = BorderGray,
+    error                   = ExpiredRed,
+    onError                 = Color.White,
+    errorContainer          = ExpiredRedBg,
+    onErrorContainer        = ExpiredRed
 )
 
 val ExtendedLightColors = ExtendedColors(
@@ -92,17 +69,19 @@ val ExtendedLightColors = ExtendedColors(
     onWarningContainer      = ExpiringOrange,
     infoContainer           = OngoingBlueBg,
     onInfoContainer         = OngoingBlue,
-    decorativeOrange        = OrangeAccent
+    decorativeOrange        = DestinationOrange
 )
 
-val ExtendedDarkColors = ExtendedColors(
-    successBannerBackground = SuccessBannerBgDark,
-    onSuccessBannerText     = SuccessGreenDark,
-    warningContainer        = WarningBgDark,
-    onWarningContainer      = WarningOrangeDark,
-    infoContainer           = InfoBgDark,
-    onInfoContainer         = InfoBlueDark,
-    decorativeOrange        = OrangeAccentDark
+val CustomerLightColorScheme = LightColorScheme
+
+val CustomerExtendedLightColors = ExtendedColors(
+    successBannerBackground = SuccessBannerBg,
+    onSuccessBannerText     = SuccessGreen,
+    warningContainer        = InputGray,
+    onWarningContainer      = TextDark,
+    infoContainer           = SecondaryContainerLight,
+    onInfoContainer         = OnSecondaryContainerBlue,
+    decorativeOrange        = DestinationOrange
 )
 
 object TanawTheme {
@@ -113,25 +92,44 @@ object TanawTheme {
 
 @Composable
 fun TanawTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val extendedColors = if (darkTheme) ExtendedDarkColors else ExtendedLightColors
-
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
+            insetsController.isAppearanceLightStatusBars = true
+            insetsController.isAppearanceLightNavigationBars = true
         }
     }
 
-    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+    CompositionLocalProvider(LocalExtendedColors provides ExtendedLightColors) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = LightColorScheme,
+            typography  = Typography,
+            content     = content
+        )
+    }
+}
+
+@Composable
+fun TanawCustomerTheme(
+    content: @Composable () -> Unit
+) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = true
+            insetsController.isAppearanceLightNavigationBars = true
+        }
+    }
+
+    CompositionLocalProvider(LocalExtendedColors provides CustomerExtendedLightColors) {
+        MaterialTheme(
+            colorScheme = CustomerLightColorScheme,
             typography  = Typography,
             content     = content
         )

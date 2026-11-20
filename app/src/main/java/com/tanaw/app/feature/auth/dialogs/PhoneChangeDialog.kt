@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.auth.dialogs
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -246,28 +245,12 @@ internal fun PhoneChangeDialog(
     )
 }
 
-@Preview(showBackground = true, name = "Phone Change Light")
+@Preview(showBackground = true, name = "Phone Change")
 @Composable
 private fun PhoneChangeDialogLightPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawTheme {
         PhoneChangeDialog(
             state = MobileState(phoneChangeTarget = "+639123456789"),
-            onVerify = {},
-            onResend = {},
-            onCancel = {},
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Phone Change Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun PhoneChangeDialogDarkPreview() {
-    TanawTheme(darkTheme = true) {
-        PhoneChangeDialog(
-            state = MobileState(
-                phoneChangeTarget = "+639123456789",
-                error = "Invalid or expired SMS code."
-            ),
             onVerify = {},
             onResend = {},
             onCancel = {},

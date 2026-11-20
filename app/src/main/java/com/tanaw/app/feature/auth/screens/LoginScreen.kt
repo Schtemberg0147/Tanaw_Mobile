@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.auth.screens
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -123,9 +122,7 @@ fun LoginScreen(
 
             // ── TANAW Logo ───────────────────────────────────────────────
             Image(
-                painter            = painterResource(
-                    id = if (androidx.compose.foundation.isSystemInDarkTheme()) R.drawable.ic_tanaw_logo_dark else R.drawable.ic_tanaw_logo
-                ),
+                painter            = painterResource(id = R.drawable.ic_tanaw_logo),
                 contentDescription = "TANAW logo",
                 modifier           = Modifier.size(56.dp)
             )
@@ -330,22 +327,10 @@ fun LoginScreen(
 }
 
 // ─── Previews ─────────────────────────────────────────────────────────────────
-@Preview(showBackground = true, name = "Light Mode")
+@Preview(showBackground = true, name = "Login Screen")
 @Composable
 fun LoginScreenLightPreview() {
-    TanawTheme(darkTheme = false) {
-        LoginScreen(
-            onLoginClick     = { _, _ -> },
-            onForgotPassword = {},
-            onCreateAccount  = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Dark Mode", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-fun LoginScreenDarkPreview() {
-    TanawTheme(darkTheme = true) {
+    TanawTheme {
         LoginScreen(
             onLoginClick     = { _, _ -> },
             onForgotPassword = {},
