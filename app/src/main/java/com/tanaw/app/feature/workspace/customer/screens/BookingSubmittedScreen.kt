@@ -42,10 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.feature.workspace.customer.components.TimelineRow
-import com.tanaw.app.ui.theme.OrangeAccent
 import com.tanaw.app.ui.theme.StatusGreen
 import com.tanaw.app.ui.theme.StatusGreenBg
-import com.tanaw.app.ui.theme.TanawTheme
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 
 // ─── Booking Submitted! Confirmation Screen (Image 1, Screen 4) ───────────────
 @Composable
@@ -58,6 +59,9 @@ fun BookingSubmittedScreen(
     onTrackShipment: () -> Unit,
     onBookAnother: () -> Unit
 ) {
+    val greenAccent = StatusGreen
+    val greenBg = StatusGreenBg
+
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
@@ -75,14 +79,14 @@ fun BookingSubmittedScreen(
             // Green Checkmark Box
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = StatusGreenBg,
+                color = greenBg,
                 modifier = Modifier.size(72.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Outlined.Check,
                         contentDescription = null,
-                        tint = StatusGreen,
+                        tint = greenAccent,
                         modifier = Modifier.size(38.dp)
                     )
                 }
@@ -91,6 +95,7 @@ fun BookingSubmittedScreen(
             Text(
                 text = stringResource(R.string.booking_submitted_title),
                 style = MaterialTheme.typography.headlineSmall,
+                fontFamily = TanawDisplayFontFamily,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -106,9 +111,9 @@ fun BookingSubmittedScreen(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -116,7 +121,7 @@ fun BookingSubmittedScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(5.dp)
-                            .background(StatusGreen)
+                            .background(greenAccent)
                     )
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -125,12 +130,16 @@ fun BookingSubmittedScreen(
                         Text(
                             text = stringResource(R.string.booking_reference_label),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.7.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp
                         )
                         Text(
                             text = trackingNumber,
                             style = MaterialTheme.typography.titleLarge,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -162,7 +171,7 @@ fun BookingSubmittedScreen(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.secondary)
+                                    .background(MaterialTheme.colorScheme.tertiary)
                             )
                             Text(
                                 text = dropoff,
@@ -184,6 +193,9 @@ fun BookingSubmittedScreen(
                                 Text(
                                     text = stringResource(R.string.vehicle_label),
                                     style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = TanawMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 9.sp
                                 )
@@ -200,12 +212,16 @@ fun BookingSubmittedScreen(
                                 Text(
                                     text = stringResource(R.string.schedule_label),
                                     style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = TanawMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 9.sp
                                 )
                                 Text(
                                     text = scheduleSummary,
                                     style = MaterialTheme.typography.labelMedium,
+                                    fontFamily = TanawMonoFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
@@ -219,6 +235,9 @@ fun BookingSubmittedScreen(
                                 Text(
                                     text = stringResource(R.string.total_fee_label),
                                     style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = TanawMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 9.sp
                                 )
@@ -248,15 +267,15 @@ fun BookingSubmittedScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     TimelineRow(
-                        dotColor = StatusGreen,
+                        dotColor = greenAccent,
                         title = stringResource(R.string.timeline_booking_submitted),
                         subtitle = stringResource(R.string.timeline_just_now),
                         active = true
                     )
                     TimelineRow(
-                        dotColor = OrangeAccent,
+                        dotColor = MaterialTheme.colorScheme.secondary,
                         title = stringResource(R.string.timeline_pending_admin_review),
-                        subtitle = stringResource(R.string.timeline_within_30_mins),
+                        subtitle = stringResource(R.string.timeline_office_quotation),
                         active = true
                     )
                     TimelineRow(
@@ -305,10 +324,10 @@ fun BookingSubmittedScreen(
     }
 }
 
-@Preview(showBackground = true, name = "Booking Submitted Preview")
+@Preview(showBackground = true, name = "Booking Submitted")
 @Composable
 private fun BookingSubmittedPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawCustomerTheme {
         BookingSubmittedScreen(
             trackingNumber = "TNW-2026-0847",
             pickup = "Cabanatuan City Public Market",

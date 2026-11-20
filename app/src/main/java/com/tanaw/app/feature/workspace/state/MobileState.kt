@@ -10,7 +10,6 @@ data class RestoredBookingConfirmation(
     val pickup: String,
     val dropoff: String,
     val vehicleId: String,
-    val isPickupNow: Boolean,
     val scheduledDeparture: String
 )
 
@@ -26,6 +25,7 @@ data class MobileState(
     val detailLoading: Boolean = false,
     val proof: Bitmap? = null,
     val proofTitle: String = "",
+    val proofSubtitle: String = "",
     val offline: Boolean = false,
     val lastSync: String = "",
     val history: JsonObject? = null,
@@ -42,6 +42,7 @@ data class MobileState(
     val customerShipmentsError: String? = null,
     val customerShipmentsTab: String? = null,
     val customerShipmentsFilter: String? = null,
+    val customerHistoryDocuments: List<JsonObject> = emptyList(),
     val notificationsPage: List<JsonObject>? = null,
     val notificationsLoading: Boolean = false,
     val notificationsHasMore: Boolean = false,

@@ -27,6 +27,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.R
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 
 @Composable
 internal fun CustomerFieldEditDialog(
@@ -62,7 +64,15 @@ internal fun CustomerFieldEditDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(16.dp),
-        title = { Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+        containerColor = MaterialTheme.colorScheme.background,
+        title = {
+            Text(
+                text = title,
+                fontFamily = TanawDisplayFontFamily,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -90,6 +100,7 @@ internal fun CustomerFieldEditDialog(
                             label = { Text(stringResource(R.string.contact_number)) },
                             placeholder = { Text("09XXXXXXXXX") },
                             supportingText = { Text(stringResource(R.string.phone_change_sms_note)) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = TanawMonoFontFamily),
                             isError = editError != null,
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),

@@ -1,5 +1,6 @@
 package com.tanaw.app.feature.workspace.customer.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -28,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,7 +53,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,53 +68,58 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-// ─── Pick-up Time Bottom Sheet (Image 4) ──────────────────────────────────────
+// ─── Schedule Pick-up Bottom Sheet (FTL Lead-Time Constrained) ────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PickupTimeBottomSheet(
-    isPickupNow: Boolean,
     scheduledRaw: String,
+    minLeadTimeHours: Int,
+    helperText: String,
     now: Instant,
     onDismiss: () -> Unit,
-    onSelectNow: () -> Unit,
     onSchedule: (String) -> Unit
 ) {
-    val earliest = MobileBookingRules.earliest(now)
+    val earliest = MobileBookingRules.earliest(now, minLeadTimeHours.toLong())
     val todayDate = now.atZone(MobileBookingRules.zone).toLocalDate()
     val tomorrowDate = todayDate.plusDays(1)
-    val initialDateTime = runCatching { LocalDateTime.parse(scheduledRaw.trim(), MobileBookingRules.format) }
-        .getOrNull()
-        ?.takeIf { !it.toLocalDate().isBefore(tomorrowDate) && !it.isBefore(earliest) }
-        ?: tomorrowDate.atTime(9, 0).let { defaultTomorrow ->
-            if (defaultTomorrow.isBefore(earliest)) earliest.plusMinutes(15) else defaultTomorrow
-        }
-
-    // Scheduled dates start from Tomorrow to future (30 days out)
-    val days = remember(tomorrowDate) {
-        CustomerBookingRules.scheduledDays(now)
+    val days = remember(now, minLeadTimeHours) {
+        CustomerBookingRules.scheduledDays(now, minLeadTimeHours)
     }
-    var selectedModeNow by remember { mutableStateOf(isPickupNow) }
-    var selectedDate by remember {
+    val defaultRaw = remember(now, minLeadTimeHours) {
+        CustomerBookingRules.defaultScheduledRaw(now, minLeadTimeHours)
+    }
+    val initialDateTime = remember(scheduledRaw, minLeadTimeHours, defaultRaw) {
+        val trimmed = scheduledRaw.trim()
+        runCatching { LocalDateTime.parse(trimmed, MobileBookingRules.format) }
+            .getOrNull()
+            ?.takeIf { MobileBookingRules.departure(trimmed, now, minLeadTimeHours.toLong()) != null }
+            ?: LocalDateTime.parse(defaultRaw, MobileBookingRules.format)
+    }
+
+    var selectedDate by remember(initialDateTime, days) {
         mutableStateOf(
-            initialDateTime.toLocalDate().takeIf { !it.isBefore(tomorrowDate) } ?: tomorrowDate
+            initialDateTime.toLocalDate().takeIf { it in days } ?: days.first()
         )
     }
-    val isSameDayAsEarliest = selectedDate == earliest.toLocalDate()
-    val availableHours = remember(isSameDayAsEarliest, earliest.hour) {
-        (0..23).filter { !isSameDayAsEarliest || it >= earliest.hour }
+    val availableHours = remember(selectedDate, now, minLeadTimeHours) {
+        CustomerBookingRules.availableHoursForDate(selectedDate, now, minLeadTimeHours)
+            .ifEmpty { listOf(earliest.hour) }
     }
-    var selectedHour by remember {
-        mutableIntStateOf(initialDateTime.hour.coerceIn(availableHours.first(), availableHours.last()))
+    var selectedHour by remember(initialDateTime, availableHours) {
+        mutableIntStateOf(
+            initialDateTime.hour.takeIf { it in availableHours } ?: availableHours.first()
+        )
     }
     LaunchedEffect(availableHours) {
         if (selectedHour !in availableHours) {
             selectedHour = availableHours.first()
         }
     }
-    val availableMinutes = remember(isSameDayAsEarliest, selectedHour, earliest.hour, earliest.minute) {
-        (0..59).filter { !isSameDayAsEarliest || selectedHour > earliest.hour || it >= earliest.minute }
+    val availableMinutes = remember(selectedDate, selectedHour, now, minLeadTimeHours) {
+        CustomerBookingRules.availableMinutesForDateTime(selectedDate, selectedHour, now, minLeadTimeHours)
+            .ifEmpty { listOf(earliest.minute) }
     }
-    var selectedMinute by remember {
+    var selectedMinute by remember(initialDateTime, availableMinutes) {
         mutableIntStateOf(
             initialDateTime.minute.takeIf { it in availableMinutes } ?: availableMinutes.first()
         )
@@ -126,7 +132,8 @@ fun PickupTimeBottomSheet(
 
     val candidateDateTime = selectedDate.atTime(selectedHour, selectedMinute)
     val candidateFormatted = candidateDateTime.format(MobileBookingRules.format)
-    val displayScheduledLabel = CustomerBookingRules.formatSchedulePill(false, candidateFormatted, now)
+    val displayScheduledLabel = CustomerBookingRules.formatSchedulePill(candidateFormatted, now)
+    val canConfirm = MobileBookingRules.departure(candidateFormatted, now, minLeadTimeHours.toLong()) != null
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -149,63 +156,38 @@ fun PickupTimeBottomSheet(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // "Now" Option Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clickable {
-                        selectedModeNow = true
-                        onSelectNow()
-                    }
-                    .padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_timer),
+                        imageVector = Icons.Outlined.Info,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(22.dp)
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = stringResource(R.string.schedule_now),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (selectedModeNow) FontWeight.Bold else FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "$helperText · Up to 14 days ahead",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                }
-                if (selectedModeNow) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Check,
-                                contentDescription = "Selected",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
-            // Scheduled Date/Time Option Row
+            // Selected Date & Time Summary Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
-                    .clickable { selectedModeNow = false }
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -216,35 +198,35 @@ fun PickupTimeBottomSheet(
                     Icon(
                         imageVector = Icons.Outlined.CalendarMonth,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(22.dp)
                     )
                     Text(
                         text = displayScheduledLabel,
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (!selectedModeNow) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                if (!selectedModeNow) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Check,
-                                contentDescription = "Selected",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
 
-            // 3-Column Wheel Picker (Day | Hour | Minute) matching Image 4
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+            // 3-Column Wheel Picker (Day | Hour | Minute)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -267,25 +249,21 @@ fun PickupTimeBottomSheet(
                     modifier = Modifier.fillMaxSize(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Column 1: Day (Tomorrow -> future dates)
                     val dayFormatter = remember { DateTimeFormatter.ofPattern("EEE MMM d", Locale.ENGLISH) }
                     WheelColumn(
                         items = days,
                         selectedItem = selectedDate,
                         label = { d ->
                             when (d) {
+                                todayDate -> "Today"
                                 tomorrowDate -> "Tomorrow"
                                 else -> d.format(dayFormatter)
                             }
                         },
-                        onSelect = {
-                            selectedModeNow = false
-                            selectedDate = it
-                        },
+                        onSelect = { selectedDate = it },
                         modifier = Modifier.weight(1.3f)
                     )
 
-                    // Column 2: Hour (12-hour AM/PM display)
                     WheelColumn(
                         items = availableHours,
                         selectedItem = selectedHour,
@@ -298,32 +276,23 @@ fun PickupTimeBottomSheet(
                             }
                             "$hour12 $amPm"
                         },
-                        onSelect = {
-                            selectedModeNow = false
-                            selectedHour = it
-                        },
+                        onSelect = { selectedHour = it },
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Column 3: Minute
                     WheelColumn(
                         items = availableMinutes,
                         selectedItem = selectedMinute,
                         label = { m -> m.toString().padStart(2, '0') },
-                        onSelect = {
-                            selectedModeNow = false
-                            selectedMinute = it
-                        },
+                        onSelect = { selectedMinute = it },
                         modifier = Modifier.weight(0.8f)
                     )
                 }
             }
 
             Button(
-                onClick = {
-                    if (selectedModeNow) onSelectNow() else onSchedule(candidateFormatted)
-                },
-                enabled = selectedModeNow || MobileBookingRules.departure(candidateFormatted, now) != null,
+                onClick = { onSchedule(candidateFormatted) },
+                enabled = canConfirm,
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,

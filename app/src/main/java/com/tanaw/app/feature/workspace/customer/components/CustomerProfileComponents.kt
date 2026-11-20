@@ -62,6 +62,9 @@ import com.tanaw.app.feature.workspace.driver.rules.DriverProfileRules
 import com.tanaw.app.feature.workspace.state.MobileState
 import com.tanaw.app.feature.workspace.viewmodel.value
 import com.tanaw.app.ui.components.TanawSubScreenTopBar
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import com.tanaw.app.ui.theme.TanawTheme
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -91,7 +94,8 @@ internal fun CustomerProfileHeader(
             ) {
                 Text(
                     text = CustomerProfilePresentation.initials(fullName),
-                    fontWeight = FontWeight.Bold,
+                    fontFamily = TanawDisplayFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
                     fontSize = 30.sp,
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
@@ -128,6 +132,7 @@ internal fun CustomerProfileHeader(
 
         Text(
             text = fullName,
+            fontFamily = TanawDisplayFontFamily,
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
             color = MaterialTheme.colorScheme.onSurface,
@@ -142,13 +147,15 @@ internal fun CustomerProfileHeader(
             Spacer(modifier = Modifier.height(8.dp))
             Surface(
                 shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
             ) {
                 Text(
                     text = memberSince,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    fontFamily = TanawMonoFontFamily,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     letterSpacing = 0.6.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -217,6 +224,7 @@ internal fun CustomerPersonalInfoCard(
                     isLocked = false,
                     onClick = onEditPhone,
                     iconVector = Icons.Outlined.Phone,
+                    isTechnicalValue = true,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                 CustomerProfileRow(
@@ -284,7 +292,7 @@ internal fun CustomerSmsCard(
                 Box(
                     modifier = Modifier
                         .size(38.dp)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -333,6 +341,7 @@ internal fun CustomerSmsCard(
                                 phone.ifBlank { verifiedFallback },
                             ),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium,
                         )
@@ -348,8 +357,9 @@ internal fun CustomerSmsCard(
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = MaterialTheme.colorScheme.primary,
-                        uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        uncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     ),
                 )
             }
@@ -706,6 +716,7 @@ private fun CustomerProfileRow(
     modifier: Modifier = Modifier,
     iconVector: ImageVector? = null,
     iconRes: Int? = null,
+    isTechnicalValue: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -718,7 +729,7 @@ private fun CustomerProfileRow(
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center,
         ) {
             if (iconVector != null) {
@@ -740,15 +751,18 @@ private fun CustomerProfileRow(
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = label,
+                text = label.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
+                fontFamily = TanawMonoFontFamily,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Medium,
+                letterSpacing = 0.5.sp,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium,
+                fontFamily = if (isTechnicalValue) TanawMonoFontFamily else MaterialTheme.typography.bodyMedium.fontFamily,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -790,7 +804,7 @@ private fun CustomerMenuItemRow(
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center,
         ) {
             if (iconRes != null) {
@@ -867,96 +881,106 @@ internal fun CustomerProfileNotices(
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "Profile Header")
 @Composable
 private fun CustomerProfileHeaderPreview() {
-    TanawTheme {
-        CustomerProfileHeader(
-            fullName = "Maria Santos",
-            email = "maria.santos@example.com",
-            memberSince = "MEMBER SINCE OCTOBER 2024",
-            onEditPhotoClick = {},
-            modifier = Modifier.padding(16.dp),
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun CustomerPersonalInfoCardPreview() {
-    TanawTheme {
-        CustomerPersonalInfoCard(
-            fullName = "Maria Santos",
-            email = "maria.santos@example.com",
-            contact = "+63 917 555 0142",
-            defaultAddress = "123 Rizal Ave, Brgy. San Antonio, Quezon City, Metro Manila",
-            onEditName = {},
-            onEmailInfo = {},
-            onEditPhone = {},
-            onEditAddress = {},
-            modifier = Modifier.padding(16.dp),
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun CustomerSmsCardPreview() {
-    TanawTheme {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            CustomerSmsCard(
-                isSmsEnabled = true,
-                phone = "+63 917 555 0142",
-                hasVerifiedPhone = true,
-                smsError = null,
-                isBusy = false,
-                isOffline = false,
-                onSwitchChange = {},
-            )
-            CustomerSmsCard(
-                isSmsEnabled = false,
-                phone = "",
-                hasVerifiedPhone = false,
-                smsError = null,
-                isBusy = false,
-                isOffline = false,
-                onSwitchChange = {},
+    TanawCustomerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            CustomerProfileHeader(
+                fullName = "Maria Santos",
+                email = "maria.santos@example.com",
+                memberSince = "MEMBER SINCE OCTOBER 2024",
+                onEditPhotoClick = {},
+                modifier = Modifier.padding(16.dp),
             )
         }
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "Personal Info")
 @Composable
-private fun CustomerMenuCardPreview() {
-    TanawTheme {
-        CustomerMenuCard(
-            onOpenBookings = {},
-            onOpenSavedAddresses = {},
-            onChangePassword = {},
-            onOpenTerms = {},
-            onOpenPrivacy = {},
-            onOpenHelp = {},
-            modifier = Modifier.padding(16.dp),
-        )
+private fun CustomerPersonalInfoCardPreview() {
+    TanawCustomerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            CustomerPersonalInfoCard(
+                fullName = "Maria Santos",
+                email = "maria.santos@example.com",
+                contact = "+63 917 555 0142",
+                defaultAddress = "123 Rizal Ave, Brgy. San Antonio, Quezon City, Metro Manila",
+                onEditName = {},
+                onEmailInfo = {},
+                onEditPhone = {},
+                onEditAddress = {},
+                modifier = Modifier.padding(16.dp),
+            )
+        }
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "SMS Card")
+@Composable
+private fun CustomerSmsCardPreview() {
+    TanawCustomerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CustomerSmsCard(
+                    isSmsEnabled = true,
+                    phone = "+63 917 555 0142",
+                    hasVerifiedPhone = true,
+                    smsError = null,
+                    isBusy = false,
+                    isOffline = false,
+                    onSwitchChange = {},
+                )
+                CustomerSmsCard(
+                    isSmsEnabled = false,
+                    phone = "",
+                    hasVerifiedPhone = false,
+                    smsError = null,
+                    isBusy = false,
+                    isOffline = false,
+                    onSwitchChange = {},
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Menu Card")
+@Composable
+private fun CustomerMenuCardPreview() {
+    TanawCustomerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            CustomerMenuCard(
+                onOpenBookings = {},
+                onOpenSavedAddresses = {},
+                onChangePassword = {},
+                onOpenTerms = {},
+                onOpenPrivacy = {},
+                onOpenHelp = {},
+                modifier = Modifier.padding(16.dp),
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Profile Notices")
 @Composable
 private fun CustomerProfileNoticesPreview() {
-    TanawTheme {
-        CustomerProfileNotices(
-            state = MobileState(
-                busy = true,
-                offline = true,
-                error = "Could not sync SMS preferences.",
-                message = "Profile saved.",
-            ),
-            modifier = Modifier.padding(16.dp),
-        )
+    TanawCustomerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            CustomerProfileNotices(
+                state = MobileState(
+                    busy = true,
+                    offline = true,
+                    error = "Could not sync SMS preferences.",
+                    message = "Profile saved.",
+                ),
+                modifier = Modifier.padding(16.dp),
+            )
+        }
     }
 }

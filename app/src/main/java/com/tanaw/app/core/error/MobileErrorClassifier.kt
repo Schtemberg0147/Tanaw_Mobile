@@ -159,7 +159,12 @@ object MobileErrorClassifier {
             detail.contains("Invalid login", ignoreCase = true) || detail.contains("invalid_credentials", ignoreCase = true) -> "Email or password is incorrect."
             detail.contains("email_not_confirmed", ignoreCase = true) -> "Verify your email before signing in."
             detail.contains("CAPACITY_EXCEEDED") -> "Cargo exceeds registered vehicle capacity. Choose another type or contact the office."
-            detail.contains("INVALID_DEPARTURE") -> "Choose a future departure within the next year."
+            detail.contains("MIN_LEAD_TIME") || detail.contains("LEAD_TIME_VIOLATION") -> "Selected pick-up does not meet the required advance booking lead time for this truck."
+            detail.contains("ADVANCE_WINDOW_EXCEEDED") -> "Pick-up date must be within the next 14 days."
+            detail.contains("INVALID_DEPARTURE") -> "Choose a valid future pick-up date and time within the allowed booking window."
+            detail.contains("QUOTE_EXPIRED") -> "This quotation has expired. Contact the office for a new quote."
+            detail.contains("QUOTE_NOT_AVAILABLE") -> "Quotation is not ready yet. Please check back soon."
+            detail.contains("ALREADY_ACCEPTED") -> "This quotation has already been confirmed."
             detail.contains("REQUEST_ALREADY_SAVED_REFRESH") -> "This request was already saved. Refresh Active shipments before making another request."
             detail.contains("CUSTOMER_PROFILE_REQUIRED") -> "Your customer profile needs office attention before booking."
             detail.contains("rate", ignoreCase = true) || detail.contains("429") -> "Too many requests. Please wait before trying again."
@@ -185,7 +190,13 @@ object MobileErrorClassifier {
             val msg = current.message.orEmpty()
             if (msg.contains("ARRIVAL_TOO_FAR") ||
                 msg.contains("CAPACITY_EXCEEDED") ||
+                msg.contains("MIN_LEAD_TIME") ||
+                msg.contains("LEAD_TIME_VIOLATION") ||
+                msg.contains("ADVANCE_WINDOW_EXCEEDED") ||
                 msg.contains("INVALID_DEPARTURE") ||
+                msg.contains("QUOTE_EXPIRED") ||
+                msg.contains("QUOTE_NOT_AVAILABLE") ||
+                msg.contains("ALREADY_ACCEPTED") ||
                 msg.contains("REQUEST_ALREADY_SAVED_REFRESH") ||
                 msg.contains("CUSTOMER_PROFILE_REQUIRED") ||
                 msg.contains("OUTSIDE_OPERATING_HOURS") ||

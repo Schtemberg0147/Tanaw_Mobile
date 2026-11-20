@@ -21,7 +21,7 @@ class BookingRecoveryRulesTest {
         assertNull(draft.pickupLng)
         assertNull(draft.dropoffLat)
         assertNull(draft.dropoffLng)
-        assertTrue(draft.isPickupNow)
+        assertEquals("", draft.scheduledDeparture)
         assertEquals("None", draft.handling)
         assertNotNull(UUID.fromString(draft.requestId))
     }
@@ -38,7 +38,7 @@ class BookingRecoveryRulesTest {
         assertFalse(BookingDraft(stepName = "PICKUP_MAP").isEmpty())
         assertFalse(BookingDraft(stepName = "DESTINATION_MAP").isEmpty())
         assertFalse(BookingDraft(submitted = true).isEmpty())
-        assertFalse(BookingDraft(isPickupNow = false, scheduledDeparture = "2026-11-10 08:00 AM").isEmpty())
+        assertFalse(BookingDraft(scheduledDeparture = "2026-11-10 08:00").isEmpty())
         assertFalse(BookingDraft(handling = "Tailgate Required").isEmpty())
         assertFalse(BookingDraft(selectedVehicleId = "v-6w").isEmpty())
         assertFalse(BookingDraft(pickupLat = 15.48, pickupLng = 120.96).isEmpty())
@@ -55,7 +55,7 @@ class BookingRecoveryRulesTest {
         assertTrue(BookingDraft(stepName = "HOME").isEmpty())
         assertTrue(BookingDraft(handling = "None").isEmpty())
         assertTrue(BookingDraft(handling = "  ").isEmpty())
-        assertTrue(BookingDraft(isPickupNow = true, scheduledDeparture = "").isEmpty())
+        assertTrue(BookingDraft(scheduledDeparture = "").isEmpty())
         assertTrue(BookingDraft(pickupLat = 15.0, pickupLng = null).isEmpty())
     }
 
@@ -71,8 +71,7 @@ class BookingRecoveryRulesTest {
             dropoff = "North Harbor Pier 4, Tondo, Manila",
             dropoffLat = 14.6158,
             dropoffLng = 120.9585,
-            isPickupNow = false,
-            scheduledDeparture = "2026-11-10 08:00 AM",
+            scheduledDeparture = "2026-11-10 08:00",
             selectedVehicleId = "v-10-wheeler",
             contact = "+639171234567",
             cargo = "Electronics and appliances",
@@ -95,7 +94,6 @@ class BookingRecoveryRulesTest {
         assertEquals(original.dropoff, restored.dropoff)
         assertEquals(original.dropoffLat!!, restored.dropoffLat!!, 0.0001)
         assertEquals(original.dropoffLng!!, restored.dropoffLng!!, 0.0001)
-        assertEquals(original.isPickupNow, restored.isPickupNow)
         assertEquals(original.scheduledDeparture, restored.scheduledDeparture)
         assertEquals(original.selectedVehicleId, restored.selectedVehicleId)
         assertEquals(original.contact, restored.contact)
@@ -109,17 +107,18 @@ class BookingRecoveryRulesTest {
     }
 
     @Test
-    fun bookingDraftFromJsonHandlesMissingAndCorruptedFieldsGracefully() {
+    fun bookingDraftFromJsonHandlesLegacyPickupNowAndMissingFieldsGracefully() {
         val partialJson = buildJsonObject {
             put("pickup", "Warehouse Cabanatuan")
-            put("is_pickup_now", false)
+            put("is_pickup_now", true)
+            put("scheduled_departure", "")
             put("pickup_lat", "15.4865")
             put("pickup_lng", 120.9679)
         }
         val restored = BookingDraft.fromJson(partialJson)
 
         assertEquals("Warehouse Cabanatuan", restored.pickup)
-        assertFalse(restored.isPickupNow)
+        assertEquals("", restored.scheduledDeparture)
         assertEquals("HOME", restored.stepName)
         assertEquals("None", restored.handling)
         assertEquals("", restored.owner)
@@ -181,8 +180,7 @@ class BookingRecoveryRulesTest {
             handling = "Tailgate Required",
             contact = "+639171234567",
             selectedVehicleId = "v-6w",
-            isPickupNow = false,
-            scheduledDeparture = "2026-11-12 10:00 AM",
+            scheduledDeparture = "2026-11-12 10:00",
             owner = "user-999",
             submitted = true
         )
@@ -200,8 +198,7 @@ class BookingRecoveryRulesTest {
         assertEquals("Tailgate Required", restored.handling)
         assertEquals("+639171234567", restored.contact)
         assertEquals("v-6w", restored.selectedVehicleId)
-        assertFalse(restored.isPickupNow)
-        assertEquals("2026-11-12 10:00 AM", restored.scheduledDeparture)
+        assertEquals("2026-11-12 10:00", restored.scheduledDeparture)
         assertEquals("user-999", restored.owner)
         assertEquals("SUMMARY", restored.stepName)
     }

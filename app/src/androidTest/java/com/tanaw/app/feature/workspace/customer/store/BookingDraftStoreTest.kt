@@ -23,8 +23,7 @@ class BookingDraftStoreTest {
             notes = "Ring gate upon arrival",
             handling = "Tailgate Required",
             selectedVehicleId = "v-6-wheeler",
-            isPickupNow = false,
-            scheduledDeparture = "2026-11-15 09:00 AM",
+            scheduledDeparture = "2026-11-15 09:00",
             contact = "+639171234567",
             owner = "user-auth-uuid",
             submitted = false
@@ -45,7 +44,6 @@ class BookingDraftStoreTest {
             assertEquals(original.notes, restored.notes)
             assertEquals(original.handling, restored.handling)
             assertEquals(original.selectedVehicleId, restored.selectedVehicleId)
-            assertEquals(original.isPickupNow, restored.isPickupNow)
             assertEquals(original.scheduledDeparture, restored.scheduledDeparture)
             assertEquals(original.contact, restored.contact)
             assertEquals(original.owner, restored.owner)

@@ -343,4 +343,19 @@ class CustomerPaginationRulesTest {
         // Empty list
         assertTrue(CustomerPaginationRules.filterOfflineNotifications(emptyList()).isEmpty())
     }
+
+    @Test
+    fun shipmentColumnsIncludeFtlQuoteFieldsAndExcludeDeadheadKm() {
+        val cols = CustomerPaginationRules.SHIPMENT_COLUMNS.split(",").toSet()
+        assertTrue(cols.contains("scheduled_departure"))
+        assertTrue(cols.contains("estimated_arrival"))
+        assertTrue(cols.contains("linehaul_amount"))
+        assertTrue(cols.contains("toll_amount"))
+        assertTrue(cols.contains("mobilization_fee"))
+        assertTrue(cols.contains("override_amount"))
+        assertTrue(cols.contains("quote_expires_at"))
+        assertTrue(cols.contains("distance_km"))
+        assertTrue(cols.contains("route_duration_minutes"))
+        assertFalse(cols.contains("deadhead_km"))
+    }
 }

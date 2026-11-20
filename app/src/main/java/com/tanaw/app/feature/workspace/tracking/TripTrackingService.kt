@@ -127,12 +127,14 @@ class TripTrackingService:Service(),LocationListener {
      continue
     }
     try {
-     flush(uid,id)
      val lightweightDelivery = runCatching {
-      client.postgrest.from("deliveries").select(Columns.raw("id,status")) {
+      client.postgrest.from("deliveries").select(Columns.raw("id,status,truck_id")) {
        filter { eq("id", id) }
       }.decodeList<JsonObject>().firstOrNull()
      }.getOrNull()
+     val resolvedTruckId = lightweightDelivery?.value("truck_id")?.takeIf(String::isNotBlank)
+
+     flush(uid,id,resolvedTruckId)
 
      val isTerminal = if(lightweightDelivery != null) {
       lightweightDelivery.value("status") !in listOf("assigned","loading","in_transit")
@@ -143,7 +145,7 @@ class TripTrackingService:Service(),LocationListener {
      }
 
      if(isTerminal) {
-      flush(uid,id);queue.clearOwner(uid);stopSelf();break
+      flush(uid,id,resolvedTruckId);queue.clearOwner(uid);stopSelf();break
      }
      TripTrackingStatus.state.value=TrackingStatus(id,if(lastFix?.let {System.currentTimeMillis()-it in 0..60000}==true)"Sharing trip location" else "Waiting for fresh accurate GPS · try outdoors",queue.pending(uid,id).size)
     } catch(cancelled:CancellationException) {throw cancelled}
@@ -158,10 +160,16 @@ class TripTrackingService:Service(),LocationListener {
   TripTrackingStatus.state.value=TrackingStatus(id,"Waiting for a location fix")
   return START_NOT_STICKY
  }
- private suspend fun flush(uid:String,id:String) {
+ private suspend fun flush(uid:String,id:String,truckId:String?=null) {
   for((sample,payload,_) in queue.pending(uid,id)) {
    if(!TrackingSessionRules.shouldFlushNetwork(ownerState(uid)))return
-   try {client.postgrest.rpc("driver_record_position",buildJsonObject {put("p_delivery",id);put("p_sample",sample);put("p_data",Json.parseToJsonElement(payload))});queue.remove(sample)}
+   val parsedPayload = Json.parseToJsonElement(payload).jsonObject
+   val enrichedPayload = if (!truckId.isNullOrBlank() && "truck_id" !in parsedPayload) {
+    JsonObject(parsedPayload + ("truck_id" to JsonPrimitive(truckId)))
+   } else {
+    parsedPayload
+   }
+   try {client.postgrest.rpc("driver_record_position",buildJsonObject {put("p_delivery",id);put("p_sample",sample);put("p_data",enrichedPayload)});queue.remove(sample)}
    catch(error:Exception) {if(error is CancellationException)throw error;if(error.message.orEmpty().contains("INVALID_POSITION")){queue.remove(sample)}else throw error}
   }
  }

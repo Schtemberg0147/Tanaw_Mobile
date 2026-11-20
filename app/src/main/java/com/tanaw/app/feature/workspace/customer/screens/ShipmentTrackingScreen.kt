@@ -1,7 +1,6 @@
 package com.tanaw.app.feature.workspace.customer.screens
 
 import android.content.Intent
-import android.content.res.Configuration
 import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,12 +31,16 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.MyLocation
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Sms
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,7 +52,6 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
@@ -65,12 +67,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.tracking.CustomerEtaPresentation
 import com.tanaw.app.feature.workspace.tracking.PositionFreshness
@@ -82,50 +87,42 @@ import com.tanaw.app.feature.workspace.tracking.TrackingEtaPillState
 import com.tanaw.app.feature.workspace.tracking.TrackingSheetSummary
 import com.tanaw.app.feature.workspace.viewmodel.value
 import com.tanaw.app.ui.components.KeyValueRow
+import com.tanaw.app.ui.theme.BackgroundGray
+import com.tanaw.app.ui.theme.BorderGray
+import com.tanaw.app.ui.theme.DestinationOrange
+import com.tanaw.app.ui.theme.ElectricBlueSecondary
+import com.tanaw.app.ui.theme.ExpiredRed
+import com.tanaw.app.ui.theme.HintGray
+import com.tanaw.app.ui.theme.InputGray
 import com.tanaw.app.ui.theme.MapPinDestination
 import com.tanaw.app.ui.theme.MapPinPickup
-import com.tanaw.app.ui.theme.TanawTheme
+import com.tanaw.app.ui.theme.NavyPrimary
+import com.tanaw.app.ui.theme.OutlineGray
+import com.tanaw.app.ui.theme.StatusGreen
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
+import com.tanaw.app.ui.theme.TextDark
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
 
-private val TrackingSheetBg = Color(0xFF222831)
-private val TrackingSheetElevated = Color(0xFF393E46)
-private val TrackingAccentTeal = Color(0xFF00ADB5)
-private val TrackingAccentBlue = Color(0xFF0383D5)
-private val TrackingTextPrimary = Color(0xFFF8FAFC)
-private val TrackingTextSecondary = Color(0xFFCBD5E1)
-private val TrackingTextMuted = Color(0xFF94A3B8)
-private val TrackingDivider = Color(0xFF4B5563)
-private val TrackingAmberDot = Color(0xFFF59E0B)
-private val TrackingLiveDot = Color(0xFF22C55E)
-private val TrackingDanger = Color(0xFFF87171)
-
-private val TrackingDarkIndustrialColorScheme = darkColorScheme(
-    primary = TrackingAccentTeal,
-    onPrimary = Color(0xFF081418),
-    primaryContainer = Color(0xFF0F3D42),
-    onPrimaryContainer = Color(0xFFCCFBF1),
-    secondary = TrackingAccentBlue,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF133854),
-    onSecondaryContainer = Color(0xFFBAE6FD),
-    background = TrackingSheetBg,
-    onBackground = TrackingTextPrimary,
-    surface = TrackingSheetBg,
-    onSurface = TrackingTextPrimary,
-    surfaceContainerHigh = TrackingSheetElevated,
-    surfaceVariant = TrackingSheetElevated,
-    onSurfaceVariant = TrackingTextSecondary,
-    outline = TrackingTextMuted,
-    outlineVariant = TrackingDivider,
-    error = TrackingDanger,
-    onError = Color(0xFF450A0A),
-    errorContainer = Color(0xFF4C1D1D),
-    onErrorContainer = Color(0xFFFECACA),
-)
+private val TrackingSheetBg = Color.White
+private val TrackingCardBg = Color.White
+private val TrackingDriverCardBg = BackgroundGray
+private val TrackingPrimary = NavyPrimary
+private val TrackingSecondary = ElectricBlueSecondary
+private val TrackingTextPrimary = TextDark
+private val TrackingTextSecondary = HintGray
+private val TrackingTextMuted = OutlineGray
+private val TrackingDivider = BorderGray
+private val TrackingHandle = Color(0xFFCBD5E1)
+private val TrackingUpcomingNodeBg = InputGray
+private val TrackingWarningDot = DestinationOrange
+private val TrackingLiveDot = StatusGreen
+private val TrackingDanger = ExpiredRed
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,17 +139,16 @@ internal fun ShipmentTrackingScreen(
     busy: Boolean,
     errorMessage: String?,
     timelineEvents: List<Pair<String, String>>,
-    documents: List<JsonObject>,
     now: Instant,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
-    onViewProof: (String) -> Unit,
     mapSlot: @Composable (recenterTrigger: Int, modifier: Modifier) -> Unit,
     modifier: Modifier = Modifier,
     detail: JsonObject? = null,
     vehicles: List<JsonObject> = emptyList(),
     customerCancellationSlot: (@Composable () -> Unit)? = null,
     initialExpanded: Boolean = false,
+    onAcceptQuote: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val primaryDelivery = deliveries.firstOrNull()
@@ -192,14 +188,14 @@ internal fun ShipmentTrackingScreen(
     val pricingSummary = remember(shipment) {
         ShipmentTrackingPresentation.pricingSummary(shipment)
     }
+    val quoteState = remember(shipment, deliveries, now) {
+        ShipmentTrackingPresentation.quoteApprovalState(shipment, deliveries, now)
+    }
     val formattedPickup = remember(shipment) {
         ShipmentTrackingPresentation.formatAddressWithoutPlusCode(shipment.value("pickup_address"))
     }
     val formattedDropoff = remember(shipment) {
         ShipmentTrackingPresentation.formatAddressWithoutPlusCode(shipment.value("dropoff_address"))
-    }
-    val showProofCard = remember(shipment, primaryDelivery) {
-        ShipmentTrackingPresentation.shouldShowProofOfDelivery(shipment, primaryDelivery)
     }
     val showCancelAction = remember(shipment, deliveries) {
         ShipmentTrackingPresentation.shouldShowCancelAction(shipment, deliveries)
@@ -207,6 +203,7 @@ internal fun ShipmentTrackingScreen(
 
     var recenterTrigger by remember { mutableIntStateOf(0) }
     var showFullEventLog by rememberSaveable(shipment.value("id")) { mutableStateOf(false) }
+    var showFareBreakdown by rememberSaveable(shipment.value("id")) { mutableStateOf(false) }
 
     val sheetState = rememberStandardBottomSheetState(
         initialValue = if (initialExpanded) SheetValue.Expanded else SheetValue.PartiallyExpanded,
@@ -238,7 +235,7 @@ internal fun ShipmentTrackingScreen(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val peekHeight = (maxHeight * 0.46f)
-            .coerceIn(272.dp, 368.dp)
+            .coerceIn(286.dp, 376.dp)
             .coerceAtMost(maxHeight * 0.56f)
         val mapViewportHeight = (maxHeight - peekHeight + 24.dp).coerceAtLeast(260.dp)
         val expandedSheetMaxHeight = (maxHeight - 92.dp).coerceAtLeast(320.dp)
@@ -264,7 +261,7 @@ internal fun ShipmentTrackingScreen(
                             .width(42.dp)
                             .height(4.dp)
                             .clip(CircleShape)
-                            .background(TrackingTextMuted.copy(alpha = 0.55f))
+                            .background(TrackingHandle)
                     )
                 }
             },
@@ -284,45 +281,260 @@ internal fun ShipmentTrackingScreen(
                     )
 
                     HorizontalDivider(
-                        color = TrackingSheetElevated,
+                        color = TrackingDivider,
                         thickness = 1.dp,
-                        modifier = Modifier.padding(top = 14.dp)
+                        modifier = Modifier.padding(top = 12.dp)
                     )
 
-                    MaterialTheme(colorScheme = TrackingDarkIndustrialColorScheme) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f, fill = false)
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 20.dp, vertical = 16.dp)
-                                .navigationBarsPadding(),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            if (offline) {
-                                Surface(
-                                    color = TrackingSheetElevated,
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = BorderStroke(1.dp, TrackingAmberDot.copy(alpha = 0.45f)),
-                                    modifier = Modifier.fillMaxWidth()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .background(BackgroundGray)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                            .navigationBarsPadding(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        if (offline) {
+                            Surface(
+                                color = InputGray,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, TrackingDivider),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Offline mode · showing your last loaded tracking details.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TrackingTextPrimary,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
+
+                        if (!errorMessage.isNullOrBlank()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = errorMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
+
+                        if (detailLoaded && timelineEvents.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { showFullEventLog = true },
+                                border = BorderStroke(1.dp, TrackingDivider),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.History,
+                                    contentDescription = null,
+                                    tint = TrackingPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "View full event log (${timelineEvents.size})",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TrackingPrimary
+                                )
+                            }
+                        }
+
+                        SheetCard(title = "Route & Cargo") {
+                            TrackingRouteConnectorBlock(
+                                pickupAddress = formattedPickup,
+                                dropoffAddress = formattedDropoff
+                            )
+                            HorizontalDivider(color = TrackingDivider)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
                                     Text(
-                                        text = "Offline mode · showing your last loaded tracking details.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TrackingTextPrimary,
-                                        modifier = Modifier.padding(12.dp)
+                                        text = "CARGO",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = TanawMonoFontFamily,
+                                        color = TrackingTextMuted
+                                    )
+                                    Text(
+                                        text = cargoSummary.cargoText,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TrackingTextPrimary
+                                    )
+                                }
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = "WEIGHT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = TanawMonoFontFamily,
+                                        color = TrackingTextMuted
+                                    )
+                                    Text(
+                                        text = cargoSummary.weightText,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontFamily = TanawMonoFontFamily,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TrackingTextPrimary
                                     )
                                 }
                             }
+                            HorizontalDivider(
+                                color = TrackingDivider,
+                                thickness = 0.5.dp
+                            )
+                            KeyValueRow(
+                                label = "Recipient Contact",
+                                value = cargoSummary.recipientContact,
+                                boldValue = cargoSummary.recipientContact != "Not provided",
+                                valueFontFamily = if (cargoSummary.recipientContact != "Not provided") TanawMonoFontFamily else null
+                            )
+                            if (cargoSummary.deliveryNotes.isNotBlank()) {
+                                KeyValueRow(
+                                    label = "Delivery Notes",
+                                    value = cargoSummary.deliveryNotes
+                                )
+                            }
+                            if (shipment.value("cancelled_reason").isNotBlank()) {
+                                KeyValueRow(
+                                    label = "Cancellation Reason",
+                                    value = shipment.value("cancelled_reason"),
+                                    valueColor = TrackingDanger
+                                )
+                            }
+                        }
 
-                            if (!errorMessage.isNullOrBlank()) {
+                        SheetCard(title = "Schedule & Telemetry") {
+                            val scheduledArrival = shipment.value("estimated_arrival")
+                            KeyValueRow(
+                                label = "Scheduled Arrival",
+                                value = if (scheduledArrival.isNotBlank()) {
+                                    MobilePresentation.time(scheduledArrival)
+                                } else {
+                                    "Pending office schedule"
+                                },
+                                valueFontFamily = if (scheduledArrival.isNotBlank()) TanawMonoFontFamily else null
+                            )
+                            if (shipment.value("scheduled_departure").isNotBlank()) {
+                                KeyValueRow(
+                                    label = "Scheduled Departure",
+                                    value = MobilePresentation.time(shipment.value("scheduled_departure")),
+                                    valueFontFamily = TanawMonoFontFamily
+                                )
+                            }
+                            if (lastTelemetryRecordedAt.isNotBlank() && freshness != null) {
+                                KeyValueRow(
+                                    label = "Last GPS Update",
+                                    value = "${MobilePresentation.time(lastTelemetryRecordedAt)} · ${freshness.accuracyText}",
+                                    valueFontFamily = TanawMonoFontFamily
+                                )
+                            } else {
+                                KeyValueRow(
+                                    label = "GPS Signal",
+                                    value = "Awaiting driver GPS signal",
+                                    valueColor = TrackingTextSecondary
+                                )
+                            }
+                        }
+
+                        SheetCard(
+                            title = "Quotation & Pricing",
+                            badge = quoteState.badgeText
+                        ) {
+                            pricingSummary.rows.forEach { row ->
+                                KeyValueRow(
+                                    label = row.label,
+                                    value = row.value,
+                                    valueColor = if (row.isEmphasized) TrackingPrimary else TrackingTextPrimary,
+                                    boldValue = row.isEmphasized,
+                                    valueFontFamily = TanawMonoFontFamily
+                                )
+                            }
+
+                            if (quoteState.quoteExpiresAtText.isNotBlank()) {
+                                val validityValue = if (quoteState.countdownText.isNotBlank() && !quoteState.isExpired) {
+                                    "${quoteState.quoteExpiresAtText} (${quoteState.countdownText})"
+                                } else if (quoteState.isExpired) {
+                                    "${quoteState.quoteExpiresAtText} (Expired)"
+                                } else {
+                                    quoteState.quoteExpiresAtText
+                                }
+                                KeyValueRow(
+                                    label = "Quote Valid Until",
+                                    value = validityValue,
+                                    valueColor = if (quoteState.isExpired) TrackingDanger else TrackingTextPrimary,
+                                    boldValue = quoteState.isExpired,
+                                    valueFontFamily = TanawMonoFontFamily
+                                )
+                            }
+
+                            if (pricingSummary.breakdownRows.isNotEmpty()) {
+                                HorizontalDivider(color = TrackingDivider)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { showFareBreakdown = !showFareBreakdown }
+                                        .padding(vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (showFareBreakdown) "Hide fare breakdown" else "View fare breakdown",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TrackingSecondary
+                                    )
+                                    Icon(
+                                        imageVector = if (showFareBreakdown) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                        contentDescription = null,
+                                        tint = TrackingSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                if (showFareBreakdown) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        pricingSummary.breakdownRows.forEach { row ->
+                                            KeyValueRow(
+                                                label = row.label,
+                                                value = row.value,
+                                                valueColor = TrackingTextPrimary,
+                                                boldValue = row.isEmphasized,
+                                                valueFontFamily = TanawMonoFontFamily
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (quoteState.isExpired) {
                                 Surface(
+                                    shape = RoundedCornerShape(10.dp),
                                     color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = errorMessage,
+                                        text = "Quotation expired. Contact the office for an updated quote.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onErrorContainer,
                                         modifier = Modifier.padding(12.dp)
@@ -330,221 +542,30 @@ internal fun ShipmentTrackingScreen(
                                 }
                             }
 
-                            SheetCard(title = "Delivery Milestones") {
-                                sheetSummary.steps.forEachIndexed { idx, step ->
-                                    MilestoneDetailRow(step = step)
-                                    if (idx < sheetSummary.steps.lastIndex) {
-                                        HorizontalDivider(
-                                            color = TrackingDivider.copy(alpha = 0.45f),
-                                            thickness = 0.5.dp
-                                        )
-                                    }
-                                }
-                                if (detailLoaded && timelineEvents.isNotEmpty()) {
-                                    HorizontalDivider(color = TrackingDivider)
-                                    OutlinedButton(
-                                        onClick = { showFullEventLog = true },
-                                        border = BorderStroke(1.dp, TrackingDivider),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 48.dp)
-                                    ) {
-                                        Text(
-                                            text = "View full event log (${timelineEvents.size})",
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = TrackingAccentTeal
-                                        )
-                                    }
-                                }
-                            }
-
-                            SheetCard(title = "Route & Cargo") {
-                                DarkRouteConnectorBlock(
-                                    pickupAddress = formattedPickup,
-                                    dropoffAddress = formattedDropoff
-                                )
-                                HorizontalDivider(color = TrackingDivider)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            if (quoteState.canAccept && onAcceptQuote != null) {
+                                Button(
+                                    onClick = onAcceptQuote,
+                                    enabled = !busy && !offline,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = TrackingPrimary,
+                                        contentColor = Color.White
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("AcceptQuoteButton")
                                 ) {
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        Text(
-                                            text = "CARGO",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = TrackingTextMuted
-                                        )
-                                        Text(
-                                            text = cargoSummary.cargoText,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = TrackingTextPrimary
-                                        )
-                                    }
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        Text(
-                                            text = "WEIGHT",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = TrackingTextMuted
-                                        )
-                                        Text(
-                                            text = cargoSummary.weightText,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = TrackingTextPrimary
-                                        )
-                                    }
-                                }
-                                HorizontalDivider(
-                                    color = TrackingDivider.copy(alpha = 0.45f),
-                                    thickness = 0.5.dp
-                                )
-                                KeyValueRow(
-                                    label = "Recipient Contact",
-                                    value = cargoSummary.recipientContact,
-                                    boldValue = cargoSummary.recipientContact != "Not provided"
-                                )
-                                if (cargoSummary.deliveryNotes.isNotBlank()) {
-                                    KeyValueRow(
-                                        label = "Delivery Notes",
-                                        value = cargoSummary.deliveryNotes
-                                    )
-                                }
-                                if (shipment.value("cancelled_reason").isNotBlank()) {
-                                    KeyValueRow(
-                                        label = "Cancellation Reason",
-                                        value = shipment.value("cancelled_reason"),
-                                        valueColor = TrackingDanger
+                                    Text(
+                                        text = "Confirm Quotation",
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
+                        }
 
-                            SheetCard(title = "Schedule & Telemetry") {
-                                val scheduledArrival = shipment.value("estimated_arrival")
-                                KeyValueRow(
-                                    label = "Scheduled Arrival",
-                                    value = if (scheduledArrival.isNotBlank()) {
-                                        MobilePresentation.time(scheduledArrival)
-                                    } else {
-                                        "Pending office schedule"
-                                    }
-                                )
-                                if (shipment.value("scheduled_departure").isNotBlank()) {
-                                    KeyValueRow(
-                                        label = "Scheduled Departure",
-                                        value = MobilePresentation.time(shipment.value("scheduled_departure"))
-                                    )
-                                }
-                                if (lastTelemetryRecordedAt.isNotBlank() && freshness != null) {
-                                    KeyValueRow(
-                                        label = "Last GPS Update",
-                                        value = "${MobilePresentation.time(lastTelemetryRecordedAt)} · ${freshness.accuracyText}"
-                                    )
-                                } else {
-                                    KeyValueRow(
-                                        label = "GPS Signal",
-                                        value = "Awaiting driver GPS signal",
-                                        valueColor = TrackingTextSecondary
-                                    )
-                                }
-                            }
-
-                            SheetCard(
-                                title = "Quotation & Pricing",
-                                badge = if (pricingSummary.awaitingQuotation) "Awaiting quotation" else null
-                            ) {
-                                pricingSummary.rows.forEach { row ->
-                                    KeyValueRow(
-                                        label = row.label,
-                                        value = row.value,
-                                        valueColor = if (row.isEmphasized) TrackingAccentTeal else TrackingTextPrimary,
-                                        boldValue = row.isEmphasized
-                                    )
-                                }
-                            }
-
-                            if (showProofCard) {
-                                SheetCard(title = "Proof of Delivery") {
-                                    if (detailLoaded) {
-                                        if (documents.isEmpty()) {
-                                            Text(
-                                                text = "No proof documents have been uploaded yet.",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = TrackingTextSecondary
-                                            )
-                                        } else {
-                                            documents.forEach { d ->
-                                                Surface(
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    color = TrackingSheetBg,
-                                                    border = BorderStroke(1.dp, TrackingDivider),
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Column(
-                                                        modifier = Modifier.padding(14.dp),
-                                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = "${MobilePresentation.status(d.value("kind").replace('_', ' '))} · ${d.value("file_name").ifBlank { "Document recorded" }}",
-                                                            style = MaterialTheme.typography.titleSmall,
-                                                            color = TrackingTextPrimary
-                                                        )
-                                                        Text(
-                                                            text = "Recipient: ${d.value("recipient_name").ifBlank { "Pending" }}",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = TrackingTextSecondary
-                                                        )
-                                                        Text(
-                                                            text = MobilePresentation.time(d.value("created_at")),
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = TrackingTextSecondary
-                                                        )
-                                                        Spacer(Modifier.height(2.dp))
-                                                        OutlinedButton(
-                                                            onClick = { onViewProof(d.value("id")) },
-                                                            enabled = !busy,
-                                                            border = BorderStroke(1.dp, TrackingAccentTeal),
-                                                            shape = RoundedCornerShape(10.dp),
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .heightIn(min = 48.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = "View / download",
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = TrackingAccentTeal
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else if (detailLoading) {
-                                        Text(
-                                            text = "Syncing delivery details…",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = TrackingTextSecondary
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Tap refresh above to reload delivery documents.",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = TrackingTextSecondary
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (showCancelAction && customerCancellationSlot != null) {
-                                customerCancellationSlot()
-                            }
+                        if (showCancelAction && customerCancellationSlot != null) {
+                            customerCancellationSlot()
                         }
                     }
                 }
@@ -553,7 +574,7 @@ internal fun ShipmentTrackingScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(TrackingSheetBg)
+                    .background(BackgroundGray)
             ) {
                 Box(
                     modifier = Modifier
@@ -609,7 +630,8 @@ private fun MinimalTrackingTopBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+        color = TrackingSheetBg.copy(alpha = 0.96f),
+        shadowElevation = 2.dp
     ) {
         Column(modifier = Modifier.statusBarsPadding()) {
             Row(
@@ -626,14 +648,15 @@ private fun MinimalTrackingTopBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        tint = TrackingPrimary
                     )
                 }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
+                    fontFamily = TanawMonoFontFamily,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = TrackingPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -648,7 +671,7 @@ private fun MinimalTrackingTopBar(
                     Icon(
                         imageVector = Icons.Outlined.Refresh,
                         contentDescription = "Refresh shipment details",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        tint = TrackingPrimary
                     )
                 }
             }
@@ -657,7 +680,13 @@ private fun MinimalTrackingTopBar(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(2.dp),
-                    color = TrackingAccentTeal
+                    color = TrackingPrimary,
+                    trackColor = TrackingDivider
+                )
+            } else {
+                HorizontalDivider(
+                    color = TrackingDivider,
+                    thickness = 1.dp
                 )
             }
         }
@@ -671,15 +700,15 @@ private fun FloatingEtaPill(
 ) {
     val dotColor = when {
         etaPill.isLive -> TrackingLiveDot
-        etaPill.isCompleted -> TrackingAccentTeal
+        etaPill.isCompleted -> TrackingPrimary
         etaPill.isCancelled -> TrackingDanger
-        else -> TrackingAmberDot
+        else -> TrackingWarningDot
     }
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = TrackingSheetBg.copy(alpha = 0.92f),
-        border = BorderStroke(1.dp, TrackingSheetElevated),
+        color = TrackingSheetBg.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, TrackingDivider),
         shadowElevation = 4.dp
     ) {
         Row(
@@ -696,8 +725,9 @@ private fun FloatingEtaPill(
             Text(
                 text = etaPill.text,
                 style = MaterialTheme.typography.labelLarge,
+                fontFamily = TanawMonoFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                color = TrackingTextPrimary,
+                color = TrackingPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -713,8 +743,8 @@ private fun RecenterMapButton(
     Surface(
         modifier = modifier.size(48.dp),
         shape = CircleShape,
-        color = TrackingSheetBg.copy(alpha = 0.94f),
-        border = BorderStroke(1.dp, TrackingSheetElevated),
+        color = TrackingSheetBg.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, TrackingDivider),
         shadowElevation = 4.dp
     ) {
         IconButton(
@@ -724,7 +754,7 @@ private fun RecenterMapButton(
             Icon(
                 imageVector = Icons.Outlined.MyLocation,
                 contentDescription = "Recenter map",
-                tint = TrackingAccentTeal,
+                tint = TrackingPrimary,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -755,55 +785,38 @@ private fun PeekStatusSection(
             Text(
                 text = summary.currentStatusTitle,
                 style = MaterialTheme.typography.titleLarge,
+                fontFamily = TanawDisplayFontFamily,
                 fontWeight = FontWeight.Bold,
-                color = TrackingTextPrimary,
+                color = if (summary.isCancelled) TrackingDanger else TrackingPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
             if (summary.currentStatusTimestamp.isNotBlank()) {
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = summary.currentStatusTimestamp,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = TrackingTextSecondary,
-                    maxLines = 1
-                )
+                Spacer(Modifier.width(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = InputGray,
+                    border = BorderStroke(1.dp, TrackingDivider)
+                ) {
+                    Text(
+                        text = summary.currentStatusTimestamp,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = TanawMonoFontFamily,
+                        fontWeight = FontWeight.Medium,
+                        color = TrackingTextSecondary,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
 
-        val activeOrCompletedCount = summary.steps.count { it.isCompleted || it.isActive }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    contentDescription = "Delivery progress: $activeOrCompletedCount of 6 steps reached, ${summary.currentStatusTitle}"
-                },
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            summary.steps.forEach { step ->
-                val segmentColor = when {
-                    step.isCompleted -> TrackingAccentTeal
-                    step.isActive -> TrackingAccentBlue
-                    else -> TrackingSheetElevated
-                }
-                val segmentModifier = Modifier
-                    .weight(1f)
-                    .height(8.dp)
-                    .clip(CircleShape)
-                    .background(segmentColor)
-                    .let { base ->
-                        if (step.isActive) {
-                            base.border(1.dp, TrackingAccentTeal, CircleShape)
-                        } else {
-                            base
-                        }
-                    }
-                Box(modifier = segmentModifier)
-            }
-        }
+        ConnectedMilestoneStepper(
+            steps = summary.steps,
+            isCancelled = summary.isCancelled,
+            currentStatusTitle = summary.currentStatusTitle
+        )
 
         DriverVehiclePeekCard(
             driver = driverSummary,
@@ -836,17 +849,183 @@ private fun PeekStatusSection(
 }
 
 @Composable
+private fun ConnectedMilestoneStepper(
+    steps: List<ShipmentMilestoneStep>,
+    isCancelled: Boolean,
+    currentStatusTitle: String
+) {
+    val activeOrCompletedCount = steps.count { it.isCompleted || it.isActive }
+    val showTimestampsRow = steps.any { (it.isCompleted || it.isActive) && it.compactTime.isNotBlank() }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Delivery progress: $activeOrCompletedCount of ${steps.size} steps reached, $currentStatusTitle"
+            },
+        verticalAlignment = Alignment.Top
+    ) {
+        steps.forEachIndexed { index, step ->
+            val leftReached = index > 0 && (step.isCompleted || step.isActive)
+            val rightReached = index < steps.lastIndex && (steps[index + 1].isCompleted || steps[index + 1].isActive)
+            val leftLineColor = when {
+                isCancelled && leftReached -> TrackingHandle
+                leftReached -> TrackingPrimary
+                else -> TrackingDivider
+            }
+            val rightLineColor = when {
+                isCancelled && rightReached -> TrackingHandle
+                rightReached -> TrackingPrimary
+                else -> TrackingDivider
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(22.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (index == 0) {
+                        Spacer(Modifier.weight(1f))
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(2.5.dp)
+                                .background(leftLineColor)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier.size(22.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            step.isCompleted && !isCancelled -> {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(TrackingPrimary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                            }
+                            step.isActive -> {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(TrackingPrimary.copy(alpha = 0.12f))
+                                        .border(1.5.dp, TrackingPrimary, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(TrackingPrimary)
+                                    )
+                                }
+                            }
+                            step.isCompleted && isCancelled -> {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(TrackingHandle)
+                                )
+                            }
+                            else -> {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(TrackingUpcomingNodeBg)
+                                        .border(1.dp, TrackingHandle, CircleShape)
+                                )
+                            }
+                        }
+                    }
+
+                    if (index == steps.lastIndex) {
+                        Spacer(Modifier.weight(1f))
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(2.5.dp)
+                                .background(rightLineColor)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    text = step.shortLabel,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    letterSpacing = (-0.2).sp,
+                    fontWeight = when {
+                        step.isActive -> FontWeight.Bold
+                        step.isCompleted -> FontWeight.SemiBold
+                        else -> FontWeight.Normal
+                    },
+                    color = when {
+                        step.isActive -> TrackingPrimary
+                        step.isCompleted -> TrackingTextPrimary
+                        else -> TrackingTextMuted
+                    },
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 1.dp)
+                )
+
+                if (showTimestampsRow) {
+                    Text(
+                        text = if (step.isCompleted || step.isActive) step.compactTime else "",
+                        fontFamily = TanawMonoFontFamily,
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        letterSpacing = (-0.2).sp,
+                        color = if (step.isActive) TrackingTextSecondary else TrackingTextMuted,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DriverVehiclePeekCard(
     driver: TrackingDriverSummary,
     onCall: () -> Unit,
     onMessage: () -> Unit
 ) {
     val hasPhone = driver.phoneNumber != null
+    val showActionButtons = driver.hasDriverAssigned || hasPhone
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = TrackingSheetElevated,
-        border = BorderStroke(1.dp, TrackingDivider.copy(alpha = 0.6f))
+        color = TrackingDriverCardBg,
+        border = BorderStroke(1.dp, TrackingDivider)
     ) {
         Row(
             modifier = Modifier
@@ -857,35 +1036,22 @@ private fun DriverVehiclePeekCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (driver.hasDriverAssigned) TrackingAccentTeal.copy(alpha = 0.16f)
-                        else TrackingSheetBg.copy(alpha = 0.7f)
-                    )
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (driver.hasDriverAssigned) TrackingPrimary else InputGray)
                     .border(
                         width = 1.dp,
-                        color = if (driver.hasDriverAssigned) TrackingAccentTeal.copy(alpha = 0.45f)
-                        else TrackingDivider.copy(alpha = 0.6f),
-                        shape = CircleShape
+                        color = if (driver.hasDriverAssigned) TrackingPrimary else TrackingDivider,
+                        shape = RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (driver.initials.isNotBlank()) {
-                    Text(
-                        text = driver.initials,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TrackingAccentTeal
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Outlined.Person,
-                        contentDescription = null,
-                        tint = if (driver.hasDriverAssigned) TrackingAccentTeal else TrackingTextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Outlined.LocalShipping,
+                    contentDescription = null,
+                    tint = if (driver.hasDriverAssigned) Color.White else TrackingTextMuted,
+                    modifier = Modifier.size(22.dp)
+                )
             }
 
             Column(
@@ -895,6 +1061,7 @@ private fun DriverVehiclePeekCard(
                 Text(
                     text = driver.driverName,
                     style = MaterialTheme.typography.titleSmall,
+                    fontFamily = TanawDisplayFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = TrackingTextPrimary,
                     maxLines = 1,
@@ -903,30 +1070,31 @@ private fun DriverVehiclePeekCard(
                 Text(
                     text = driver.vehicleSubtitle,
                     style = MaterialTheme.typography.bodySmall,
+                    fontFamily = TanawMonoFontFamily,
                     color = TrackingTextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                CircularDriverActionButton(
-                    icon = Icons.Outlined.Call,
-                    contentDescription = if (hasPhone) "Call driver" else "Call driver unavailable",
-                    enabled = hasPhone,
-                    activeTint = TrackingAccentTeal,
-                    onClick = onCall
-                )
-                CircularDriverActionButton(
-                    icon = Icons.Outlined.Sms,
-                    contentDescription = if (hasPhone) "Message driver" else "Message driver unavailable",
-                    enabled = hasPhone,
-                    activeTint = Color(0xFF38BDF8),
-                    onClick = onMessage
-                )
+            if (showActionButtons) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    CircularDriverActionButton(
+                        icon = Icons.Outlined.Call,
+                        contentDescription = if (hasPhone) "Call driver" else "Call driver unavailable",
+                        enabled = hasPhone,
+                        onClick = onCall
+                    )
+                    CircularDriverActionButton(
+                        icon = Icons.Outlined.Sms,
+                        contentDescription = if (hasPhone) "Message driver" else "Message driver unavailable",
+                        enabled = hasPhone,
+                        onClick = onMessage
+                    )
+                }
             }
         }
     }
@@ -937,7 +1105,6 @@ private fun CircularDriverActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     enabled: Boolean,
-    activeTint: Color,
     onClick: () -> Unit
 ) {
     IconButton(
@@ -949,14 +1116,10 @@ private fun CircularDriverActionButton(
             modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(
-                    if (enabled) TrackingSheetBg.copy(alpha = 0.88f)
-                    else TrackingSheetBg.copy(alpha = 0.42f)
-                )
+                .background(if (enabled) TrackingPrimary else InputGray)
                 .border(
                     width = 1.dp,
-                    color = if (enabled) activeTint.copy(alpha = 0.45f)
-                    else TrackingDivider.copy(alpha = 0.35f),
+                    color = if (enabled) TrackingPrimary else TrackingDivider,
                     shape = CircleShape
                 ),
             contentAlignment = Alignment.Center
@@ -964,7 +1127,7 @@ private fun CircularDriverActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = if (enabled) activeTint else TrackingTextMuted.copy(alpha = 0.38f),
+                tint = if (enabled) Color.White else TrackingTextMuted.copy(alpha = 0.55f),
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -977,73 +1140,74 @@ private fun EventLogModalDialog(
     timelineEvents: List<Pair<String, String>>,
     onDismiss: () -> Unit
 ) {
-    MaterialTheme(colorScheme = TrackingDarkIndustrialColorScheme) {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            containerColor = TrackingSheetBg,
-            titleContentColor = TrackingTextPrimary,
-            textContentColor = TrackingTextSecondary,
-            title = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "Delivery Event Log",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = TrackingTextPrimary
-                    )
-                    Text(
-                        text = "$trackingNumber · ${timelineEvents.size} recorded updates",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TrackingTextMuted
-                    )
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    timelineEvents.forEach { (time, label) ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = TrackingSheetElevated,
-                            border = BorderStroke(1.dp, TrackingDivider.copy(alpha = 0.55f)),
-                            modifier = Modifier.fillMaxWidth()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TrackingSheetBg,
+        titleContentColor = TrackingTextPrimary,
+        textContentColor = TrackingTextSecondary,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Delivery Event Log",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = TanawDisplayFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TrackingPrimary
+                )
+                Text(
+                    text = "$trackingNumber · ${timelineEvents.size} recorded updates",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = TanawMonoFontFamily,
+                    color = TrackingTextMuted
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                timelineEvents.forEach { (time, label) ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = BackgroundGray,
+                        border = BorderStroke(1.dp, TrackingDivider),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TrackingTextPrimary
-                                )
-                                Text(
-                                    text = MobilePresentation.time(time),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TrackingTextSecondary
-                                )
-                            }
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TrackingTextPrimary
+                            )
+                            Text(
+                                text = MobilePresentation.time(time),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = TanawMonoFontFamily,
+                                color = TrackingTextSecondary
+                            )
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = "Close",
-                        fontWeight = FontWeight.Bold,
-                        color = TrackingAccentTeal
-                    )
-                }
             }
-        )
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = "Close",
+                    fontWeight = FontWeight.Bold,
+                    color = TrackingPrimary
+                )
+            }
+        }
+    )
 }
 
 @Composable
@@ -1055,8 +1219,8 @@ private fun SheetCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = TrackingSheetElevated,
-        border = BorderStroke(1.dp, TrackingDivider.copy(alpha = 0.6f))
+        color = TrackingCardBg,
+        border = BorderStroke(1.dp, TrackingDivider)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1070,20 +1234,22 @@ private fun SheetCard(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
+                    fontFamily = TanawDisplayFontFamily,
                     fontWeight = FontWeight.Bold,
-                    color = TrackingTextPrimary,
+                    color = TrackingPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 if (!badge.isNullOrBlank()) {
                     Spacer(Modifier.width(8.dp))
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = TrackingSheetBg
+                        color = InputGray,
+                        border = BorderStroke(1.dp, TrackingDivider)
                     ) {
                         Text(
                             text = badge,
                             style = MaterialTheme.typography.labelMedium,
-                            color = TrackingAccentTeal,
+                            color = TrackingPrimary,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
@@ -1095,45 +1261,7 @@ private fun SheetCard(
 }
 
 @Composable
-private fun MilestoneDetailRow(step: ShipmentMilestoneStep) {
-    val dotColor = when {
-        step.isCompleted -> TrackingAccentTeal
-        step.isActive -> TrackingAccentBlue
-        else -> TrackingTextMuted.copy(alpha = 0.45f)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(dotColor)
-                .let { base ->
-                    if (step.isActive) base.border(1.5.dp, TrackingAccentTeal, CircleShape) else base
-                }
-        )
-        Text(
-            text = step.title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (step.isCompleted || step.isActive) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (step.isCompleted || step.isActive) TrackingTextPrimary else TrackingTextSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = step.formattedTime.ifBlank { "Pending" },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (step.isCompleted || step.isActive) TrackingTextSecondary else TrackingTextMuted
-        )
-    }
-}
-
-@Composable
-private fun DarkRouteConnectorBlock(
+private fun TrackingRouteConnectorBlock(
     pickupAddress: String,
     dropoffAddress: String
 ) {
@@ -1167,6 +1295,7 @@ private fun DarkRouteConnectorBlock(
                 Text(
                     text = "PICKUP",
                     style = MaterialTheme.typography.labelSmall,
+                    fontFamily = TanawMonoFontFamily,
                     color = TrackingTextMuted
                 )
                 Text(
@@ -1196,6 +1325,7 @@ private fun DarkRouteConnectorBlock(
                 Text(
                     text = "DESTINATION",
                     style = MaterialTheme.typography.labelSmall,
+                    fontFamily = TanawMonoFontFamily,
                     color = TrackingTextMuted
                 )
                 Text(
@@ -1212,31 +1342,159 @@ private fun DarkRouteConnectorBlock(
 @Preview(showBackground = true, name = "Tracking Screen Peek (Assigned)")
 @Composable
 private fun ShipmentTrackingPeekPreview() {
-    ShipmentTrackingPreviewContent(
-        darkTheme = false,
-        initialExpanded = false
-    )
+    ShipmentTrackingPreviewContent(initialExpanded = false)
 }
 
-@Preview(showBackground = true, name = "Tracking Screen Expanded (Dark)", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(showBackground = true, name = "Tracking Screen Expanded")
 @Composable
 private fun ShipmentTrackingExpandedPreview() {
-    ShipmentTrackingPreviewContent(
-        darkTheme = true,
-        initialExpanded = true
+    ShipmentTrackingPreviewContent(initialExpanded = true)
+}
+
+@Preview(showBackground = true, name = "Tracking Screen Quoted FTL")
+@Composable
+private fun ShipmentTrackingQuotedPreview() {
+    val now = Instant.parse("2026-11-19T02:00:00Z")
+    val quotedShipment = buildJsonObject {
+        put("id", "ship-q1")
+        put("tracking_number", "SHP-NE-26-002401")
+        put("status", "quoted")
+        put("pickup_address", "Cabanatuan City Public Market, Nueva Ecija")
+        put("dropoff_address", "Manila North Harbor, Manila")
+        put("cargo_description", "250 sacks of rice")
+        put("weight_kg", "6000")
+        put("linehaul_amount", "14500")
+        put("toll_amount", "1200")
+        put("mobilization_fee", "800")
+        put("quoted_amount", "16500")
+        put("final_amount", "16500")
+        put("quote_expires_at", "2026-11-19T14:00:00Z")
+        put("scheduled_departure", "2026-11-20T01:00:00Z")
+        put("estimated_arrival", "2026-11-20T06:30:00Z")
+    }
+    val freshness = PositionFreshness(
+        status = PositionFreshnessStatus.UNAVAILABLE,
+        ageSeconds = null,
+        relativeText = "GPS position unavailable",
+        accuracyText = "accuracy unknown"
     )
+    TanawCustomerTheme {
+        ShipmentTrackingScreen(
+            shipment = quotedShipment,
+            deliveries = emptyList(),
+            routing = null,
+            eta = null,
+            freshness = freshness,
+            lastTelemetryRecordedAt = "",
+            detailLoaded = true,
+            detailLoading = false,
+            offline = false,
+            busy = false,
+            errorMessage = null,
+            timelineEvents = emptyList(),
+            now = now,
+            onBack = {},
+            onRefresh = {},
+            onAcceptQuote = {},
+            mapSlot = { _, mapModifier ->
+                Box(
+                    modifier = mapModifier.background(InputGray),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "MapLibre Light Viewport",
+                        color = TrackingPrimary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            initialExpanded = true
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Tracking Screen Delivered")
+@Composable
+private fun ShipmentTrackingDeliveredPreview() {
+    val now = Instant.parse("2026-11-19T05:30:00Z")
+    val deliveredShipment = buildJsonObject {
+        put("id", "ship-2")
+        put("tracking_number", "SHP-NE-26-002310")
+        put("status", "completed")
+        put("pickup_address", "FRH7+5W3, Cabanatuan City Public Market, Nueva Ecija")
+        put("dropoff_address", "G32P+4M Pier 14, Manila North Harbor, Manila")
+        put("cargo_description", "200 boxes")
+        put("weight_kg", "2500")
+        put("quoted_amount", "12500")
+        put("final_amount", "12500.00")
+    }
+    val deliveredDelivery = buildJsonObject {
+        put("id", "del-2")
+        put("shipment_id", "ship-2")
+        put("status", "delivered")
+        put("assigned_at", "2026-11-19T01:00:00Z")
+        put("route_started_at", "2026-11-19T01:15:00Z")
+        put("pickup_arrived_at", "2026-11-19T01:30:00Z")
+        put("customer_showed_at", "2026-11-19T01:40:00Z")
+        put("departed_at", "2026-11-19T01:55:00Z")
+        put("arrived_at", "2026-11-19T04:50:00Z")
+        put("driver_name", "Juan Dela Cruz")
+        put("driver_phone", "+639171234567")
+        put("truck_type", "6-Wheeler Closed Van")
+        put("plate_number", "NCV 4821")
+    }
+    val freshness = PositionFreshness(
+        status = PositionFreshnessStatus.UNAVAILABLE,
+        ageSeconds = null,
+        relativeText = "GPS position unavailable",
+        accuracyText = "accuracy unknown"
+    )
+    TanawCustomerTheme {
+        ShipmentTrackingScreen(
+            shipment = deliveredShipment,
+            deliveries = listOf(deliveredDelivery),
+            routing = null,
+            eta = null,
+            freshness = freshness,
+            lastTelemetryRecordedAt = "",
+            detailLoaded = true,
+            detailLoading = false,
+            offline = false,
+            busy = false,
+            errorMessage = null,
+            timelineEvents = listOf(
+                "2026-11-19T01:00:00Z" to "Driver Assigned",
+                "2026-11-19T04:50:00Z" to "Delivered"
+            ),
+            now = now,
+            onBack = {},
+            onRefresh = {},
+            mapSlot = { _, mapModifier ->
+                Box(
+                    modifier = mapModifier.background(InputGray),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "MapLibre Light Viewport",
+                        color = TrackingPrimary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            initialExpanded = true
+        )
+    }
 }
 
 @Composable
 internal fun ShipmentTrackingPreviewContent(
-    darkTheme: Boolean,
     initialExpanded: Boolean = false
 ) {
     val now = Instant.parse("2026-11-19T02:00:00Z")
     val sampleShipment = buildJsonObject {
         put("id", "ship-1")
         put("tracking_number", "SHP-NE-26-002349")
-        put("status", "assigned")
+        put("status", "in_transit")
         put("pickup_address", "FRH7+5W3, Cabanatuan City Public Market, Nueva Ecija")
         put("dropoff_address", "G32P+4M Pier 14, Manila North Harbor, Manila")
         put("cargo_description", "200 boxes")
@@ -1250,8 +1508,12 @@ internal fun ShipmentTrackingPreviewContent(
     val sampleDelivery = buildJsonObject {
         put("id", "del-1")
         put("shipment_id", "ship-1")
-        put("status", "assigned")
-        put("assigned_at", "2026-11-19T01:44:00Z")
+        put("status", "in_transit")
+        put("assigned_at", "2026-11-19T01:00:00Z")
+        put("route_started_at", "2026-11-19T01:15:00Z")
+        put("pickup_arrived_at", "2026-11-19T01:30:00Z")
+        put("customer_showed_at", "2026-11-19T01:40:00Z")
+        put("departed_at", "2026-11-19T01:55:00Z")
         put("driver_name", "Juan Dela Cruz")
         put("driver_phone", "+639171234567")
         put("truck_type", "6-Wheeler Closed Van")
@@ -1263,7 +1525,7 @@ internal fun ShipmentTrackingPreviewContent(
         relativeText = "GPS position unavailable",
         accuracyText = "accuracy unknown"
     )
-    TanawTheme(darkTheme = darkTheme) {
+    TanawCustomerTheme {
         ShipmentTrackingScreen(
             shipment = sampleShipment,
             deliveries = listOf(sampleDelivery),
@@ -1276,20 +1538,21 @@ internal fun ShipmentTrackingPreviewContent(
             offline = false,
             busy = false,
             errorMessage = null,
-            timelineEvents = listOf("2026-11-19T01:44:00Z" to "Driver Assigned"),
-            documents = emptyList(),
+            timelineEvents = listOf(
+                "2026-11-19T01:00:00Z" to "Driver Assigned",
+                "2026-11-19T01:55:00Z" to "In Transit"
+            ),
             now = now,
             onBack = {},
             onRefresh = {},
-            onViewProof = {},
             mapSlot = { _, mapModifier ->
                 Box(
-                    modifier = mapModifier.background(Color(0xFFDBEAFE)),
+                    modifier = mapModifier.background(InputGray),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "MapLibre Edge-to-Edge Viewport",
-                        color = Color(0xFF1E3A8A),
+                        text = "MapLibre Light Viewport",
+                        color = TrackingPrimary,
                         style = MaterialTheme.typography.labelLarge
                     )
                 }

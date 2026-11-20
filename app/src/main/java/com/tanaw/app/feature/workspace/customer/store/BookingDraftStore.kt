@@ -19,7 +19,6 @@ internal data class BookingDraft(
     val dropoff: String = "",
     val dropoffLat: Double? = null,
     val dropoffLng: Double? = null,
-    val isPickupNow: Boolean = true,
     val scheduledDeparture: String = "",
     val selectedVehicleId: String = "",
     val contact: String = "",
@@ -34,7 +33,7 @@ internal data class BookingDraft(
     fun hasMeaningfulContent(): Boolean =
         pickup.isNotBlank() || dropoff.isNotBlank() || cargo.isNotBlank() ||
         notes.isNotBlank() || weight.isNotBlank() ||
-        (!isPickupNow && scheduledDeparture.isNotBlank()) ||
+        scheduledDeparture.isNotBlank() ||
         (handling.isNotBlank() && handling != "None") ||
         selectedVehicleId.isNotBlank() ||
         (pickupLat != null && pickupLng != null) ||
@@ -53,7 +52,6 @@ internal data class BookingDraft(
         put("dropoff", dropoff)
         dropoffLat?.let { put("dropoff_lat", it) }
         dropoffLng?.let { put("dropoff_lng", it) }
-        put("is_pickup_now", isPickupNow)
         put("scheduled_departure", scheduledDeparture)
         put("selected_vehicle_id", selectedVehicleId)
         put("contact", contact)
@@ -76,7 +74,6 @@ internal data class BookingDraft(
             val dropoff = json.value("dropoff")
             val dropoffLat = (json["dropoff_lat"] as? JsonPrimitive)?.doubleOrNull
             val dropoffLng = (json["dropoff_lng"] as? JsonPrimitive)?.doubleOrNull
-            val isPickupNow = json.value("is_pickup_now") != "false"
             val scheduledDeparture = json.value("scheduled_departure")
             val selectedVehicleId = json.value("selected_vehicle_id")
             val contact = json.value("contact")
@@ -95,7 +92,6 @@ internal data class BookingDraft(
                 dropoff = dropoff,
                 dropoffLat = dropoffLat,
                 dropoffLng = dropoffLng,
-                isPickupNow = isPickupNow,
                 scheduledDeparture = scheduledDeparture,
                 selectedVehicleId = selectedVehicleId,
                 contact = contact,

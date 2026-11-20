@@ -343,7 +343,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                             val stopTracking = WorkspaceSyncRules.shouldStopTrackingOnUserTransition(loadedUser, id)
                             stopLive(stopTracking = stopTracking)
                             generation++
-                            mutable.update { it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null) }
+                            mutable.update { it.copy(data=null,details=null,proof=null,proofTitle="",proofSubtitle="",history=null,historyLoading=false,historyError=null,conversationUnread=null,customerHistoryDocuments=emptyList(),notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null) }
                             loadedUser = id
                             if(id!=null){restoreWorkspace(id);startLive(id)}
                         }
@@ -357,7 +357,7 @@ class MobileWorkspaceViewModel @Inject constructor(
                         loadedUser?.let {recoveryStore.clear(it);TrackingQueue(context).use {queue->queue.clearOwner(it)}}
                         generation++; loadedUser = null
                         mutable.update { if(changing)MobileState(page="login",message="Sign in again to manage your password.") else
-                            it.copy(data=null,details=null,proof=null,history=null,historyLoading=false,historyError=null,conversationUnread=null,notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
+                            it.copy(data=null,details=null,proof=null,proofTitle="",proofSubtitle="",history=null,historyLoading=false,historyError=null,conversationUnread=null,customerHistoryDocuments=emptyList(),notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null,passwordChangeOwner=null,passwordChangeCodeSent=false,page=if(it.page in listOf("loading","workspace")) "login" else it.page) }
                     }
                     is SessionStatus.RefreshFailure -> {
                         stopLive(stopTracking = false)
@@ -477,12 +477,14 @@ class MobileWorkspaceViewModel @Inject constructor(
             if (version == generation && client.auth.currentUserOrNull()?.id == id) mutable.update { it.copy(conversationUnread = unread) }
         }
         if(data.obj("profile").value("role")!="driver") {
-            val (smsPrefs, _) = coroutineScope {
+            val (smsPrefs, ftlData) = coroutineScope {
                 val smsDeferred = async { readSmsPreferences(id) }
+                val ftlDeferred = async { readCustomerFtlData() }
                 val reconcileDeferred = async { reconcileUncertainBooking(data, id) }
-                smsDeferred.await() to reconcileDeferred.await()
+                reconcileDeferred.await()
+                smsDeferred.await() to ftlDeferred.await()
             }
-            data = JsonObject(data + smsPrefs)
+            data = JsonObject(data + smsPrefs + ftlData)
         }
         if (version==generation && client.auth.currentUserOrNull()?.id==id) {
             val role = data.obj("profile").value("role")
@@ -612,6 +614,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         customerShipmentsJob?.cancel()
 
         val previousList = if (loadMore) mutable.value.customerShipments.orEmpty() else emptyList()
+        val previousDocs = if (loadMore) mutable.value.customerHistoryDocuments else emptyList()
         val offset = previousList.size
 
         mutable.update {
@@ -672,17 +675,50 @@ class MobileWorkspaceViewModel @Inject constructor(
                     range(offset.toLong(), (offset + pageSize - 1).toLong())
                 }.decodeAs<JsonArray>().filterIsInstance<JsonObject>()
 
+                val historyDocs = if (tab == "History") {
+                    val completedIds = rows
+                        .filter { CustomerHistoryPresentation.isCompletedStatus(it.value("status")) }
+                        .mapNotNull { it.value("id").takeIf(String::isNotBlank) }
+                    if (completedIds.isNotEmpty()) {
+                        try {
+                            client.from("delivery_documents").select(
+                                columns = io.github.jan.supabase.postgrest.query.Columns.raw("id,shipment_id,kind,file_name,recipient_name,created_at")
+                            ) {
+                                filter {
+                                    isIn("shipment_id", completedIds)
+                                    isIn("kind", listOf("proof_of_delivery", "signature"))
+                                }
+                                order("created_at", Order.DESCENDING)
+                            }.decodeAs<JsonArray>().filterIsInstance<JsonObject>()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    } else {
+                        emptyList()
+                    }
+                } else {
+                    emptyList()
+                }
+
                 if (version == customerShipmentsVersion && accountVersion == generation && client.auth.currentUserOrNull()?.id == uid) {
                     val merged = CustomerPaginationRules.mergePage(previousList, rows, reset = !loadMore)
                     val hasMore = CustomerPaginationRules.hasMore(rows.size, pageSize)
-                    mutable.update {
-                        it.copy(
+                    mutable.update { state ->
+                        val mergedDocs = if (tab == "History") {
+                            (historyDocs + previousDocs).distinctBy { it.value("id").ifBlank { it.toString() } }
+                        } else {
+                            state.customerHistoryDocuments
+                        }
+                        state.copy(
                             customerShipments = merged,
                             customerShipmentsLoading = false,
                             customerShipmentsHasMore = hasMore,
                             customerShipmentsError = null,
                             customerShipmentsTab = tab,
-                            customerShipmentsFilter = statusFilter
+                            customerShipmentsFilter = statusFilter,
+                            customerHistoryDocuments = mergedDocs
                         )
                     }
                 }
@@ -1230,6 +1266,146 @@ class MobileWorkspaceViewModel @Inject constructor(
     fun clearCancellationError() {
         mutable.update { if (it.error != null) it.copy(error = null) else it }
     }
+
+    fun acceptQuote(shipmentId: String) = operation {
+        val uid = client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
+        require(shipmentId.isNotBlank()) { "INVALID_SHIPMENT" }
+
+        val currentData = mutable.value.data
+        val allShipments = mutable.value.customerShipments.orEmpty() + currentData?.rows("shipments").orEmpty()
+        val targetShipment = allShipments.firstOrNull { it.value("id") == shipmentId }
+            ?: error("SHIPMENT_NOT_FOUND")
+
+        val status = targetShipment.value("status").trim().lowercase()
+        if (status != "quoted") {
+            if (status in setOf("booked", "confirmed")) error("ALREADY_ACCEPTED") else error("QUOTE_NOT_AVAILABLE")
+        }
+        val expiresAt = com.tanaw.app.feature.workspace.rules.MobilePresentation.parseInstant(targetShipment.value("quote_expires_at"))
+        val now = java.time.Instant.now()
+        if (expiresAt != null && !now.isBefore(expiresAt)) {
+            error("QUOTE_EXPIRED")
+        }
+
+        val version = generation
+        val nowIso = now.toString()
+
+        ConfirmedMutation.run(
+            mutate = {
+                try {
+                    client.postgrest.rpc(
+                        "mobile_accept_shipment_quote",
+                        buildJsonObject { put("p_shipment", shipmentId) }
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (rpcError: Exception) {
+                    val msg = rpcError.message.orEmpty()
+                    if (msg.contains("PGRST202") || msg.contains("Could not find the function", ignoreCase = true)) {
+                        client.from("shipments").update(
+                            buildJsonObject {
+                                put("status", "booked")
+                                put("updated_at", nowIso)
+                            }
+                        ) {
+                            filter {
+                                eq("id", shipmentId)
+                                eq("status", "quoted")
+                            }
+                        }
+                    } else {
+                        throw rpcError
+                    }
+                }
+            },
+            current = { version == generation && client.auth.currentUserOrNull()?.id == uid },
+            acknowledge = {
+                mutable.update { state ->
+                    fun markBooked(row: JsonObject): JsonObject = JsonObject(
+                        row + mapOf(
+                            "status" to JsonPrimitive("booked"),
+                            "updated_at" to JsonPrimitive(nowIso)
+                        )
+                    )
+                    val updatedData = state.data?.let { d ->
+                        val updatedShipments = d.rows("shipments").map { row ->
+                            if (row.value("id") == shipmentId) markBooked(row) else row
+                        }
+                        JsonObject(d + ("shipments" to JsonArray(updatedShipments)))
+                    }
+                    val updatedCustomerShipments = state.customerShipments?.map { row ->
+                        if (row.value("id") == shipmentId) markBooked(row) else row
+                    }
+                    state.copy(
+                        data = updatedData ?: state.data,
+                        customerShipments = updatedCustomerShipments ?: state.customerShipments,
+                        message = "Quotation confirmed. Dispatch scheduling is underway.",
+                        error = null
+                    )
+                }
+            },
+            refresh = {
+                reloadWorkspaceAndDetails()
+            },
+            refreshFailed = {
+                mutable.update {
+                    it.copy(
+                        message = "Quotation confirmed. Refresh to sync latest office records.",
+                        error = null,
+                        offline = true
+                    )
+                }
+            }
+        )
+    }
+
+    private suspend fun readCustomerFtlData(): Map<String, JsonElement> = coroutineScope {
+        val vehiclesDeferred = async {
+            try {
+                client.from("vehicle_types").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("id,name,default_capacity_kg,min_lead_time_hours,loading_buffer_minutes")
+                ) {
+                    filter { eq("is_active", true) }
+                    order("name", Order.ASCENDING)
+                }.decodeAs<JsonArray>()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val pricingDeferred = async {
+            try {
+                client.from("pricing_rates").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("id,name,vehicle_type_id,base_rate,per_km_rate,per_kg_rate,min_charge,free_deadhead_km,deadhead_per_km_rate,is_active")
+                ) {
+                    filter { eq("is_active", true) }
+                }.decodeAs<JsonArray>()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val shipmentsDeferred = async {
+            try {
+                client.from("shipments").select(
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw(CustomerPaginationRules.SHIPMENT_COLUMNS)
+                ) {
+                    order("created_at", Order.DESCENDING)
+                    limit(200)
+                }.decodeAs<JsonArray>()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        buildMap {
+            vehiclesDeferred.await()?.takeIf { it.isNotEmpty() }?.let { put("vehicles", it) }
+            pricingDeferred.await()?.takeIf { it.isNotEmpty() }?.let { put("pricing_rates", it) }
+            shipmentsDeferred.await()?.let { put("shipments", it) }
+        }
+    }
     private suspend fun reconcileUncertainBooking(data: JsonObject, userId: String) {
         val customerId = data.obj("customer").value("id").ifBlank { userId }
         val draft = bookingDraftStore.readAsync(customerId) ?: return
@@ -1257,7 +1433,6 @@ class MobileWorkspaceViewModel @Inject constructor(
                             pickup = draft.pickup,
                             dropoff = draft.dropoff,
                             vehicleId = draft.selectedVehicleId,
-                            isPickupNow = draft.isPickupNow,
                             scheduledDeparture = draft.scheduledDeparture
                         )
                     )
@@ -1598,6 +1773,12 @@ class MobileWorkspaceViewModel @Inject constructor(
             },
             readRouteStatus = { delivery ->
                 readRouteStatus(delivery)
+            },
+            readAssignmentSummary = { shipmentId ->
+                client.postgrest.rpc(
+                    "mobile_assigned_driver_summary",
+                    buildJsonObject { put("p_shipment", shipmentId) }
+                ).decodeAs<JsonElement>() as? JsonObject
             }
         )
     }
@@ -1645,10 +1826,22 @@ class MobileWorkspaceViewModel @Inject constructor(
         val bytes=client.storage.from("delivery-documents").downloadAuthenticated(path)
         val bitmap=withContext(Dispatchers.Default) { ProofImage.decode(bytes) }
         if(version==generation && uid==client.auth.currentUserOrNull()?.id) {
-            mutable.update { it.copy(proof=bitmap,proofTitle=record.value("file_name").ifBlank { record.value("kind").replace('_',' ') }) }
+            val kind = record.value("kind").trim().lowercase()
+            val title = when (kind) {
+                "proof_of_delivery" -> "Proof of Delivery"
+                "signature" -> "Recipient Signature"
+                else -> record.value("file_name").ifBlank { kind.replace('_', ' ') }
+            }
+            val recipient = record.value("recipient_name").trim()
+            val recordedAt = record.value("created_at").trim()
+            val subtitle = listOfNotNull(
+                recipient.takeIf { it.isNotBlank() }?.let { "Received by $it" },
+                recordedAt.takeIf { it.isNotBlank() }?.let { MobilePresentation.time(it) }
+            ).joinToString(" · ")
+            mutable.update { it.copy(proof=bitmap, proofTitle=title, proofSubtitle=subtitle) }
         }
     }
-    fun closeProof() { mutable.update { it.copy(proof=null,proofTitle="") } }
+    fun closeProof() { mutable.update { it.copy(proof=null, proofTitle="", proofSubtitle="") } }
     fun clearMessage() { mutable.update { it.copy(message=null) } }
     fun viewEvidence(shipment:String,kind:String,record:String)=operation {
         val version=generation;val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")

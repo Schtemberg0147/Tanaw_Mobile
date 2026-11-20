@@ -7,7 +7,7 @@ object CustomerPaginationRules {
     const val SHIPMENTS_PAGE_SIZE = 50
     const val NOTIFICATIONS_PAGE_SIZE = 50
 
-    const val SHIPMENT_COLUMNS = "id,tracking_number,status,pickup_address,dropoff_address,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng,route_geometry,cargo_description,weight_kg,special_handling,scheduled_departure,estimated_arrival,quoted_amount,final_amount,driver_notes,cancelled_reason,created_at,updated_at"
+    const val SHIPMENT_COLUMNS = "id,tracking_number,status,pickup_address,dropoff_address,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng,route_geometry,distance_km,route_duration_minutes,requested_vehicle_type_id,cargo_description,weight_kg,special_handling,scheduled_departure,estimated_arrival,actual_delivery_at,cancelled_at,linehaul_amount,toll_amount,mobilization_fee,quoted_amount,override_amount,final_amount,quote_expires_at,driver_notes,cancelled_reason,created_at,updated_at"
     const val NOTIFICATION_COLUMNS = "id,title,body,shipment_id,read_at,created_at"
 
     /**

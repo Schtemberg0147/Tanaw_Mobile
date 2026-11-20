@@ -2,9 +2,12 @@ package com.tanaw.app.feature.workspace.customer.rules
 
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
+import java.time.LocalDate
 
 class CustomerBookingRulesTest {
     @Test
@@ -39,29 +42,102 @@ class CustomerBookingRulesTest {
     }
 
     @Test
-    fun pickupNowAlwaysResolvesToValidFutureDeparture() {
-        val now = Instant.parse("2026-10-25T04:30:25Z") // 12:30:25 PHT
-        val resolved = CustomerBookingRules.resolveDepartureRaw(isPickupNow = true, scheduledRaw = "", now = now)
-        assertEquals("2026-10-25 12:36", resolved)
-        assertNotNull(MobileBookingRules.departure(resolved, now))
+    fun vehicleLeadTimeHoursRespectsExplicitAndFallbackDefaults() {
+        val wingVan = buildJsonObject { put("name", "10W Wing Van") }
+        val reefer = buildJsonObject { put("name", "Refrigerated Van") }
+        val flatbed = buildJsonObject { put("name", "10-Wheeler Flatbed") }
+        val customVehicle = buildJsonObject {
+            put("name", "Closed Van")
+            put("min_lead_time_hours", 36)
+            put("loading_buffer_minutes", 120)
+        }
+
+        assertEquals(24, CustomerBookingRules.minLeadTimeHours(wingVan))
+        assertEquals(48, CustomerBookingRules.minLeadTimeHours(reefer))
+        assertEquals(48, CustomerBookingRules.minLeadTimeHours(flatbed))
+        assertEquals(36, CustomerBookingRules.minLeadTimeHours(customVehicle))
+        assertEquals(180, CustomerBookingRules.loadingBufferMinutes(wingVan))
+        assertEquals(120, CustomerBookingRules.loadingBufferMinutes(customVehicle))
     }
 
     @Test
-    fun schedulePillFormatsNowTodayTomorrowAndFutureDates() {
+    fun ensureValidScheduledRawAutoAdjustsOnLeadTimeIncrease() {
         val now = Instant.parse("2026-10-25T04:30:25Z") // 2026-10-25 12:30 PHT
-        assertEquals("Pick-up now", CustomerBookingRules.formatSchedulePill(true, "", now))
-        assertEquals("Today, 2:18 PM", CustomerBookingRules.formatSchedulePill(false, "2026-10-25 14:18", now))
-        assertEquals("Tomorrow, 9:05 AM", CustomerBookingRules.formatSchedulePill(false, "2026-10-26 09:05", now))
-        assertEquals("Wed Oct 28, 3:45 PM", CustomerBookingRules.formatSchedulePill(false, "2026-10-28 15:45", now))
+        val twentyFourHourSelection = "2026-10-26 14:00"
+
+        // Valid for 24h truck
+        val standardCheck = CustomerBookingRules.ensureValidScheduledRaw(twentyFourHourSelection, now, 24)
+        assertFalse(standardCheck.wasAdjusted)
+        assertEquals(twentyFourHourSelection, standardCheck.raw)
+
+        // Switching to 48h Refrigerated Van auto-adjusts to valid 48h slot
+        val specializedCheck = CustomerBookingRules.ensureValidScheduledRaw(twentyFourHourSelection, now, 48)
+        assertTrue(specializedCheck.wasAdjusted)
+        assertNotNull(MobileBookingRules.departure(specializedCheck.raw, now, 48L))
     }
 
     @Test
-    fun scheduledDaysStartsFromTomorrowToFuture() {
-        val now = Instant.parse("2026-10-25T04:30:25Z") // 2026-10-25 in Asia/Manila
-        val days = CustomerBookingRules.scheduledDays(now)
-        assertEquals(30, days.size)
-        assertEquals("2026-10-26", days.first().toString())
-        assertEquals("2026-11-24", days.last().toString())
+    fun schedulePillFormatsBlankTodayTomorrowAndFutureDates() {
+        val now = Instant.parse("2026-10-25T04:30:25Z") // 2026-10-25 12:30 PHT
+        assertEquals("Schedule pick-up", CustomerBookingRules.formatSchedulePill("", now))
+        assertEquals("Today, 2:18 PM", CustomerBookingRules.formatSchedulePill("2026-10-25 14:18", now))
+        assertEquals("Tomorrow, 9:05 AM", CustomerBookingRules.formatSchedulePill("2026-10-26 09:05", now))
+        assertEquals("Wed Oct 28, 3:45 PM", CustomerBookingRules.formatSchedulePill("2026-10-28 15:45", now))
+    }
+
+    @Test
+    fun scheduledDaysAndTimeSlotsEnforceLeadTimeAnd14DayWindow() {
+        val now = Instant.parse("2026-10-25T04:30:25Z") // 2026-10-25 12:30 PHT
+        val days24 = CustomerBookingRules.scheduledDays(now, 24)
+        assertEquals(14, days24.size)
+        assertEquals("2026-10-26", days24.first().toString())
+        assertEquals("2026-11-08", days24.last().toString())
+
+        val days48 = CustomerBookingRules.scheduledDays(now, 48)
+        assertEquals(13, days48.size)
+        assertEquals("2026-10-27", days48.first().toString())
+        assertEquals("2026-11-08", days48.last().toString())
+
+        val earliestHours = CustomerBookingRules.availableHoursForDate(LocalDate.parse("2026-10-26"), now, 24)
+        assertEquals(12, earliestHours.first())
+        assertEquals(23, earliestHours.last())
+
+        val earliestMinutes = CustomerBookingRules.availableMinutesForDateTime(LocalDate.parse("2026-10-26"), 12, now, 24)
+        assertEquals(31, earliestMinutes.first())
+        assertEquals(59, earliestMinutes.last())
+    }
+
+    @Test
+    fun estimateBaseLinehaulAppliesRateAndMinChargeFloorStrictlyPickupToDropoff() {
+        val vehicle = buildJsonObject {
+            put("id", "v-closed")
+            put("name", "Closed Van")
+        }
+        val rates = listOf(
+            buildJsonObject {
+                put("vehicle_type_id", "v-closed")
+                put("base_rate", 2500)
+                put("per_km_rate", 45)
+                put("per_kg_rate", 0)
+                put("min_charge", 4000)
+                put("is_active", true)
+            }
+        )
+
+        // Short route floored at min_charge (2500 + 10 * 45 = 2950 < 4000)
+        val floored = CustomerBookingRules.estimateBaseLinehaul(vehicle, rates, distanceKm = 10.0)
+        assertNotNull(floored)
+        assertEquals(4000.0, floored!!.amount, 0.01)
+        assertTrue(floored.flooredAtMinCharge)
+
+        // Long route (2500 + 100 * 45 = 7000)
+        val regular = CustomerBookingRules.estimateBaseLinehaul(vehicle, rates, distanceKm = 100.0)
+        assertNotNull(regular)
+        assertEquals(7000.0, regular!!.amount, 0.01)
+        assertFalse(regular.flooredAtMinCharge)
+
+        // Missing distance returns null
+        assertNull(CustomerBookingRules.estimateBaseLinehaul(vehicle, rates, distanceKm = null))
     }
 
     @Test
@@ -167,5 +243,39 @@ class CustomerBookingRulesTest {
         assertTrue(overflowNotes.length > 2000)
         assertEquals(2000, boundaryNotes.length)
         assertEquals(2001, overflowNotes.length)
+    }
+
+    @Test
+    fun resolveHeaderCityUsesProfileThenPickupAndReturnsBlankWhenUnset() {
+        assertEquals(
+            "Quezon City, Metro Manila",
+            CustomerBookingRules.resolveHeaderCity(
+                rawAddress = "123 Katipunan Ave, Brgy. Loyola Heights",
+                rawCity = "Quezon City, Metro Manila"
+            )
+        )
+        assertEquals(
+            "Pasig City",
+            CustomerBookingRules.resolveHeaderCity(
+                rawAddress = "123 Rizal St, Pasig City",
+                rawCity = ""
+            )
+        )
+        assertEquals(
+            "Balagtas, Bulacan",
+            CustomerBookingRules.resolveHeaderCity(
+                rawAddress = "",
+                rawCity = "",
+                pickupAddress = "VW6H+F53, Bulihan Provincial Rd, Balagtas, 3016 Bulacan, Philippines"
+            )
+        )
+        assertEquals(
+            "",
+            CustomerBookingRules.resolveHeaderCity(
+                rawAddress = "",
+                rawCity = "",
+                pickupAddress = ""
+            )
+        )
     }
 }

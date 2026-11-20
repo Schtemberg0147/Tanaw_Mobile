@@ -16,7 +16,7 @@ import org.junit.Test
 class CustomerCancellationRulesTest {
 
     @Test
-    fun pendingAndBookedShipmentsWithoutDeliveriesAreCancellable() {
+    fun pendingQuotedAndBookedShipmentsWithoutDeliveriesAreCancellable() {
         val pendingShipment = buildJsonObject {
             put("id", "ship-1")
             put("status", "pending")
@@ -25,11 +25,17 @@ class CustomerCancellationRulesTest {
             put("id", "ship-2")
             put("status", "booked")
         }
+        val quotedShipment = buildJsonObject {
+            put("id", "ship-3")
+            put("status", "quoted")
+        }
 
         assertTrue(CustomerCancellationRules.canCancelShipment(pendingShipment, emptyList()))
         assertTrue(CustomerCancellationRules.canCancelShipment(bookedShipment, emptyList()))
+        assertTrue(CustomerCancellationRules.canCancelShipment(quotedShipment, emptyList()))
         assertNull(CustomerCancellationRules.ineligibilityReason(pendingShipment, emptyList()))
         assertNull(CustomerCancellationRules.ineligibilityReason(bookedShipment, emptyList()))
+        assertNull(CustomerCancellationRules.ineligibilityReason(quotedShipment, emptyList()))
     }
 
     @Test

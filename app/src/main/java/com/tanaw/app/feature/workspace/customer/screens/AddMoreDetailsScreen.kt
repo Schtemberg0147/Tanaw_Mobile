@@ -50,10 +50,13 @@ import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
 import com.tanaw.app.feature.workspace.customer.components.RouteSummaryCard
+import com.tanaw.app.feature.workspace.customer.rules.BaseLinehaulEstimate
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.feature.workspace.viewmodel.value
-import com.tanaw.app.ui.theme.TanawTheme
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import kotlinx.serialization.json.JsonObject
 
 // ─── Add More Details Screen (Image 1, Screen 2) ──────────────────────────────
@@ -79,7 +82,8 @@ fun AddMoreDetailsScreen(
     onSelectVehicle: (String) -> Unit,
     onHandlingChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    baseLinehaulEstimate: BaseLinehaulEstimate? = null
 ) {
     val parsedWeight = MobileValidation.weight(weight)
     val normalizedContact = MobileValidation.phone(contact)
@@ -122,6 +126,7 @@ fun AddMoreDetailsScreen(
                     Text(
                         text = stringResource(R.string.add_more_details),
                         style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -137,7 +142,7 @@ fun AddMoreDetailsScreen(
         bottomBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 8.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
@@ -151,17 +156,28 @@ fun AddMoreDetailsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.total_fee_label),
+                            text = if (baseLinehaulEstimate != null) "EST. BASE LINEHAUL" else stringResource(R.string.total_fee_label),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = stringResource(R.string.awaiting_office_quotation),
+                            text = baseLinehaulEstimate?.formattedAmount ?: stringResource(R.string.awaiting_office_quotation),
                             style = MaterialTheme.typography.titleSmall,
+                            fontFamily = TanawDisplayFontFamily,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                        if (baseLinehaulEstimate != null) {
+                            Text(
+                                text = stringResource(R.string.estimated_upon_review),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                     Button(
                         onClick = onConfirm,
@@ -232,6 +248,7 @@ fun AddMoreDetailsScreen(
                     Text(
                         text = stringResource(R.string.cargo_details),
                         style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -241,13 +258,16 @@ fun AddMoreDetailsScreen(
                         Text(
                             text = stringResource(R.string.order_contact_number),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         OutlinedTextField(
                             value = contact,
                             onValueChange = onContactChange,
-                            placeholder = { Text("0912 345 6789") },
+                            placeholder = { Text("0912 345 6789", fontFamily = TanawMonoFontFamily) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = TanawMonoFontFamily),
                             singleLine = true,
                             isError = contact.isNotBlank() && normalizedContact == null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
@@ -276,12 +296,15 @@ fun AddMoreDetailsScreen(
                             Text(
                                 text = stringResource(R.string.cargo_description_label),
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
                                 fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = "${cargo.trim().length}/1000",
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
                                 color = if (cargo.isNotEmpty() && cargo.trim().length < 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
@@ -314,15 +337,18 @@ fun AddMoreDetailsScreen(
                         Text(
                             text = stringResource(R.string.est_weight_label),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         val isWeightInvalid = weight.isNotBlank() && (parsedWeight == null || parsedWeight <= 0 || !weightFits)
                         OutlinedTextField(
                             value = weight,
                             onValueChange = onWeightChange,
-                            placeholder = { Text("0") },
-                            suffix = { Text("kg", fontWeight = FontWeight.SemiBold) },
+                            placeholder = { Text("0", fontFamily = TanawMonoFontFamily) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = TanawMonoFontFamily),
+                            suffix = { Text("kg", fontFamily = TanawMonoFontFamily, fontWeight = FontWeight.SemiBold) },
                             singleLine = true,
                             isError = isWeightInvalid,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
@@ -390,7 +416,9 @@ fun AddMoreDetailsScreen(
                         Text(
                             text = stringResource(R.string.special_handling_label),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Row(
@@ -424,12 +452,15 @@ fun AddMoreDetailsScreen(
                             Text(
                                 text = stringResource(R.string.notes_to_driver_label),
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
                                 fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = "${notes.length}/2000",
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
                                 color = if (notes.length > 2000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
@@ -463,10 +494,10 @@ fun AddMoreDetailsScreen(
     }
 }
 
-@Preview(showBackground = true, name = "Add More Details Preview")
+@Preview(showBackground = true, name = "Add More Details")
 @Composable
 private fun AddMoreDetailsPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawCustomerTheme {
         AddMoreDetailsScreen(
             pickup = "Cabanatuan City Public Market",
             dropoff = "Manila North Harbor, Manila",

@@ -92,6 +92,8 @@ class ShipmentTrackingPresentationTest {
         assertEquals("Nov 19 • 9:44 AM", summary.currentStatusTimestamp)
         assertEquals("Next: En Route to Pickup • Awaiting driver GPS signal", summary.subtitle)
         assertEquals(6, summary.steps.size)
+        assertEquals(listOf("Assigned", "En Route", "At Pickup", "Loading", "In Transit", "Delivered"), summary.steps.map { it.shortLabel })
+        assertEquals("9:44 AM", summary.steps[0].compactTime)
         assertTrue(summary.steps[0].isActive)
         assertFalse(summary.steps[0].isCompleted)
         assertTrue(summary.steps.drop(1).all { !it.isCompleted && !it.isActive })
@@ -157,6 +159,20 @@ class ShipmentTrackingPresentationTest {
         assertEquals("Delivered", summary.currentStatusTitle)
         assertEquals("All delivery milestones completed", summary.subtitle)
         assertTrue(summary.steps.all { it.isCompleted && !it.isActive })
+
+        val historyShipmentOnly = buildJsonObject {
+            put("status", "completed")
+            put("actual_delivery_at", "2026-11-19T03:00:00Z")
+        }
+        val historySummary = ShipmentTrackingPresentation.sheetSummary(
+            shipment = historyShipmentOnly,
+            delivery = null,
+            freshness = null,
+            offline = false
+        )
+        assertEquals("Delivered", historySummary.currentStatusTitle)
+        assertEquals("Nov 19 • 11:00 AM", historySummary.currentStatusTimestamp)
+        assertTrue(historySummary.steps.all { it.isCompleted && !it.isActive })
     }
 
     @Test
@@ -179,17 +195,62 @@ class ShipmentTrackingPresentationTest {
     }
 
     @Test
-    fun driverSummaryFallsBackGracefullyWhenDriverAndVehicleDetailsMissing() {
-        val shipment = buildJsonObject { put("status", "assigned") }
+    fun driverSummaryExtractsCamelCaseNestedAssignmentAndEventMetadata() {
+        val shipment = buildJsonObject { put("status", "completed") }
         val delivery = buildJsonObject {
-            put("status", "assigned")
+            put("status", "delivered")
+            put("arrived_at", "2026-11-19T04:00:00Z")
+        }
+        val detail = buildJsonObject {
+            put("assignment", buildJsonObject {
+                put("driverName", "Maria Santos")
+                put("driverPhone", "0917 888 9900")
+                put("vehicle", buildJsonObject {
+                    put("vehicleType", "Wing Van")
+                    put("plateNumber", "XYZ 9012")
+                })
+            })
+        }
+
+        val fromAssignment = ShipmentTrackingPresentation.driverSummary(shipment, delivery, detail = detail)
+        assertEquals("Maria Santos", fromAssignment.driverName)
+        assertEquals("MS", fromAssignment.initials)
+        assertEquals("Wing Van • XYZ 9012", fromAssignment.vehicleSubtitle)
+        assertEquals("09178889900", fromAssignment.phoneNumber)
+        assertTrue(fromAssignment.hasDriverAssigned)
+
+        val eventDetail = buildJsonObject {
+            put("events", kotlinx.serialization.json.buildJsonArray {
+                add(buildJsonObject {
+                    put("event_type", "driver_assigned")
+                    put("metadata", buildJsonObject {
+                        put("assignedDriver", "Pedro Reyes")
+                        put("contact", "+639181112233")
+                        put("truckType", "10-Wheeler")
+                        put("plateNumber", "ABC 777")
+                    })
+                })
+            })
+        }
+        val fromEvent = ShipmentTrackingPresentation.driverSummary(shipment, delivery, detail = eventDetail)
+        assertEquals("Pedro Reyes", fromEvent.driverName)
+        assertEquals("PR", fromEvent.initials)
+        assertEquals("10-Wheeler • ABC 777", fromEvent.vehicleSubtitle)
+        assertEquals("+639181112233", fromEvent.phoneNumber)
+    }
+
+    @Test
+    fun driverSummaryFallsBackGracefullyWhenDriverAndVehicleDetailsMissing() {
+        val shipment = buildJsonObject { put("status", "completed") }
+        val delivery = buildJsonObject {
+            put("status", "delivered")
             put("assigned_at", "2026-11-19T01:44:00Z")
         }
 
         val result = ShipmentTrackingPresentation.driverSummary(shipment, delivery)
         assertEquals("Assigned Driver", result.driverName)
         assertEquals("", result.initials)
-        assertEquals("Assigning vehicle details", result.vehicleSubtitle)
+        assertEquals("Vehicle details unavailable", result.vehicleSubtitle)
         assertEquals(null, result.phoneNumber)
         assertTrue(result.hasDriverAssigned)
     }
@@ -261,7 +322,7 @@ class ShipmentTrackingPresentationTest {
         val equalPricing = ShipmentTrackingPresentation.pricingSummary(equalShipment)
         assertFalse(equalPricing.awaitingQuotation)
         assertEquals(1, equalPricing.rows.size)
-        assertEquals("Total Amount", equalPricing.rows[0].label)
+        assertEquals("Total Quoted Amount", equalPricing.rows[0].label)
 
         val differentShipment = buildJsonObject {
             put("quoted_amount", "12500")
@@ -271,23 +332,81 @@ class ShipmentTrackingPresentationTest {
         assertFalse(diffPricing.awaitingQuotation)
         assertEquals(2, diffPricing.rows.size)
         assertEquals("Quoted Amount", diffPricing.rows[0].label)
-        assertEquals("Final Amount", diffPricing.rows[1].label)
+        assertEquals("Total Quoted Amount", diffPricing.rows[1].label)
 
         val awaitingShipment = buildJsonObject {}
         val awaitingPricing = ShipmentTrackingPresentation.pricingSummary(awaitingShipment)
         assertTrue(awaitingPricing.awaitingQuotation)
         assertEquals(1, awaitingPricing.rows.size)
-        assertEquals("Total Amount", awaitingPricing.rows[0].label)
+        assertEquals("Total Quoted Amount", awaitingPricing.rows[0].label)
     }
 
     @Test
-    fun proofAndCancelVisibilityFollowShipmentMilestones() {
+    fun pricingBreakdownShowsMobilizationOnlyWhenPositiveAndNeverExposesDeadheadKm() {
+        val withMobilization = buildJsonObject {
+            put("linehaul_amount", "14500")
+            put("toll_amount", "1200")
+            put("mobilization_fee", "800")
+            put("deadhead_km", "45")
+            put("quoted_amount", "16500")
+            put("final_amount", "16500")
+        }
+        val breakdown = ShipmentTrackingPresentation.pricingSummary(withMobilization).breakdownRows
+        assertEquals(listOf("Linehaul Fare", "Estimated Tolls", "Mobilization Fee"), breakdown.map { it.label })
+        assertTrue(breakdown.none { it.label.contains("deadhead", ignoreCase = true) || it.value.contains("45") })
+
+        val withoutMobilizationOrTolls = buildJsonObject {
+            put("linehaul_amount", "14500")
+            put("toll_amount", "0")
+            put("mobilization_fee", "0")
+            put("quoted_amount", "14500")
+            put("final_amount", "14500")
+        }
+        val cleanBreakdown = ShipmentTrackingPresentation.pricingSummary(withoutMobilizationOrTolls).breakdownRows
+        assertEquals(listOf("Linehaul Fare"), cleanBreakdown.map { it.label })
+    }
+
+    @Test
+    fun quoteApprovalStateTracksActiveExpiryAndAcceptedStates() {
+        val activeQuoted = buildJsonObject {
+            put("status", "quoted")
+            put("final_amount", "16500")
+            put("quote_expires_at", now.plusSeconds(3 * 3600 + 15 * 60).toString())
+        }
+        val activeState = ShipmentTrackingPresentation.quoteApprovalState(activeQuoted, emptyList(), now)
+        assertTrue(activeState.canAccept)
+        assertFalse(activeState.isExpired)
+        assertFalse(activeState.isAccepted)
+        assertEquals("Quote ready", activeState.badgeText)
+        assertEquals("Valid for 3h 15m", activeState.countdownText)
+
+        val expiredQuoted = buildJsonObject {
+            put("status", "quoted")
+            put("final_amount", "16500")
+            put("quote_expires_at", now.minusSeconds(60).toString())
+        }
+        val expiredState = ShipmentTrackingPresentation.quoteApprovalState(expiredQuoted, emptyList(), now)
+        assertFalse(expiredState.canAccept)
+        assertTrue(expiredState.isExpired)
+        assertEquals("Expired", expiredState.badgeText)
+
+        val bookedShipment = buildJsonObject {
+            put("status", "booked")
+            put("final_amount", "16500")
+        }
+        val bookedState = ShipmentTrackingPresentation.quoteApprovalState(bookedShipment, emptyList(), now)
+        assertFalse(bookedState.canAccept)
+        assertTrue(bookedState.isAccepted)
+        assertEquals("Booked", bookedState.badgeText)
+    }
+
+    @Test
+    fun cancelVisibilityFollowsPreEnRouteMilestones() {
         val assignedShipment = buildJsonObject { put("status", "assigned") }
         val assignedDelivery = buildJsonObject {
             put("status", "assigned")
             put("assigned_at", "2026-11-19T01:44:00Z")
         }
-        assertFalse(ShipmentTrackingPresentation.shouldShowProofOfDelivery(assignedShipment, assignedDelivery))
         assertTrue(ShipmentTrackingPresentation.shouldShowCancelAction(assignedShipment, listOf(assignedDelivery)))
 
         val enRouteDelivery = buildJsonObject {
@@ -295,7 +414,6 @@ class ShipmentTrackingPresentationTest {
             put("assigned_at", "2026-11-19T01:44:00Z")
             put("route_started_at", "2026-11-19T02:00:00Z")
         }
-        assertFalse(ShipmentTrackingPresentation.shouldShowProofOfDelivery(assignedShipment, enRouteDelivery))
         assertFalse(ShipmentTrackingPresentation.shouldShowCancelAction(assignedShipment, listOf(enRouteDelivery)))
 
         val deliveredShipment = buildJsonObject { put("status", "completed") }
@@ -303,7 +421,6 @@ class ShipmentTrackingPresentationTest {
             put("status", "delivered")
             put("arrived_at", "2026-11-19T05:00:00Z")
         }
-        assertTrue(ShipmentTrackingPresentation.shouldShowProofOfDelivery(deliveredShipment, deliveredDelivery))
         assertFalse(ShipmentTrackingPresentation.shouldShowCancelAction(deliveredShipment, listOf(deliveredDelivery)))
     }
 }

@@ -28,7 +28,7 @@ internal sealed interface CancellationEligibility {
  *    or `delivered`).
  */
 internal object CustomerCancellationRules {
-    val CANCELLABLE_SHIPMENT_STATUSES = setOf("pending", "booked", "assigned")
+    val CANCELLABLE_SHIPMENT_STATUSES = setOf("pending", "quoted", "booked", "assigned")
     private val ACTIVE_EN_ROUTE_DELIVERY_STATUSES = setOf("loading", "in_transit", "delivered")
     val TERMINAL_OR_REVIEW_SHIPMENT_STATUSES = setOf("review", "completed", "cancelled", "delivered")
 

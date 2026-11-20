@@ -59,6 +59,7 @@ import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.rows
 import com.tanaw.app.feature.workspace.viewmodel.value
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -206,9 +207,11 @@ internal fun CustomerProfile(
         AlertDialog(
             onDismissRequest = { infoDialog = null },
             shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.background,
             title = {
                 Text(
                     text = stringResource(R.string.profile_information),
+                    fontFamily = TanawDisplayFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -230,9 +233,11 @@ internal fun CustomerProfile(
         AlertDialog(
             onDismissRequest = { if (!state.busy) showLogoutConfirm = false },
             shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.background,
             title = {
                 Text(
                     text = stringResource(R.string.log_out_confirm_title),
+                    fontFamily = TanawDisplayFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -340,13 +345,15 @@ internal fun CustomerProfile(
                 .padding(top = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            // Screen Title
-            Text(
-                text = stringResource(R.string.my_profile),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            if (showTopBar) {
+                // Screen Title when TopBar isn't pinned externally
+                Text(
+                    text = stringResource(R.string.my_profile),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
 
             // Status Notices (Loading / Error / Success)
             CustomerProfileNotices(state, showLinearProgress = showTopBar)

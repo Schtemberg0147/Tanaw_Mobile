@@ -42,9 +42,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.feature.workspace.customer.components.RouteSummaryCard
+import com.tanaw.app.feature.workspace.customer.rules.BaseLinehaulEstimate
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.model.RoutePreview
-import com.tanaw.app.ui.theme.TanawTheme
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 
 // ─── Booking Summary Screen (Image 1, Screen 3) ───────────────────────────────
 @Composable
@@ -66,7 +69,9 @@ fun BookingSummaryScreen(
     errorMessage: String?,
     onBack: () -> Unit,
     onEditRoute: () -> Unit,
-    onSubmitBooking: () -> Unit
+    onSubmitBooking: () -> Unit,
+    estimatedArrivalSummary: String = "",
+    baseLinehaulEstimate: BaseLinehaulEstimate? = null
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -94,6 +99,7 @@ fun BookingSummaryScreen(
                     Text(
                         text = stringResource(R.string.booking_summary_title),
                         style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -109,7 +115,7 @@ fun BookingSummaryScreen(
         bottomBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 8.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
@@ -218,6 +224,7 @@ fun BookingSummaryScreen(
                     Text(
                         text = stringResource(R.string.shipment_details_section),
                         style = MaterialTheme.typography.titleSmall,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -227,6 +234,9 @@ fun BookingSummaryScreen(
                             Text(
                                 text = stringResource(R.string.vehicle_label),
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp
                             )
@@ -241,6 +251,7 @@ fun BookingSummaryScreen(
                             Text(
                                 text = CustomerBookingRules.formatCapacity(vehicleCapacity),
                                 style = MaterialTheme.typography.bodySmall,
+                                fontFamily = TanawMonoFontFamily,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp,
                                 maxLines = 1,
@@ -251,12 +262,16 @@ fun BookingSummaryScreen(
                             Text(
                                 text = stringResource(R.string.cargo_weight_label),
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp
                             )
                             Text(
                                 text = "$weight kg",
                                 style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = TanawMonoFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
@@ -270,6 +285,9 @@ fun BookingSummaryScreen(
                             Text(
                                 text = stringResource(R.string.cargo_description_label),
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp
                             )
@@ -286,6 +304,9 @@ fun BookingSummaryScreen(
                             Text(
                                 text = stringResource(R.string.special_handling_label),
                                 style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp
                             )
@@ -311,12 +332,16 @@ fun BookingSummaryScreen(
                         Text(
                             text = stringResource(R.string.order_contact_number),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp
                         )
                         Text(
                             text = contact,
                             style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -334,6 +359,9 @@ fun BookingSummaryScreen(
                                 Text(
                                     text = "NOTES",
                                     style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = TanawMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.6.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 10.sp
                                 )
@@ -356,15 +384,27 @@ fun BookingSummaryScreen(
                             tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(18.dp)
                         )
-                        Text(
-                            text = scheduleSummary,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f, fill = false),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Scheduled Pick-up: $scheduleSummary",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = TanawMonoFontFamily,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (estimatedArrivalSummary.isNotBlank()) {
+                                Text(
+                                    text = "Est. Arrival (incl. loading buffer): $estimatedArrivalSummary",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = TanawMonoFontFamily,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -373,9 +413,9 @@ fun BookingSummaryScreen(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 1.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 1.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -385,6 +425,7 @@ fun BookingSummaryScreen(
                     Text(
                         text = stringResource(R.string.price_breakdown_section),
                         style = MaterialTheme.typography.titleSmall,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -394,14 +435,15 @@ fun BookingSummaryScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = stringResource(R.string.total_fee_label),
+                            text = if (baseLinehaulEstimate != null) "Est. Base Linehaul" else stringResource(R.string.total_fee_label),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = stringResource(R.string.awaiting_office_quotation),
+                            text = baseLinehaulEstimate?.formattedAmount ?: stringResource(R.string.awaiting_office_quotation),
                             style = MaterialTheme.typography.titleSmall,
+                            fontFamily = if (baseLinehaulEstimate != null) TanawMonoFontFamily else null,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.secondary,
                             textAlign = TextAlign.End,
@@ -411,7 +453,11 @@ fun BookingSummaryScreen(
                         )
                     }
                     Text(
-                        text = stringResource(R.string.estimated_upon_review),
+                        text = if (baseLinehaulEstimate != null) {
+                            "Estimate pending office verification · Final quote issued after office review"
+                        } else {
+                            stringResource(R.string.estimated_upon_review)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -435,10 +481,10 @@ fun BookingSummaryScreen(
     }
 }
 
-@Preview(showBackground = true, name = "Booking Summary Preview")
+@Preview(showBackground = true, name = "Booking Summary")
 @Composable
 private fun BookingSummaryPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawCustomerTheme {
         BookingSummaryScreen(
             pickup = "Cabanatuan City Public Market",
             dropoff = "Manila North Harbor, Manila",

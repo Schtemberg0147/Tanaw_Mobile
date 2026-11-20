@@ -3,6 +3,7 @@ package com.tanaw.app.feature.workspace.tracking
 import com.tanaw.app.feature.workspace.customer.rules.CustomerCancellationRules
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.viewmodel.obj
+import com.tanaw.app.feature.workspace.viewmodel.rows
 import com.tanaw.app.feature.workspace.viewmodel.value
 import kotlinx.serialization.json.JsonObject
 import java.time.Duration
@@ -14,8 +15,10 @@ import java.util.Locale
 data class ShipmentMilestoneStep(
     val key: String,
     val title: String,
+    val shortLabel: String,
     val timestamp: String,
     val formattedTime: String,
+    val compactTime: String,
     val isCompleted: Boolean,
     val isActive: Boolean
 )
@@ -58,10 +61,28 @@ data class TrackingPricingRow(
 
 data class TrackingPricingSummary(
     val rows: List<TrackingPricingRow>,
+    val breakdownRows: List<TrackingPricingRow>,
+    val totalAmountText: String,
     val awaitingQuotation: Boolean
 )
 
+data class TrackingQuoteState(
+    val status: String,
+    val quoteExpiresAtText: String,
+    val countdownText: String,
+    val isExpired: Boolean,
+    val canAccept: Boolean,
+    val isAccepted: Boolean,
+    val badgeText: String
+)
+
 object ShipmentTrackingPresentation {
+    private data class MilestoneDefinition(
+        val key: String,
+        val title: String,
+        val shortLabel: String
+    )
+
     private val plusCodeRegex = Regex(
         """(?i)(?:^|(?<=[\s,]))[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,4}(?=[\s,]|$)"""
     )
@@ -77,16 +98,19 @@ object ShipmentTrackingPresentation {
         DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH).withZone(manilaZone)
 
     private val milestoneDefinitions = listOf(
-        "assigned_at" to "Driver Assigned",
-        "route_started_at" to "En Route to Pickup",
-        "pickup_arrived_at" to "Arrived at Pickup",
-        "customer_showed_at" to "Cargo Loading",
-        "departed_at" to "In Transit",
-        "arrived_at" to "Delivered"
+        MilestoneDefinition("assigned_at", "Driver Assigned", "Assigned"),
+        MilestoneDefinition("route_started_at", "En Route to Pickup", "En Route"),
+        MilestoneDefinition("pickup_arrived_at", "Arrived at Pickup", "At Pickup"),
+        MilestoneDefinition("customer_showed_at", "Cargo Loading", "Loading"),
+        MilestoneDefinition("departed_at", "In Transit", "In Transit"),
+        MilestoneDefinition("arrived_at", "Delivered", "Delivered")
     )
 
     fun shortTimestamp(raw: String): String =
         MobilePresentation.parseInstant(raw)?.let { shortDateTimeFormatter.format(it) }.orEmpty()
+
+    fun compactClockTimestamp(raw: String): String =
+        MobilePresentation.parseInstant(raw)?.let { clockOnlyFormatter.format(it) }.orEmpty()
 
     fun pillTimestamp(raw: String, now: Instant = Instant.now()): String {
         val instant = MobilePresentation.parseInstant(raw) ?: return ""
@@ -108,7 +132,8 @@ object ShipmentTrackingPresentation {
     ): TrackingEtaPillState {
         val shipmentStatus = shipment.value("status").trim().lowercase()
         val deliveryStatus = delivery?.value("status")?.trim()?.lowercase().orEmpty()
-        val arrivedAt = delivery?.value("arrived_at").orEmpty()
+        val arrivedAt = delivery?.value("arrived_at")?.takeIf(String::isNotBlank)
+            ?: shipment.value("actual_delivery_at")
 
         if (shipmentStatus in listOf("completed", "delivered") || deliveryStatus == "delivered" || arrivedAt.isNotBlank()) {
             val deliveredTime = pillTimestamp(arrivedAt.ifBlank { shipment.value("updated_at") }, now)
@@ -153,14 +178,23 @@ object ShipmentTrackingPresentation {
         val deliveryStatus = delivery?.value("status")?.trim()?.lowercase().orEmpty()
         val isCancelled = shipmentStatus == "cancelled" || deliveryStatus == "cancelled"
 
-        val recordedTimestamps = milestoneDefinitions.map { (key, _) ->
-            delivery?.value(key).orEmpty()
+        val recordedTimestamps = milestoneDefinitions.map { def ->
+            if (def.key == "arrived_at") {
+                delivery?.value(def.key)?.takeIf(String::isNotBlank)
+                    ?: shipment.value("actual_delivery_at")
+            } else {
+                delivery?.value(def.key).orEmpty()
+            }
         }
         val lastRecordedIndex = recordedTimestamps.indexOfLast { it.isNotBlank() }
+        val isDelivered = !isCancelled && (
+            lastRecordedIndex == milestoneDefinitions.lastIndex ||
+                shipmentStatus in setOf("completed", "delivered") ||
+                deliveryStatus in setOf("delivered", "completed")
+            )
 
-        val steps = milestoneDefinitions.mapIndexed { index, (key, title) ->
+        val steps = milestoneDefinitions.mapIndexed { index, def ->
             val ts = recordedTimestamps[index]
-            val isDelivered = lastRecordedIndex == milestoneDefinitions.lastIndex
             val completed = when {
                 isCancelled -> ts.isNotBlank()
                 isDelivered -> true
@@ -168,10 +202,12 @@ object ShipmentTrackingPresentation {
             }
             val active = !isCancelled && !isDelivered && index == lastRecordedIndex
             ShipmentMilestoneStep(
-                key = key,
-                title = title,
+                key = def.key,
+                title = def.title,
+                shortLabel = def.shortLabel,
                 timestamp = ts,
                 formattedTime = shortTimestamp(ts),
+                compactTime = compactClockTimestamp(ts),
                 isCompleted = completed,
                 isActive = active
             )
@@ -179,26 +215,37 @@ object ShipmentTrackingPresentation {
 
         val currentStatusTitle = when {
             isCancelled -> "Shipment Cancelled"
-            lastRecordedIndex >= 0 -> milestoneDefinitions[lastRecordedIndex].second
-            shipmentStatus == "booked" -> "Booking Confirmed"
-            shipmentStatus == "pending" -> "Awaiting Driver"
+            isDelivered -> milestoneDefinitions.last().title
+            lastRecordedIndex >= 0 -> milestoneDefinitions[lastRecordedIndex].title
+            shipmentStatus == "quoted" -> "Quotation Ready"
+            shipmentStatus == "booked" || shipmentStatus == "confirmed" -> "Booking Confirmed"
+            shipmentStatus == "pending" -> "Awaiting Office Quotation"
             else -> MobilePresentation.status(shipmentStatus.ifBlank { "pending" })
         }
 
         val currentStatusTimestamp = when {
-            isCancelled -> shortTimestamp(shipment.value("updated_at").ifBlank { shipment.value("created_at") })
+            isCancelled -> shortTimestamp(
+                shipment.value("cancelled_at")
+                    .ifBlank { shipment.value("updated_at") }
+                    .ifBlank { shipment.value("created_at") }
+            )
+            isDelivered -> shortTimestamp(
+                recordedTimestamps.last()
+                    .ifBlank { shipment.value("actual_delivery_at") }
+                    .ifBlank { shipment.value("updated_at") }
+            )
             lastRecordedIndex >= 0 -> shortTimestamp(recordedTimestamps[lastRecordedIndex])
             else -> shortTimestamp(shipment.value("created_at"))
         }
 
-        val nextStep = if (!isCancelled && lastRecordedIndex < milestoneDefinitions.lastIndex) {
-            milestoneDefinitions.getOrNull(lastRecordedIndex + 1)?.second
+        val nextStep = if (!isCancelled && !isDelivered && lastRecordedIndex < milestoneDefinitions.lastIndex) {
+            milestoneDefinitions.getOrNull(lastRecordedIndex + 1)?.title
         } else {
             null
         }
 
         val gpsStatus = when {
-            offline -> "Offline — showing saved status"
+            offline -> "Offline · showing saved status"
             freshness == null || freshness.status == PositionFreshnessStatus.UNAVAILABLE -> "Awaiting driver GPS signal"
             freshness.status == PositionFreshnessStatus.FRESH -> "Live GPS active"
             freshness.status == PositionFreshnessStatus.RECENT -> "GPS ${freshness.relativeText.lowercase()}"
@@ -207,7 +254,7 @@ object ShipmentTrackingPresentation {
 
         val subtitle = when {
             isCancelled -> shipment.value("cancelled_reason").ifBlank { "This shipment has been cancelled" }
-            lastRecordedIndex == milestoneDefinitions.lastIndex -> "All delivery milestones completed"
+            isDelivered -> "All delivery milestones completed"
             nextStep != null && (freshness == null || freshness.status == PositionFreshnessStatus.UNAVAILABLE || offline) ->
                 "Next: $nextStep • $gpsStatus"
             nextStep != null -> "Next: $nextStep"
@@ -230,25 +277,55 @@ object ShipmentTrackingPresentation {
         routing: JsonObject? = null,
         vehicles: List<JsonObject> = emptyList()
     ): TrackingDriverSummary {
+        val detailAssignment = detail?.obj("assignment")?.takeIf { it.isNotEmpty() }
+        val detailDelivery = detail?.obj("delivery")?.takeIf { it.isNotEmpty() }
+        val routingPlan = routing?.obj("plan")?.takeIf { it.isNotEmpty() }
+        val eventSources = buildList {
+            if (detail != null) {
+                (detail.rows("events") + detail.rows("history")).asReversed().forEach { row ->
+                    val meta = row.obj("metadata").takeIf { it.isNotEmpty() }
+                        ?: row.obj("meta").takeIf { it.isNotEmpty() }
+                    if (meta != null) add(meta)
+                    add(row)
+                }
+            }
+        }
+
         val sources = listOfNotNull(
             detail,
+            detailAssignment,
+            detailDelivery,
             delivery,
             shipment,
             routing,
-            routing?.obj("plan")
-        )
-        val nestedDrivers = listOfNotNull(
-            detail?.obj("driver"),
-            delivery?.obj("driver"),
-            shipment.obj("driver"),
-            routing?.obj("driver")
-        )
-        val nestedTrucks = listOfNotNull(
-            detail?.obj("truck"),
-            delivery?.obj("truck"),
-            shipment.obj("truck"),
-            routing?.obj("truck")
-        )
+            routingPlan
+        ) + eventSources
+
+        val nestedDrivers = buildList {
+            for (src in listOfNotNull(detail, detailAssignment, detailDelivery, delivery, shipment, routing, routingPlan)) {
+                src.obj("driver").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("assigned_driver").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("assignedDriver").takeIf { it.isNotEmpty() }?.let(::add)
+            }
+            for (evt in eventSources) {
+                evt.obj("driver").takeIf { it.isNotEmpty() }?.let(::add)
+            }
+        }
+
+        val nestedTrucks = buildList {
+            for (src in listOfNotNull(detail, detailAssignment, detailDelivery, delivery, shipment, routing, routingPlan)) {
+                src.obj("truck").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("vehicle").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("assigned_truck").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("assignedTruck").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("assigned_vehicle").takeIf { it.isNotEmpty() }?.let(::add)
+                src.obj("assignedVehicle").takeIf { it.isNotEmpty() }?.let(::add)
+            }
+            for (evt in eventSources) {
+                evt.obj("truck").takeIf { it.isNotEmpty() }?.let(::add)
+                evt.obj("vehicle").takeIf { it.isNotEmpty() }?.let(::add)
+            }
+        }
 
         fun firstValue(objs: List<JsonObject>, vararg keys: String): String {
             for (obj in objs) {
@@ -260,16 +337,54 @@ object ShipmentTrackingPresentation {
             return ""
         }
 
-        val rawDriverName = firstValue(sources, "driver_name", "driver_full_name", "assigned_driver_name")
-            .ifBlank { firstValue(nestedDrivers, "full_name", "name") }
+        val rawDriverName = firstValue(
+            sources,
+            "driver_name",
+            "driverName",
+            "driver_full_name",
+            "driverFullName",
+            "assigned_driver_name",
+            "assignedDriverName",
+            "assigned_driver",
+            "assignedDriver"
+        ).ifBlank {
+            firstValue(nestedDrivers, "full_name", "fullName", "driver_name", "driverName", "name")
+        }
 
-        val rawPhone = firstValue(sources, "driver_phone", "driver_contact_number", "driver_contact")
-            .ifBlank { firstValue(nestedDrivers, "contact_number", "phone") }
+        val rawPhone = firstValue(
+            sources,
+            "driver_phone",
+            "driverPhone",
+            "driver_contact_number",
+            "driverContactNumber",
+            "driver_contact",
+            "driverContact",
+            "contact_number",
+            "contactNumber",
+            "phone_number",
+            "phoneNumber"
+        ).ifBlank {
+            firstValue(nestedDrivers, "contact_number", "contactNumber", "phone_number", "phoneNumber", "phone", "mobile", "contact")
+        }
 
-        val rawPlate = firstValue(sources, "plate_number", "truck_plate_number")
-            .ifBlank { firstValue(nestedTrucks, "plate_number") }
+        val rawPlate = firstValue(
+            sources,
+            "plate_number",
+            "plateNumber",
+            "truck_plate_number",
+            "truckPlateNumber",
+            "vehicle_plate",
+            "vehiclePlate"
+        ).ifBlank {
+            firstValue(nestedTrucks, "plate_number", "plateNumber", "plate")
+        }
 
-        val requestedVehicleId = shipment.value("requested_vehicle_type_id").trim()
+        val requestedVehicleId = firstValue(
+            listOfNotNull(delivery, shipment, detailAssignment),
+            "requested_vehicle_type_id",
+            "vehicle_type_id",
+            "vehicleTypeId"
+        )
         val matchedVehicleName = if (requestedVehicleId.isNotBlank() && (rawDriverName.isNotBlank() || rawPlate.isNotBlank())) {
             vehicles.firstOrNull { it.value("id").trim() == requestedVehicleId }?.value("name")?.trim().orEmpty()
         } else {
@@ -279,17 +394,40 @@ object ShipmentTrackingPresentation {
         val rawTruckType = firstValue(
             sources,
             "truck_type",
+            "truckType",
             "vehicle_type",
+            "vehicleType",
             "vehicle_type_name",
+            "vehicleTypeName",
             "truck_model",
-            "vehicle_name"
-        ).ifBlank { firstValue(nestedTrucks, "vehicle_type", "model", "name") }
-            .ifBlank { matchedVehicleName }
+            "truckModel",
+            "vehicle_name",
+            "vehicleName",
+            "fleet_code",
+            "fleetCode"
+        ).ifBlank {
+            firstValue(
+                nestedTrucks,
+                "vehicle_type",
+                "vehicleType",
+                "vehicle_type_name",
+                "vehicleTypeName",
+                "type",
+                "model",
+                "name",
+                "fleet_code",
+                "fleetCode"
+            )
+        }.ifBlank { matchedVehicleName }
 
         val shipmentStatus = shipment.value("status").trim().lowercase()
+        val deliveryStatus = delivery?.value("status")?.trim()?.lowercase().orEmpty()
+        val hasDriverId = firstValue(sources, "driver_id", "driverId").isNotBlank()
         val hasDriverAssigned = rawDriverName.isNotBlank() ||
+            hasDriverId ||
             delivery != null ||
-            shipmentStatus in setOf("assigned", "loading", "in_transit", "delayed", "review", "completed", "delivered")
+            shipmentStatus in setOf("assigned", "loading", "in_transit", "delayed", "review", "completed", "delivered") ||
+            deliveryStatus in setOf("assigned", "loading", "in_transit", "delivered", "completed")
 
         val driverName = when {
             rawDriverName.isNotBlank() -> rawDriverName
@@ -304,10 +442,10 @@ object ShipmentTrackingPresentation {
             rawTruckType.takeIf { it.isNotBlank() },
             rawPlate.takeIf { it.isNotBlank() }
         )
-        val vehicleSubtitle = if (vehicleParts.isNotEmpty()) {
-            vehicleParts.joinToString(" • ")
-        } else {
-            "Assigning vehicle details"
+        val vehicleSubtitle = when {
+            vehicleParts.isNotEmpty() -> vehicleParts.joinToString(" • ")
+            hasDriverAssigned -> "Vehicle details unavailable"
+            else -> "Assigning vehicle details"
         }
 
         val sanitizedPhone = sanitizeDialablePhone(rawPhone)
@@ -377,62 +515,173 @@ object ShipmentTrackingPresentation {
     }
 
     fun pricingSummary(shipment: JsonObject): TrackingPricingSummary {
+        val linehaulRaw = shipment.value("linehaul_amount").trim()
+        val tollRaw = shipment.value("toll_amount").trim()
+        val mobilizationRaw = shipment.value("mobilization_fee").trim()
         val quotedRaw = shipment.value("quoted_amount").trim()
+        val overrideRaw = shipment.value("override_amount").trim()
         val finalRaw = shipment.value("final_amount").trim()
+
+        val linehaulNum = linehaulRaw.toBigDecimalOrNull()
+        val tollNum = tollRaw.toBigDecimalOrNull()
+        val mobilizationNum = mobilizationRaw.toBigDecimalOrNull()
         val quotedNum = quotedRaw.toBigDecimalOrNull()
+        val overrideNum = overrideRaw.toBigDecimalOrNull()
         val finalNum = finalRaw.toBigDecimalOrNull()
 
-        return when {
-            quotedNum == null && finalNum == null -> TrackingPricingSummary(
-                rows = listOf(
+        val effectiveTotalRaw = when {
+            finalNum != null -> finalRaw
+            overrideNum != null -> overrideRaw
+            quotedNum != null -> quotedRaw
+            else -> ""
+        }
+        val awaitingQuotation = effectiveTotalRaw.isBlank()
+        val totalAmountText = if (awaitingQuotation) {
+            "Awaiting office quotation"
+        } else {
+            MobilePresentation.money(effectiveTotalRaw)
+        }
+
+        val rows = when {
+            awaitingQuotation -> listOf(
+                TrackingPricingRow(
+                    label = "Total Quoted Amount",
+                    value = "Awaiting office quotation",
+                    isEmphasized = false
+                )
+            )
+            quotedNum != null && finalNum != null && quotedNum.compareTo(finalNum) != 0 -> listOf(
+                TrackingPricingRow(
+                    label = "Quoted Amount",
+                    value = MobilePresentation.money(quotedRaw),
+                    isEmphasized = false
+                ),
+                TrackingPricingRow(
+                    label = "Total Quoted Amount",
+                    value = MobilePresentation.money(finalRaw),
+                    isEmphasized = true
+                )
+            )
+            else -> listOf(
+                TrackingPricingRow(
+                    label = "Total Quoted Amount",
+                    value = totalAmountText,
+                    isEmphasized = true
+                )
+            )
+        }
+
+        val breakdownRows = buildList {
+            if (linehaulNum != null) {
+                add(
                     TrackingPricingRow(
-                        label = "Total Amount",
-                        value = MobilePresentation.money(""),
+                        label = "Linehaul Fare",
+                        value = MobilePresentation.money(linehaulRaw),
                         isEmphasized = false
                     )
-                ),
-                awaitingQuotation = true
-            )
-            quotedNum != null && finalNum != null && quotedNum.compareTo(finalNum) != 0 -> TrackingPricingSummary(
-                rows = listOf(
+                )
+            }
+            if (tollNum != null && tollNum > java.math.BigDecimal.ZERO) {
+                add(
                     TrackingPricingRow(
-                        label = "Quoted Amount",
-                        value = MobilePresentation.money(quotedRaw),
+                        label = "Estimated Tolls",
+                        value = MobilePresentation.money(tollRaw),
                         isEmphasized = false
-                    ),
-                    TrackingPricingRow(
-                        label = "Final Amount",
-                        value = MobilePresentation.money(finalRaw),
-                        isEmphasized = true
                     )
-                ),
-                awaitingQuotation = false
-            )
-            else -> {
-                val effectiveRaw = if (finalNum != null) finalRaw else quotedRaw
-                TrackingPricingSummary(
-                    rows = listOf(
-                        TrackingPricingRow(
-                            label = "Total Amount",
-                            value = MobilePresentation.money(effectiveRaw),
-                            isEmphasized = true
-                        )
-                    ),
-                    awaitingQuotation = false
+                )
+            }
+            if (mobilizationNum != null && mobilizationNum > java.math.BigDecimal.ZERO) {
+                add(
+                    TrackingPricingRow(
+                        label = "Mobilization Fee",
+                        value = MobilePresentation.money(mobilizationRaw),
+                        isEmphasized = false
+                    )
+                )
+            }
+            if (overrideNum != null && quotedNum != null && overrideNum.compareTo(quotedNum) != 0) {
+                add(
+                    TrackingPricingRow(
+                        label = "Office Adjusted Total",
+                        value = MobilePresentation.money(overrideRaw),
+                        isEmphasized = false
+                    )
                 )
             }
         }
+
+        return TrackingPricingSummary(
+            rows = rows,
+            breakdownRows = breakdownRows,
+            totalAmountText = totalAmountText,
+            awaitingQuotation = awaitingQuotation
+        )
     }
 
-    fun shouldShowProofOfDelivery(shipment: JsonObject, delivery: JsonObject?): Boolean {
-        val shipmentStatus = shipment.value("status").trim().lowercase()
-        val deliveryStatus = delivery?.value("status")?.trim()?.lowercase().orEmpty()
-        val arrivedAt = delivery?.value("arrived_at").orEmpty().trim()
-        return !(shipmentStatus == "cancelled" && deliveryStatus != "delivered") && (
-            shipmentStatus in setOf("delivered", "completed", "review") ||
-                deliveryStatus in setOf("delivered", "completed") ||
-                arrivedAt.isNotBlank()
-            )
+    fun quoteApprovalState(
+        shipment: JsonObject,
+        deliveries: List<JsonObject> = emptyList(),
+        now: Instant = Instant.now()
+    ): TrackingQuoteState {
+        val status = shipment.value("status").trim().lowercase()
+        val pricing = pricingSummary(shipment)
+        val expiresRaw = shipment.value("quote_expires_at").trim()
+        val expiresInstant = MobilePresentation.parseInstant(expiresRaw)
+        val quoteExpiresAtText = expiresInstant?.let { shortDateTimeFormatter.format(it) + " PHT" }.orEmpty()
+        val isExpired = !pricing.awaitingQuotation &&
+            status == "quoted" &&
+            expiresInstant != null &&
+            !now.isBefore(expiresInstant)
+
+        val countdownText = when {
+            expiresInstant == null -> ""
+            isExpired -> "Expired"
+            else -> formatQuoteCountdown(Duration.between(now, expiresInstant))
+        }
+
+        val isAccepted = (!pricing.awaitingQuotation && status in setOf(
+            "booked",
+            "confirmed",
+            "assigned",
+            "loading",
+            "in_transit",
+            "delayed",
+            "review",
+            "delivered",
+            "completed"
+        )) || deliveries.any { it.value("status").trim().lowercase() != "cancelled" }
+
+        val canAccept = status == "quoted" && !pricing.awaitingQuotation && !isExpired && !isAccepted
+
+        val badgeText = when {
+            isAccepted && !pricing.awaitingQuotation -> "Booked"
+            isExpired -> "Expired"
+            canAccept -> "Quote ready"
+            pricing.awaitingQuotation -> "Awaiting quotation"
+            else -> MobilePresentation.status(status.ifBlank { "quoted" })
+        }
+
+        return TrackingQuoteState(
+            status = status,
+            quoteExpiresAtText = quoteExpiresAtText,
+            countdownText = countdownText,
+            isExpired = isExpired,
+            canAccept = canAccept,
+            isAccepted = isAccepted,
+            badgeText = badgeText
+        )
+    }
+
+    private fun formatQuoteCountdown(duration: Duration): String {
+        val totalMinutes = duration.toMinutes().coerceAtLeast(1L)
+        val days = totalMinutes / (24L * 60L)
+        val hours = (totalMinutes % (24L * 60L)) / 60L
+        val mins = totalMinutes % 60L
+        return when {
+            days > 0 -> "Valid for ${days}d ${hours}h"
+            hours > 0 -> "Valid for ${hours}h ${mins}m"
+            else -> "Valid for ${mins}m"
+        }
     }
 
     fun shouldShowCancelAction(shipment: JsonObject, deliveries: List<JsonObject>): Boolean =
@@ -461,3 +710,4 @@ object ShipmentTrackingPresentation {
         return cleaned.takeIf { it.count(Char::isDigit) >= 7 }
     }
 }
+

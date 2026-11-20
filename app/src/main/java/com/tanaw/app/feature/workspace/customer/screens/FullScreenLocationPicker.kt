@@ -80,7 +80,8 @@ import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.ui.components.MobileGeocoding
 import com.tanaw.app.ui.components.SelectedAddress
-import com.tanaw.app.ui.theme.OrangeAccent
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.maplibre.android.MapLibre
@@ -306,7 +307,7 @@ fun FullScreenLocationPicker(
                             .fillMaxSize()
                             .padding(4.dp)
                             .clip(CircleShape)
-                            .background(OrangeAccent),
+                            .background(MaterialTheme.colorScheme.secondary),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
@@ -321,13 +322,13 @@ fun FullScreenLocationPicker(
                     modifier = Modifier
                         .width(3.dp)
                         .height(10.dp)
-                        .background(OrangeAccent)
+                        .background(MaterialTheme.colorScheme.secondary)
                 )
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(OrangeAccent)
+                        .background(MaterialTheme.colorScheme.secondary)
                 )
             }
         }
@@ -366,11 +367,11 @@ fun FullScreenLocationPicker(
                     )
                 }
 
-                // Orange ring indicator
+                // Pin ring indicator
                 Box(
                     modifier = Modifier
                         .size(14.dp)
-                        .border(3.dp, OrangeAccent, CircleShape)
+                        .border(3.dp, MaterialTheme.colorScheme.secondary, CircleShape)
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -470,6 +471,7 @@ fun FullScreenLocationPicker(
                     Text(
                         text = stringResource(R.string.address_details),
                         style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -532,6 +534,7 @@ fun FullScreenLocationPicker(
                                         Text(
                                             text = "${routePreview.distanceKm} km · ${CustomerBookingRules.formatDuration(routePreview.minutes)}",
                                             style = MaterialTheme.typography.labelMedium,
+                                            fontFamily = TanawMonoFontFamily,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -542,6 +545,7 @@ fun FullScreenLocationPicker(
                                             Text(
                                                 text = "ROAD ROUTE",
                                                 style = MaterialTheme.typography.labelSmall,
+                                                fontFamily = TanawMonoFontFamily,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -648,7 +652,7 @@ fun FullScreenLocationPicker(
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
-                                    .border(3.dp, OrangeAccent, CircleShape)
+                                    .border(3.dp, MaterialTheme.colorScheme.secondary, CircleShape)
                             )
 
                             Box(modifier = Modifier.weight(1f)) {

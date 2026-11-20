@@ -168,8 +168,28 @@ class MobileErrorClassifierTest {
             MobileErrorClassifier.friendlyMessage(Exception("CAPACITY_EXCEEDED"))
         )
         assertEquals(
-            "Choose a future departure within the next year.",
+            "Choose a valid future pick-up date and time within the allowed booking window.",
             MobileErrorClassifier.friendlyMessage(Exception("INVALID_DEPARTURE"))
+        )
+        assertEquals(
+            "Selected pick-up does not meet the required advance booking lead time for this truck.",
+            MobileErrorClassifier.friendlyMessage(Exception("MIN_LEAD_TIME"))
+        )
+        assertEquals(
+            "Pick-up date must be within the next 14 days.",
+            MobileErrorClassifier.friendlyMessage(Exception("ADVANCE_WINDOW_EXCEEDED"))
+        )
+        assertEquals(
+            "This quotation has expired. Contact the office for a new quote.",
+            MobileErrorClassifier.friendlyMessage(Exception("QUOTE_EXPIRED"))
+        )
+        assertEquals(
+            "Quotation is not ready yet. Please check back soon.",
+            MobileErrorClassifier.friendlyMessage(Exception("QUOTE_NOT_AVAILABLE"))
+        )
+        assertEquals(
+            "This quotation has already been confirmed.",
+            MobileErrorClassifier.friendlyMessage(Exception("ALREADY_ACCEPTED"))
         )
         assertEquals(
             "This request was already saved. Refresh Active shipments before making another request.",

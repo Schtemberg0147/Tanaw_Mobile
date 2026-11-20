@@ -1,14 +1,17 @@
 package com.tanaw.app.feature.workspace.customer.screens
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +31,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,11 +44,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -57,7 +70,9 @@ import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.customer.store.BookingDraft
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.feature.workspace.viewmodel.value
-import com.tanaw.app.ui.theme.TanawTheme
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -94,9 +109,17 @@ internal fun CustomerBookingHomeContent(
     availableDraft: BookingDraft? = null,
     onResumeDraft: () -> Unit = {},
     onDiscardDraft: () -> Unit = {},
-    showTopBar: Boolean = true
+    onOpenProfile: () -> Unit = {},
+    showTopBar: Boolean = true,
+    leadTimeHelperText: String = CustomerBookingRules.leadTimeHelperText(24),
+    scheduleAdjustmentNotice: String? = null,
+    pricingRates: List<JsonObject> = emptyList(),
+    isScheduleSet: Boolean = true
 ) {
     val selectedVehicle = vehicles.firstOrNull { it.value("id") == selectedVehicleId }
+    val selectedEstimate = remember(selectedVehicle, pricingRates, routePreview?.distanceKm) {
+        CustomerBookingRules.estimateBaseLinehaul(selectedVehicle, pricingRates, routePreview?.distanceKm)
+    }
     val sameLocationError = pickup.trim().length >= 5 && dropoff.trim().length >= 5 &&
         pickup.trim().equals(dropoff.trim(), ignoreCase = true)
     val routeReady = pickup.trim().length >= 5 && dropoff.trim().length >= 5 && !sameLocationError
@@ -115,7 +138,7 @@ internal fun CustomerBookingHomeContent(
                     unreadAlertsCount = unreadCount,
                     isBusy = busy,
                     onRefresh = onRefresh,
-                    onOpenAlerts = onOpenAlerts,
+                    onOpenAlerts = onOpenAlerts
                 )
             }
 
@@ -211,8 +234,8 @@ internal fun CustomerBookingHomeContent(
                             Button(
                                 onClick = onResumeDraft,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondary,
-                                    contentColor = MaterialTheme.colorScheme.onSecondary
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 )
                             ) {
                                 Text("Resume Draft")
@@ -237,25 +260,61 @@ internal fun CustomerBookingHomeContent(
                     Text(
                         text = customerName,
                         style = MaterialTheme.typography.headlineSmall,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.LocationOn,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = customerCity,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (customerCity.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.widthIn(max = 175.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.LocationOn,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = customerCity,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(role = Role.Button, onClick = onOpenProfile)
+                            .padding(horizontal = 4.dp)
+                            .testTag("SetDefaultAddressButton"),
+                        contentAlignment = Alignment.BottomEnd
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocationOn,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Set default address",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
 
@@ -287,6 +346,7 @@ internal fun CustomerBookingHomeContent(
                             Text(
                                 text = "$activeShipmentsCount active  ·  $completedShipmentsCount completed",
                                 style = MaterialTheme.typography.labelLarge,
+                                fontFamily = TanawMonoFontFamily,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -306,9 +366,9 @@ internal fun CustomerBookingHomeContent(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -317,6 +377,7 @@ internal fun CustomerBookingHomeContent(
                     Text(
                         text = stringResource(R.string.where_are_you_shipping),
                         style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -352,26 +413,92 @@ internal fun CustomerBookingHomeContent(
                     }
 
                     Box(modifier = Modifier.fillMaxWidth()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Pick-up Location Row
-                            LocationSelectorField(
-                                label = stringResource(R.string.pickup),
-                                value = pickup,
-                                placeholder = stringResource(R.string.enter_pickup_location),
-                                dotColor = MaterialTheme.colorScheme.primary,
-                                onClick = onPickupClick,
-                                modifier = Modifier.testTag("PickupLocationField")
-                            )
+                        var topFieldHeightPx by remember { mutableIntStateOf(0) }
+                        var bottomFieldHeightPx by remember { mutableIntStateOf(0) }
+                        val pickupDotColor = MaterialTheme.colorScheme.primary
+                        val destinationDotColor = MaterialTheme.colorScheme.tertiary
+                        val connectorColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
 
-                            // Destination Row
-                            LocationSelectorField(
-                                label = stringResource(R.string.destination),
-                                value = dropoff,
-                                placeholder = stringResource(R.string.enter_destination),
-                                dotColor = MaterialTheme.colorScheme.secondary,
-                                onClick = onDestinationClick,
-                                modifier = Modifier.testTag("DestinationLocationField")
-                            )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Min),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Canvas(
+                                modifier = Modifier
+                                    .width(16.dp)
+                                    .fillMaxHeight()
+                            ) {
+                                val centerX = size.width / 2f
+                                val dotRadius = 5.dp.toPx()
+                                val topCenterY = if (topFieldHeightPx > 0) {
+                                    topFieldHeightPx / 2f
+                                } else {
+                                    size.height * 0.23f
+                                }
+                                val bottomCenterY = if (bottomFieldHeightPx > 0) {
+                                    size.height - bottomFieldHeightPx / 2f
+                                } else {
+                                    size.height * 0.77f
+                                }
+                                val lineStartY = topCenterY + dotRadius + 4.dp.toPx()
+                                val lineEndY = bottomCenterY - dotRadius - 4.dp.toPx()
+
+                                if (lineEndY > lineStartY) {
+                                    drawLine(
+                                        color = connectorColor,
+                                        start = Offset(centerX, lineStartY),
+                                        end = Offset(centerX, lineEndY),
+                                        strokeWidth = 1.75.dp.toPx(),
+                                        pathEffect = PathEffect.dashPathEffect(
+                                            floatArrayOf(4.dp.toPx(), 4.dp.toPx()),
+                                            0f
+                                        )
+                                    )
+                                }
+                                drawCircle(
+                                    color = pickupDotColor,
+                                    radius = dotRadius,
+                                    center = Offset(centerX, topCenterY)
+                                )
+                                drawCircle(
+                                    color = destinationDotColor,
+                                    radius = dotRadius,
+                                    center = Offset(centerX, bottomCenterY)
+                                )
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Pick-up Location Row
+                                LocationSelectorField(
+                                    label = stringResource(R.string.pickup),
+                                    value = pickup,
+                                    placeholder = stringResource(R.string.enter_pickup_location),
+                                    dotColor = pickupDotColor,
+                                    showDot = false,
+                                    onClick = onPickupClick,
+                                    modifier = Modifier
+                                        .onSizeChanged { topFieldHeightPx = it.height }
+                                        .testTag("PickupLocationField")
+                                )
+
+                                // Destination Row
+                                LocationSelectorField(
+                                    label = stringResource(R.string.destination),
+                                    value = dropoff,
+                                    placeholder = stringResource(R.string.enter_destination),
+                                    dotColor = destinationDotColor,
+                                    showDot = false,
+                                    onClick = onDestinationClick,
+                                    modifier = Modifier
+                                        .onSizeChanged { bottomFieldHeightPx = it.height }
+                                        .testTag("DestinationLocationField")
+                                )
+                            }
                         }
 
                         if (pickup.isNotBlank() || dropoff.isNotBlank()) {
@@ -413,7 +540,7 @@ internal fun CustomerBookingHomeContent(
                         )
                     }
 
-                    // Bottom row inside card: route distance preview (if loaded) + Pick-up time pill
+                    // Bottom row inside card: route distance preview (if loaded) + Schedule pick-up pill
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -434,6 +561,7 @@ internal fun CustomerBookingHomeContent(
                                 Text(
                                     text = "${routePreview.distanceKm} km · ${CustomerBookingRules.formatDuration(routePreview.minutes)}",
                                     style = MaterialTheme.typography.labelMedium,
+                                    fontFamily = TanawMonoFontFamily,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
@@ -447,17 +575,20 @@ internal fun CustomerBookingHomeContent(
                         OutlinedButton(
                             onClick = onScheduleClick,
                             shape = RoundedCornerShape(50),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                            border = BorderStroke(
+                                width = if (!isScheduleSet && routeReady) 1.5.dp else 1.dp,
+                                color = if (!isScheduleSet && routeReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            ),
                             modifier = Modifier
-                                .heightIn(min = 36.dp)
+                                .heightIn(min = 48.dp)
                                 .testTag("SchedulePillButton")
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.ic_timer),
+                                imageVector = Icons.Outlined.Schedule,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(15.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
@@ -477,6 +608,29 @@ internal fun CustomerBookingHomeContent(
                             )
                         }
                     }
+
+                    Text(
+                        text = leadTimeHelperText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (!scheduleAdjustmentNotice.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = scheduleAdjustmentNotice,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -484,6 +638,7 @@ internal fun CustomerBookingHomeContent(
             Text(
                 text = stringResource(R.string.available_vehicles),
                 style = MaterialTheme.typography.titleMedium,
+                fontFamily = TanawDisplayFontFamily,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -508,12 +663,22 @@ internal fun CustomerBookingHomeContent(
                     val name = vehicle.value("name")
                     val capacityKg = vehicle.value("default_capacity_kg")
                     val isSelected = id == selectedVehicleId
+                    val leadTimeText = CustomerBookingRules.leadTimeBadge(
+                        CustomerBookingRules.minLeadTimeHours(vehicle)
+                    )
+                    val estimate = CustomerBookingRules.estimateBaseLinehaul(
+                        vehicle = vehicle,
+                        pricingRates = pricingRates,
+                        distanceKm = routePreview?.distanceKm
+                    )
                     VehicleSelectionCard(
                         name = name,
                         capacityText = CustomerBookingRules.formatCapacity(capacityKg),
                         badgeText = CustomerBookingRules.vehicleBadge(name),
                         iconRes = CustomerBookingRules.vehicleIconRes(name),
                         selected = isSelected,
+                        leadTimeText = leadTimeText,
+                        estimateText = estimate?.formattedAmount,
                         onClick = { onSelectVehicle(id) }
                     )
                 }
@@ -525,9 +690,9 @@ internal fun CustomerBookingHomeContent(
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 8.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
                     modifier = Modifier
@@ -540,18 +705,28 @@ internal fun CustomerBookingHomeContent(
                         Text(
                             text = selectedVehicle.value("name").uppercase(Locale.ENGLISH),
                             style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = stringResource(R.string.awaiting_office_quotation),
+                            text = if (selectedEstimate != null) {
+                                "Est. Base Linehaul: ${selectedEstimate.formattedAmount}"
+                            } else {
+                                stringResource(R.string.awaiting_office_quotation)
+                            },
                             style = MaterialTheme.typography.titleSmall,
+                            fontFamily = TanawDisplayFontFamily,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (routeReady) stringResource(R.string.estimated_upon_review)
-                            else "Select pick-up & destination to continue",
+                            text = when {
+                                !routeReady -> "Select pick-up & destination to continue"
+                                !isScheduleSet -> "Select a pick-up schedule to continue"
+                                else -> stringResource(R.string.estimated_upon_review)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
@@ -587,59 +762,33 @@ internal val previewVehicles = listOf(
         put("id", "v-1")
         put("name", "Dropside Truck")
         put("default_capacity_kg", "2000")
+        put("min_lead_time_hours", 24)
     },
     buildJsonObject {
         put("id", "v-2")
         put("name", "Closed Van")
         put("default_capacity_kg", "3000")
+        put("min_lead_time_hours", 24)
     },
     buildJsonObject {
         put("id", "v-3")
-        put("name", "Wing Van")
+        put("name", "Refrigerated Van")
         put("default_capacity_kg", "8000")
+        put("min_lead_time_hours", 48)
     }
 )
 
-@Preview(showBackground = true, name = "Customer Home Light")
+@Preview(showBackground = true, name = "Customer Home")
 @Composable
 private fun CustomerBookingHomeLightPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawCustomerTheme {
         CustomerBookingHomeContent(
             customerName = "Maria Santos",
-            customerCity = "Cabanatuan City",
+            customerCity = "Quezon City, Metro Manila",
             unreadCount = 2,
-            pickup = "Cabanatuan City Public Market",
-            dropoff = "Manila North Harbor, Manila",
-            scheduleLabel = "Pick-up now",
-            vehicles = previewVehicles,
-            selectedVehicleId = "v-2",
-            routePreview = RoutePreview("{}", 118.4, 145),
-            busy = false,
-            errorMessage = null,
-            statusMessage = null,
-            onRefresh = {},
-            onOpenAlerts = {},
-            onPickupClick = {},
-            onDestinationClick = {},
-            onSwapLocations = {},
-            onScheduleClick = {},
-            onSelectVehicle = {},
-            onContinue = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Customer Home Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun CustomerBookingHomeDarkPreview() {
-    TanawTheme(darkTheme = true) {
-        CustomerBookingHomeContent(
-            customerName = "Maria Santos",
-            customerCity = "Cabanatuan City",
-            unreadCount = 2,
-            pickup = "Cabanatuan City Public Market",
-            dropoff = "Manila North Harbor, Manila",
-            scheduleLabel = "Pick-up now",
+            pickup = "",
+            dropoff = "",
+            scheduleLabel = "Tomorrow, 9:00 AM",
             vehicles = previewVehicles,
             selectedVehicleId = "v-2",
             routePreview = RoutePreview("{}", 118.4, 145),

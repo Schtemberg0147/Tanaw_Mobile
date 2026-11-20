@@ -1,15 +1,14 @@
 package com.tanaw.app.feature.workspace.screens
 
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,10 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -55,9 +57,12 @@ import com.tanaw.app.feature.workspace.customer.components.CustomerTopBar
 import com.tanaw.app.feature.workspace.customer.components.TanawBrandLogo
 import com.tanaw.app.feature.workspace.customer.dialogs.CustomerCancellationSection
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerHistoryPresentation
 import com.tanaw.app.feature.workspace.customer.rules.CustomerPaginationRules
 import com.tanaw.app.feature.workspace.customer.screens.CustomerBookingFlow
 import com.tanaw.app.feature.workspace.customer.screens.CustomerProfile
+import com.tanaw.app.feature.workspace.customer.screens.CustomerShipmentsSection
 import com.tanaw.app.feature.workspace.customer.screens.ShipmentTrackingPreviewContent
 import com.tanaw.app.feature.workspace.customer.screens.ShipmentTrackingScreen
 import com.tanaw.app.feature.workspace.driver.components.DriverRouteStatus
@@ -76,12 +81,22 @@ import com.tanaw.app.ui.components.StatusBadge
 import com.tanaw.app.ui.components.SupportingText
 import com.tanaw.app.ui.components.TanawSubScreenTopBar
 import com.tanaw.app.ui.components.WorkspaceCard
+import com.tanaw.app.ui.theme.TanawBodyFontFamily
+import com.tanaw.app.ui.theme.TanawCustomerTheme
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import com.tanaw.app.ui.theme.TanawTheme
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
@@ -221,38 +236,49 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         return
     }
 
-    key(data.obj("profile").value("id")) {
-        if (data.obj("profile").value("role") == "customer" &&
-            MobileValidation.phone(data.obj("profile").value("phone")) == null
-        ) {
-            OnboardingProfileGate(
-                vm = vm,
-                state = state,
-                data = data
-            )
-        } else if (data.obj("profile").value("role") == "driver") {
-            DriverWorkspace(vm, state, data)
+    val isCustomer = data.obj("profile").value("role") == "customer"
+    val renderCustomerOrDefault: @Composable (@Composable () -> Unit) -> Unit = { content ->
+        if (isCustomer) {
+            TanawCustomerTheme { content() }
         } else {
-            Workspace(vm, state, data)
+            content()
         }
     }
 
-    if (state.passwordChangeOwner != null) {
-        PasswordChangeDialog(
-            state,
-            vm::cancelPasswordChange,
-            { vm.resetEmail(state.email) },
-            { vm.canVerify(it, "recovery") },
-            vm::recover
-        )
-    }
-    if (state.phoneChangeTarget != null) {
-        PhoneChangeDialog(
-            state,
-            vm::verifyPhoneChange,
-            vm::resendPhoneChange,
-            vm::cancelPhoneChange
-        )
+    renderCustomerOrDefault {
+        key(data.obj("profile").value("id")) {
+            if (isCustomer &&
+                MobileValidation.phone(data.obj("profile").value("phone")) == null
+            ) {
+                OnboardingProfileGate(
+                    vm = vm,
+                    state = state,
+                    data = data
+                )
+            } else if (data.obj("profile").value("role") == "driver") {
+                DriverWorkspace(vm, state, data)
+            } else {
+                Workspace(vm, state, data)
+            }
+        }
+
+        if (state.passwordChangeOwner != null) {
+            PasswordChangeDialog(
+                state,
+                vm::cancelPasswordChange,
+                { vm.resetEmail(state.email) },
+                { vm.canVerify(it, "recovery") },
+                vm::recover
+            )
+        }
+        if (state.phoneChangeTarget != null) {
+            PhoneChangeDialog(
+                state,
+                vm::verifyPhoneChange,
+                vm::resendPhoneChange,
+                vm::cancelPhoneChange
+            )
+        }
     }
 }
 
@@ -448,18 +474,21 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
     var historyFilter by rememberSaveable { mutableStateOf("All") }
     var fullScreenBookingStep by rememberSaveable { mutableStateOf(false) }
     var profileSubPanelOpen by rememberSaveable { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
     val bookingDraft = rememberSaveableStateHolder()
     val profile = data.obj("profile")
     val role = profile.value("role")
     val isCustomerHome = role == "customer" && tab == "Home" && detail == null
     val isCustomerProfile = role == "customer" && tab == "Profile" && detail == null
+    val isCustomerShipments = tab in listOf("Active", "History") && detail == null
 
     BackHandler(detail != null) { detail = null }
 
     val unreadAlertsCount = remember(data) { data.rows("notifications").count { it.value("read_at").isBlank() } }
     val allShipments = remember(state.customerShipments, data) {
         state.customerShipments.orEmpty() + data.rows("shipments")
+    }
+    val allDocuments = remember(state.customerHistoryDocuments, data) {
+        (state.customerHistoryDocuments + data.rows("documents")).distinctBy { it.value("id") }
     }
     val selectedShipment = detail?.let { selectedId ->
         allShipments.firstOrNull { it.value("id") == selectedId }
@@ -508,45 +537,105 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
         },
         bottomBar = {
             if (showBottomBar) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        val icons = listOf(
-                            Icons.Outlined.Home,
-                            Icons.Outlined.LocalShipping,
-                            Icons.Outlined.History,
-                            Icons.Outlined.Notifications,
-                            Icons.Outlined.Person
-                        )
-                        listOf("Home", "Active", "History", "Alerts", "Profile").forEachIndexed { index, label ->
-                            val unreadAlerts = if (label == "Alerts") unreadAlertsCount else 0
-                            NavigationBarItem(
-                                selected = tab == label,
-                                onClick = {
-                                    tab = label
-                                    detail = null
-                                    if (label != "Profile") profileSubPanelOpen = false
-                                },
-                                enabled = !state.busy,
-                                icon = {
-                                    if (unreadAlerts > 0) {
-                                        BadgedBox(badge = { Badge { Text("$unreadAlerts") } }) {
-                                            Icon(icons[index], contentDescription = label)
-                                        }
-                                    } else {
-                                        Icon(icons[index], contentDescription = label)
-                                    }
-                                },
-                                label = {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                },
-                                alwaysShowLabel = true
+                Surface(
+                    color = Color.White,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .heightIn(min = 64.dp)
+                                .selectableGroup(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val icons = listOf(
+                                Icons.Outlined.Home,
+                                Icons.Outlined.LocalShipping,
+                                Icons.Outlined.History,
+                                Icons.Outlined.Notifications,
+                                Icons.Outlined.Person
                             )
+                            listOf("Home", "Active", "History", "Alerts", "Profile").forEachIndexed { index, label ->
+                                val selected = tab == label
+                                val unreadAlerts = if (label == "Alerts") unreadAlertsCount else 0
+                                val activeNavColor = Color(0xFF002D54)
+                                val inactiveNavColor = Color(0xFF64748B)
+                                val itemColor = when {
+                                    state.busy -> inactiveNavColor.copy(alpha = 0.45f)
+                                    selected -> activeNavColor
+                                    else -> inactiveNavColor
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 64.dp)
+                                        .selectable(
+                                            selected = selected,
+                                            enabled = !state.busy,
+                                            role = Role.Tab,
+                                            onClick = {
+                                                tab = label
+                                                detail = null
+                                                if (label != "Profile") profileSubPanelOpen = false
+                                            }
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (selected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopCenter)
+                                                .width(36.dp)
+                                                .height(3.dp)
+                                                .clip(RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp))
+                                                .background(activeNavColor)
+                                        )
+                                    }
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 6.dp)
+                                    ) {
+                                        if (unreadAlerts > 0) {
+                                            BadgedBox(
+                                                badge = {
+                                                    Badge(
+                                                        containerColor = Color(0xFF0383D5),
+                                                        contentColor = Color.White
+                                                    ) { Text("$unreadAlerts") }
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = icons[index],
+                                                    contentDescription = label,
+                                                    tint = itemColor,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        } else {
+                                            Icon(
+                                                imageVector = icons[index],
+                                                contentDescription = label,
+                                                tint = itemColor,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = label,
+                                            fontFamily = TanawBodyFontFamily,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 11.sp,
+                                            color = itemColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -585,7 +674,8 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                                 detail = null
                             }
                         },
-                        onFullScreenStepChanged = { fullScreenBookingStep = it }
+                        onFullScreenStepChanged = { fullScreenBookingStep = it },
+                        onOpenProfile = { tab = "Profile"; detail = null }
                     )
                 }
             }
@@ -604,6 +694,58 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                     onLogout = vm::logout,
                     showTopBar = false,
                     onSubPanelChanged = { profileSubPanelOpen = it }
+                )
+            }
+        } else if (isCustomerShipments) {
+            LaunchedEffect(tab, historyFilter, query) {
+                if (query.isNotBlank()) {
+                    kotlinx.coroutines.delay(350)
+                }
+                vm.loadCustomerShipments(tab, historyFilter, query, loadMore = false)
+            }
+            val isCurrentTabLoaded = state.customerShipmentsTab == tab &&
+                (tab != "History" || state.customerShipmentsFilter == historyFilter)
+            val displayedShipments = if (isCurrentTabLoaded) {
+                state.customerShipments ?: CustomerPaginationRules.filterOfflineShipments(
+                    data.rows("shipments"),
+                    tab,
+                    historyFilter,
+                    query
+                )
+            } else {
+                CustomerPaginationRules.filterOfflineShipments(
+                    data.rows("shipments"),
+                    tab,
+                    historyFilter,
+                    query
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                CustomerShipmentsSection(
+                    tab = tab,
+                    query = query,
+                    onQueryChange = { query = it },
+                    historyFilter = historyFilter,
+                    onHistoryFilterChange = { historyFilter = it },
+                    shipments = displayedShipments,
+                    deliveries = data.rows("deliveries"),
+                    documents = allDocuments,
+                    isCurrentTabLoaded = isCurrentTabLoaded,
+                    state = state,
+                    onOpenShipment = { detail = it },
+                    onViewDocument = { shipmentId, documentId ->
+                        vm.viewProof(shipmentId, documentId)
+                    },
+                    onRetry = {
+                        vm.loadCustomerShipments(tab, historyFilter, query, loadMore = false)
+                    },
+                    onLoadMore = {
+                        vm.loadCustomerShipments(tab, historyFilter, query, loadMore = true)
+                    }
                 )
             }
         } else {
@@ -685,149 +827,6 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                             )
                         }
 
-                        "Active", "History" -> {
-                            LaunchedEffect(tab, historyFilter, query) {
-                                if (query.isNotBlank()) {
-                                    kotlinx.coroutines.delay(350)
-                                }
-                                vm.loadCustomerShipments(tab, historyFilter, query, loadMore = false)
-                            }
-                            Text(
-                                text = if (tab == "History") "Shipment history" else "Active shipments",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            SupportingText("Search all your shipments by tracking reference or address.")
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = { query = it },
-                                label = { Text("Search reference or address") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Search,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                trailingIcon = {
-                                    if (query.isNotEmpty()) {
-                                        IconButton(onClick = { query = "" }) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Cancel,
-                                                contentDescription = "Clear search",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                                ),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                            )
-                            if (tab == "History") {
-                                Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    listOf("All", "Completed", "Cancelled").forEach { f ->
-                                        FilterChip(
-                                            selected = historyFilter == f,
-                                            onClick = { historyFilter = f },
-                                            shape = RoundedCornerShape(10.dp),
-                                            label = { Text(f) }
-                                        )
-                                    }
-                                }
-                            }
-                            val isCurrentTabLoaded = state.customerShipmentsTab == tab &&
-                                (tab != "History" || state.customerShipmentsFilter == historyFilter)
-                            val displayedShipments = if (isCurrentTabLoaded) {
-                                state.customerShipments ?: CustomerPaginationRules.filterOfflineShipments(
-                                    data.rows("shipments"),
-                                    tab,
-                                    historyFilter,
-                                    query
-                                )
-                            } else {
-                                CustomerPaginationRules.filterOfflineShipments(
-                                    data.rows("shipments"),
-                                    tab,
-                                    historyFilter,
-                                    query
-                                )
-                            }
-                            if (state.customerShipmentsLoading && (!isCurrentTabLoaded || state.customerShipments == null)) {
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (state.customerShipmentsError != null) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = state.customerShipmentsError!!,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                        TextButton(
-                                            onClick = { vm.loadCustomerShipments(tab, historyFilter, query, loadMore = false) },
-                                            modifier = Modifier.heightIn(min = 48.dp)
-                                        ) {
-                                            Text("Retry", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                            val emptyTitle = when {
-                                query.isNotBlank() -> "No matching shipments"
-                                tab == "History" -> "No past shipments"
-                                else -> "No active shipments"
-                            }
-                            val emptyBody = when {
-                                query.isNotBlank() -> "No shipments match \"$query\"."
-                                tab == "History" -> "Completed and cancelled deliveries will appear here."
-                                else -> "Book a pickup from the Home tab to request an office quotation."
-                            }
-                            if (!state.customerShipmentsLoading || displayedShipments.isNotEmpty()) {
-                                ShipmentList(
-                                    rows = displayedShipments,
-                                    emptyTitle = emptyTitle,
-                                    emptyBody = emptyBody,
-                                    open = { detail = it }
-                                )
-                            }
-                            if (isCurrentTabLoaded && state.customerShipmentsHasMore) {
-                                OutlinedButton(
-                                    onClick = { vm.loadCustomerShipments(tab, historyFilter, query, loadMore = true) },
-                                    enabled = !state.customerShipmentsLoading,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 48.dp)
-                                ) {
-                                    Text(if (state.customerShipmentsLoading) "Loading more shipments..." else "Load more shipments")
-                                }
-                            }
-                        }
-
                         "Alerts" -> {
                             val lifecycleOwner = LocalLifecycleOwner.current
                             DisposableEffect(lifecycleOwner) {
@@ -847,11 +846,6 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                                     vm.onCustomerAlertsClosed()
                                 }
                             }
-                            Text(
-                                text = "Notifications",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                             val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
                             if (state.notificationsLoading && state.notificationsPage == null) {
                                 LinearProgressIndicator(
@@ -903,6 +897,7 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                                         Text(
                                             text = n.value("title"),
                                             style = MaterialTheme.typography.titleSmall,
+                                            fontFamily = TanawDisplayFontFamily,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.weight(1f)
                                         )
@@ -915,6 +910,7 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                                     Text(
                                         text = MobilePresentation.time(n.value("created_at")),
                                         style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = TanawMonoFontFamily,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     if (allShipments.any { it.value("id") == n.value("shipment_id") }) {
@@ -975,24 +971,54 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
 
     if (info != null) InfoDialog("Tanaw", info!!) { info = null }
     state.proof?.let { bitmap ->
+        val dialogBg = Color.White
+        val dialogBorder = Color(0xFFE2E8F0)
+        val dialogTitleColor = Color(0xFF0F172A)
+        val dialogSubColor = Color(0xFF475569)
+        val dialogActionColor = Color(0xFF002D54)
         Dialog(onDismissRequest = vm::closeProof) {
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = dialogBg,
+                border = BorderStroke(1.dp, dialogBorder)
+            ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(state.proofTitle, style = MaterialTheme.typography.titleMedium)
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Recorded proof of delivery",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 480.dp)
+                    Text(
+                        text = state.proofTitle.ifBlank { "Proof document" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = dialogTitleColor
                     )
+                    if (state.proofSubtitle.isNotBlank()) {
+                        Text(
+                            text = state.proofSubtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = dialogSubColor
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, dialogBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = state.proofTitle.ifBlank { "Recorded proof document" },
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 440.dp)
+                                .padding(4.dp)
+                        )
+                    }
                     Text(
                         text = "Private document. Close this viewer when finished.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = dialogSubColor
                     )
                     TextButton(
                         onClick = vm::closeProof,
@@ -1000,7 +1026,11 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                             .align(Alignment.End)
                             .heightIn(min = 48.dp)
                     ) {
-                        Text("Close proof", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Close proof",
+                            fontWeight = FontWeight.Bold,
+                            color = dialogActionColor
+                        )
                     }
                 }
             }
@@ -1047,6 +1077,7 @@ private fun ShipmentList(
                         Text(
                             text = s.value("tracking_number"),
                             style = MaterialTheme.typography.titleSmall,
+                            fontFamily = TanawMonoFontFamily,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -1071,6 +1102,7 @@ private fun ShipmentList(
                         Text(
                             text = MobilePresentation.time(s.value("created_at")),
                             style = MaterialTheme.typography.bodySmall,
+                            fontFamily = TanawMonoFontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f, fill = false)
                         )
@@ -1080,6 +1112,7 @@ private fun ShipmentList(
                             Text(
                                 text = MobilePresentation.money(displayAmount),
                                 style = MaterialTheme.typography.labelMedium,
+                                fontFamily = TanawMonoFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -1126,24 +1159,51 @@ private fun ShipmentDetails(
     val eta = freshness?.let {
         TrackingFreshnessRules.customerEtaSummary(s, activeDelivery, routing, it, state.offline, now)
     }
-    val mapPoints = remember(s, position) {
-        buildList {
-            fun addPoint(label: String, lat: String, lng: String) {
-                val a = lat.toDoubleOrNull()
-                val b = lng.toDoubleOrNull()
-                if (a != null && b != null) add(label to org.maplibre.android.geometry.LatLng(a, b))
-            }
-            addPoint("Pickup", s.value("pickup_lat"), s.value("pickup_lng"))
-            addPoint("Destination", s.value("dropoff_lat"), s.value("dropoff_lng"))
-            if (position != null) {
-                addPoint("Last recorded vehicle position", position.value("latitude"), position.value("longitude"))
-            }
-        }
-    }
     val verifiedRouting = routing?.let {
         DriverRouteStatus.forAssignment(it, s, activeDelivery ?: buildJsonObject {})
     }
     val routeGeometry = DriverRouteStatus.resolvedGeometry(s, verifiedRouting)
+    val routeCoords = remember(routeGeometry) { extractRouteCoordinates(routeGeometry) }
+    val shipmentStatus = s.value("status").lowercase()
+    val deliveryStatus = activeDelivery?.value("status")?.lowercase().orEmpty()
+    val isCompleted = shipmentStatus in listOf("completed", "delivered") || deliveryStatus == "delivered"
+
+    val pickupPoint = remember(s) {
+        val lat = s.value("pickup_lat").toDoubleOrNull()
+        val lng = s.value("pickup_lng").toDoubleOrNull()
+        if (lat != null && lng != null) org.maplibre.android.geometry.LatLng(lat, lng) else null
+    }
+    val dropoffPoint = remember(s) {
+        val lat = s.value("dropoff_lat").toDoubleOrNull()
+        val lng = s.value("dropoff_lng").toDoubleOrNull()
+        if (lat != null && lng != null) org.maplibre.android.geometry.LatLng(lat, lng) else null
+    }
+    val livePositionPoint = remember(position) {
+        val lat = position?.value("latitude")?.toDoubleOrNull()
+        val lng = position?.value("longitude")?.toDoubleOrNull()
+        if (lat != null && lng != null) org.maplibre.android.geometry.LatLng(lat, lng) else null
+    }
+    val vehiclePoint = livePositionPoint ?: if (isCompleted) (routeCoords.lastOrNull() ?: dropoffPoint) else null
+
+    val mapPoints = remember(pickupPoint, dropoffPoint, livePositionPoint, vehiclePoint) {
+        buildList {
+            if (pickupPoint != null) add("Pickup" to pickupPoint)
+            if (dropoffPoint != null) add("Destination" to dropoffPoint)
+            if (livePositionPoint != null) {
+                add("Last recorded vehicle position" to livePositionPoint)
+            } else if (vehiclePoint != null) {
+                add("Vehicle" to vehiclePoint)
+            }
+        }
+    }
+    val vehicleHeadingDeg = remember(position, routeCoords, vehiclePoint, isCompleted, pickupPoint, dropoffPoint) {
+        val explicitHeading = listOf("heading_deg", "heading", "bearing")
+            .firstNotNullOfOrNull { key -> position?.value(key)?.toFloatOrNull() }
+            ?.takeIf { it.isFinite() }
+        explicitHeading
+            ?: (if (isCompleted) finalRouteBearing(routeCoords) else vehiclePoint?.let { nearestRouteBearing(it, routeCoords) })
+            ?: if (pickupPoint != null && dropoffPoint != null) bearingDegrees(pickupPoint, dropoffPoint) else null
+    }
     val timelineEvents = remember(detail) {
         if (detail == null) {
             emptyList()
@@ -1174,11 +1234,9 @@ private fun ShipmentDetails(
         busy = state.busy,
         errorMessage = state.error,
         timelineEvents = timelineEvents,
-        documents = detail?.rows("documents").orEmpty(),
         now = now,
         onBack = onBack,
         onRefresh = { vm.loadDetails(s.value("id")) },
-        onViewProof = { docId -> vm.viewProof(s.value("id"), docId) },
         mapSlot = { recenterTrigger, mapModifier ->
             ShipmentMap(
                 points = mapPoints,
@@ -1187,7 +1245,8 @@ private fun ShipmentDetails(
                 showCaptionText = false,
                 recenterTrigger = recenterTrigger,
                 boundsPaddingPx = boundsPaddingPx,
-                boundsPaddingTopPx = boundsPaddingTopPx
+                boundsPaddingTopPx = boundsPaddingTopPx,
+                vehicleHeadingDeg = vehicleHeadingDeg
             )
         },
         detail = detail,
@@ -1205,8 +1264,92 @@ private fun ShipmentDetails(
                     showLockedNotice = false
                 )
             }
+        } else null,
+        onAcceptQuote = if (role == "customer") {
+            { vm.acceptQuote(s.value("id")) }
         } else null
     )
+}
+
+private fun extractRouteCoordinates(geometryJson: String?): List<org.maplibre.android.geometry.LatLng> {
+    val raw = geometryJson?.trim()?.takeUnless { it.isBlank() || it == "null" } ?: return emptyList()
+    return runCatching {
+        val root = Json.parseToJsonElement(raw).jsonObject
+        val geometryObj = when (root["type"]?.jsonPrimitive?.contentOrNull) {
+            "FeatureCollection" -> root["features"]?.jsonArray?.firstOrNull()?.jsonObject?.get("geometry")?.jsonObject
+            "Feature" -> root["geometry"]?.jsonObject
+            else -> root
+        } ?: return emptyList()
+        val coordsArray = when (geometryObj["type"]?.jsonPrimitive?.contentOrNull) {
+            "LineString" -> geometryObj["coordinates"]?.jsonArray
+            "MultiLineString" -> geometryObj["coordinates"]?.jsonArray?.firstOrNull()?.jsonArray
+            else -> null
+        } ?: return emptyList()
+        coordsArray.mapNotNull { item ->
+            val pair = item.jsonArray
+            val lng = pair.getOrNull(0)?.jsonPrimitive?.doubleOrNull
+            val lat = pair.getOrNull(1)?.jsonPrimitive?.doubleOrNull
+            if (lat != null && lng != null) org.maplibre.android.geometry.LatLng(lat, lng) else null
+        }
+    }.getOrDefault(emptyList())
+}
+
+private fun bearingDegrees(
+    from: org.maplibre.android.geometry.LatLng,
+    to: org.maplibre.android.geometry.LatLng
+): Float {
+    val lat1 = Math.toRadians(from.latitude)
+    val lat2 = Math.toRadians(to.latitude)
+    val dLon = Math.toRadians(to.longitude - from.longitude)
+    val y = kotlin.math.sin(dLon) * kotlin.math.cos(lat2)
+    val x = kotlin.math.cos(lat1) * kotlin.math.sin(lat2) -
+        kotlin.math.sin(lat1) * kotlin.math.cos(lat2) * kotlin.math.cos(dLon)
+    val deg = Math.toDegrees(kotlin.math.atan2(y, x))
+    return ((deg + 360.0) % 360.0).toFloat()
+}
+
+private fun finalRouteBearing(routeCoords: List<org.maplibre.android.geometry.LatLng>): Float? {
+    for (i in routeCoords.size - 2 downTo 0) {
+        val a = routeCoords[i]
+        val b = routeCoords[i + 1]
+        if (a.latitude != b.latitude || a.longitude != b.longitude) {
+            return bearingDegrees(a, b)
+        }
+    }
+    return null
+}
+
+private fun nearestRouteBearing(
+    point: org.maplibre.android.geometry.LatLng,
+    routeCoords: List<org.maplibre.android.geometry.LatLng>
+): Float? {
+    if (routeCoords.size < 2) return null
+    val cosLat = kotlin.math.cos(Math.toRadians(point.latitude))
+    var bestDistSq = Double.MAX_VALUE
+    var bestBearing: Float? = null
+    for (i in 0 until routeCoords.size - 1) {
+        val a = routeCoords[i]
+        val b = routeCoords[i + 1]
+        if (a.latitude == b.latitude && a.longitude == b.longitude) continue
+        val ax = a.longitude * cosLat
+        val ay = a.latitude
+        val bx = b.longitude * cosLat
+        val by = b.latitude
+        val px = point.longitude * cosLat
+        val py = point.latitude
+        val dx = bx - ax
+        val dy = by - ay
+        val lenSq = dx * dx + dy * dy
+        val t = if (lenSq > 0.0) (((px - ax) * dx + (py - ay) * dy) / lenSq).coerceIn(0.0, 1.0) else 0.0
+        val projX = ax + t * dx
+        val projY = ay + t * dy
+        val distSq = (px - projX) * (px - projX) + (py - projY) * (py - projY)
+        if (distSq < bestDistSq) {
+            bestDistSq = distSq
+            bestBearing = bearingDegrees(a, b)
+        }
+    }
+    return bestBearing
 }
 
 @Composable
@@ -1509,10 +1652,10 @@ private fun maskPhoneTarget(phone: String): String {
 }
 
 // ─── Previews ─────────────────────────────────────────────────────────────────
-@Preview(showBackground = true, name = "Loading Session Light")
+@Preview(showBackground = true, name = "Loading Session")
 @Composable
 private fun LoadingSessionPreview() {
-    TanawTheme(darkTheme = false) {
+    TanawTheme {
         LoadingSessionScreen(
             state = MobileState(page = "loading", busy = true),
             onRetry = {}
@@ -1520,14 +1663,8 @@ private fun LoadingSessionPreview() {
     }
 }
 
-@Preview(showBackground = true, name = "Shipment Details Light")
+@Preview(showBackground = true, name = "Shipment Details")
 @Composable
-private fun ShipmentDetailsLightPreview() {
-    ShipmentTrackingPreviewContent(darkTheme = false)
-}
-
-@Preview(showBackground = true, name = "Shipment Details Dark", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-private fun ShipmentDetailsDarkPreview() {
-    ShipmentTrackingPreviewContent(darkTheme = true)
+private fun ShipmentDetailsPreview() {
+    ShipmentTrackingPreviewContent()
 }

@@ -55,11 +55,15 @@ fun CustomerBookingFlow(
     onOpenAlerts: () -> Unit,
     onTrackShipment: (String) -> Unit,
     onFullScreenStepChanged: (Boolean) -> Unit = {},
+    onOpenProfile: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val profile = data.obj("profile")
     val customer = data.obj("customer")
     val vehicles = data.rows("vehicles")
+    val pricingRates = remember(data) {
+        data.rows("pricing_rates").ifEmpty { data.rows("pricingRates") }
+    }
     val unreadCount = data.rows("notifications").count { it.value("read_at").isBlank() }
     val customerId = customer.value("id").ifBlank { profile.value("id") }
     val coroutineScope = rememberCoroutineScope()
@@ -92,12 +96,14 @@ fun CustomerBookingFlow(
     var dropoffLat by rememberSaveable { mutableStateOf<Double?>(null) }
     var dropoffLng by rememberSaveable { mutableStateOf<Double?>(null) }
 
-    var isPickupNow by rememberSaveable { mutableStateOf(true) }
     var scheduledDeparture by rememberSaveable { mutableStateOf("") }
+    var scheduleAdjustmentNotice by rememberSaveable { mutableStateOf<String?>(null) }
     var showScheduleSheet by rememberSaveable { mutableStateOf(false) }
 
     var selectedVehicleId by rememberSaveable { mutableStateOf("") }
     val selectedVehicle = vehicles.firstOrNull { it.value("id") == selectedVehicleId } ?: vehicles.firstOrNull()
+    val minLeadTimeHours = CustomerBookingRules.minLeadTimeHours(selectedVehicle)
+    val leadTimeHelperText = CustomerBookingRules.leadTimeHelperText(minLeadTimeHours)
     LaunchedEffect(vehicles) {
         if (selectedVehicleId.isBlank() && vehicles.isNotEmpty()) {
             selectedVehicleId = vehicles.first().value("id")
@@ -120,8 +126,8 @@ fun CustomerBookingFlow(
             pickup = conf.pickup
             dropoff = conf.dropoff
             if (conf.vehicleId.isNotBlank()) selectedVehicleId = conf.vehicleId
-            isPickupNow = conf.isPickupNow
             scheduledDeparture = conf.scheduledDeparture
+            scheduleAdjustmentNotice = null
             setStep(CustomerBookingStep.SUBMITTED)
             vm.clearRestoredBookingConfirmation()
         }
@@ -148,8 +154,8 @@ fun CustomerBookingFlow(
             dropoff = draft.dropoff
             dropoffLat = draft.dropoffLat
             dropoffLng = draft.dropoffLng
-            isPickupNow = draft.isPickupNow
             scheduledDeparture = draft.scheduledDeparture
+            scheduleAdjustmentNotice = null
             if (draft.selectedVehicleId.isNotBlank()) selectedVehicleId = draft.selectedVehicleId
             if (draft.contact.isNotBlank()) contact = draft.contact
             cargo = draft.cargo
@@ -178,6 +184,28 @@ fun CustomerBookingFlow(
         while (true) {
             bookingClock = Instant.now()
             delay(1.seconds)
+        }
+    }
+
+    fun selectVehicleAndValidateSchedule(newVehicleId: String) {
+        selectedVehicleId = newVehicleId
+        val nextVehicle = vehicles.firstOrNull { it.value("id") == newVehicleId }
+        val nextLeadHours = CustomerBookingRules.minLeadTimeHours(nextVehicle)
+        if (scheduledDeparture.isNotBlank()) {
+            val validation = CustomerBookingRules.ensureValidScheduledRaw(
+                raw = scheduledDeparture,
+                now = bookingClock,
+                minLeadTimeHours = nextLeadHours
+            )
+            if (validation.wasAdjusted) {
+                scheduledDeparture = validation.raw
+                scheduleAdjustmentNotice =
+                    "Pick-up time adjusted to ${CustomerBookingRules.formatSchedulePill(validation.raw, bookingClock)} (${CustomerBookingRules.leadTimeHelperText(nextLeadHours).lowercase()})."
+            } else {
+                scheduleAdjustmentNotice = null
+            }
+        } else {
+            scheduleAdjustmentNotice = null
         }
     }
 
@@ -219,8 +247,8 @@ fun CustomerBookingFlow(
         dropoff = ""
         dropoffLat = null
         dropoffLng = null
-        isPickupNow = true
         scheduledDeparture = ""
+        scheduleAdjustmentNotice = null
         cargo = ""
         weight = ""
         handling = "None"
@@ -232,7 +260,7 @@ fun CustomerBookingFlow(
 
     LaunchedEffect(
         customerId, requestId, step, pickup, pickupLat, pickupLng,
-        dropoff, dropoffLat, dropoffLng, isPickupNow, scheduledDeparture,
+        dropoff, dropoffLat, dropoffLng, scheduledDeparture,
         selectedVehicleId, contact, cargo, weight, handling, notes,
         state.busy
     ) {
@@ -247,7 +275,6 @@ fun CustomerBookingFlow(
                 dropoff = dropoff,
                 dropoffLat = dropoffLat,
                 dropoffLng = dropoffLng,
-                isPickupNow = isPickupNow,
                 scheduledDeparture = scheduledDeparture,
                 selectedVehicleId = selectedVehicleId,
                 contact = contact,
@@ -280,19 +307,39 @@ fun CustomerBookingFlow(
     val shipments = data.rows("shipments")
     val activeShipmentsCount = shipments.count { it.value("status") !in listOf("completed", "cancelled") }
     val completedShipmentsCount = shipments.count { it.value("status") == "completed" }
+    val parsedWeight = MobileValidation.weight(weight)
+    val baseLinehaulEstimate = remember(selectedVehicle, pricingRates, routePreview?.distanceKm, parsedWeight) {
+        CustomerBookingRules.estimateBaseLinehaul(
+            vehicle = selectedVehicle,
+            pricingRates = pricingRates,
+            distanceKm = routePreview?.distanceKm,
+            weightKg = parsedWeight
+        )
+    }
+    val hasValidSchedule = scheduledDeparture.isNotBlank() &&
+        MobileBookingRules.departure(scheduledDeparture, bookingClock, minLeadTimeHours.toLong()) != null
 
     Box(modifier = modifier.fillMaxSize()) {
         when (step) {
             CustomerBookingStep.HOME -> {
+                val resolvedHeaderCity = remember(customer, pickup) {
+                    CustomerBookingRules.resolveHeaderCity(
+                        rawAddress = customer.value("address"),
+                        rawCity = customer.value("city"),
+                        explicitBarangay = customer.value("barangay"),
+                        explicitProvince = customer.value("province"),
+                        pickupAddress = pickup
+                    )
+                }
                 CustomerBookingHomeContent(
                     customerName = profile.value("full_name").ifBlank { "Customer" },
-                    customerCity = customer.value("city").ifBlank { "Cabanatuan City" },
+                    customerCity = resolvedHeaderCity,
                     unreadCount = unreadCount,
                     activeShipmentsCount = activeShipmentsCount,
                     completedShipmentsCount = completedShipmentsCount,
                     pickup = pickup,
                     dropoff = dropoff,
-                    scheduleLabel = CustomerBookingRules.formatSchedulePill(isPickupNow, scheduledDeparture, bookingClock),
+                    scheduleLabel = CustomerBookingRules.formatSchedulePill(scheduledDeparture, bookingClock),
                     vehicles = vehicles,
                     selectedVehicleId = selectedVehicle?.value("id").orEmpty(),
                     routePreview = routePreview,
@@ -302,11 +349,16 @@ fun CustomerBookingFlow(
                     availableDraft = availableDraft,
                     onResumeDraft = onResumeDraft,
                     onDiscardDraft = onDiscardDraft,
+                    onOpenProfile = onOpenProfile,
                     onRefresh = vm::refresh,
                     onOpenAlerts = onOpenAlerts,
                     onOpenActiveShipments = { onTrackShipment("") },
                     onPickupClick = { setStep(CustomerBookingStep.PICKUP_MAP) },
                     showTopBar = false,
+                    leadTimeHelperText = leadTimeHelperText,
+                    scheduleAdjustmentNotice = scheduleAdjustmentNotice,
+                    pricingRates = pricingRates,
+                    isScheduleSet = hasValidSchedule,
                     onDestinationClick = { setStep(CustomerBookingStep.DESTINATION_MAP) },
                     onSwapLocations = {
                         val tmpAddr = pickup
@@ -320,12 +372,13 @@ fun CustomerBookingFlow(
                         dropoffLng = tmpLng
                     },
                     onScheduleClick = { showScheduleSheet = true },
-                    onSelectVehicle = { selectedVehicleId = it },
+                    onSelectVehicle = { selectVehicleAndValidateSchedule(it) },
                     onContinue = {
                         when {
                             pickup.trim().length < 5 || pickupPoint == null -> setStep(CustomerBookingStep.PICKUP_MAP)
                             dropoff.trim().length < 5 || dropoffPoint == null -> setStep(CustomerBookingStep.DESTINATION_MAP)
                             pickup.trim().equals(dropoff.trim(), ignoreCase = true) -> setStep(CustomerBookingStep.DESTINATION_MAP)
+                            !hasValidSchedule -> showScheduleSheet = true
                             else -> setStep(CustomerBookingStep.ADD_DETAILS)
                         }
                     }
@@ -386,6 +439,7 @@ fun CustomerBookingFlow(
                     notes = notes,
                     busy = state.busy,
                     errorMessage = state.error,
+                    baseLinehaulEstimate = baseLinehaulEstimate,
                     onBack = { setStep(CustomerBookingStep.HOME) },
                     onEditRoute = { setStep(CustomerBookingStep.HOME) },
                     onContactChange = { contact = it },
@@ -395,10 +449,10 @@ fun CustomerBookingFlow(
                         val currentCap = selectedVehicle?.value("default_capacity_kg").orEmpty()
                         if (!CustomerBookingRules.weightFitsCapacity(newWeight, currentCap)) {
                             vehicles.firstOrNull { CustomerBookingRules.weightFitsCapacity(newWeight, it.value("default_capacity_kg")) }
-                                ?.let { selectedVehicleId = it.value("id") }
+                                ?.let { selectVehicleAndValidateSchedule(it.value("id")) }
                         }
                     },
-                    onSelectVehicle = { selectedVehicleId = it },
+                    onSelectVehicle = { selectVehicleAndValidateSchedule(it) },
                     onHandlingChange = { handling = it },
                     onNotesChange = { notes = it },
                     onConfirm = { setStep(CustomerBookingStep.SUMMARY) }
@@ -406,9 +460,21 @@ fun CustomerBookingFlow(
             }
 
             CustomerBookingStep.SUMMARY -> {
-                val resolvedDepartureRaw = CustomerBookingRules.resolveDepartureRaw(isPickupNow, scheduledDeparture, bookingClock)
-                val resolvedInstant = MobileBookingRules.departure(resolvedDepartureRaw, bookingClock)
-                val parsedWeight = MobileValidation.weight(weight)
+                val resolvedInstant = if (scheduledDeparture.isNotBlank()) {
+                    MobileBookingRules.departure(scheduledDeparture, bookingClock, minLeadTimeHours.toLong())
+                } else {
+                    null
+                }
+                val estimatedArrivalIso = resolvedInstant?.let {
+                    MobileBookingRules.calculateEstimatedArrival(
+                        departureIso = it,
+                        routeDurationMinutes = routePreview?.minutes,
+                        loadingBufferMinutes = CustomerBookingRules.loadingBufferMinutes(selectedVehicle)
+                    )
+                }
+                val estimatedArrivalSummary = estimatedArrivalIso?.let {
+                    CustomerBookingRules.formatEstimatedArrival(it)
+                } ?: ""
                 val normalizedContact = MobileValidation.phone(contact)
                 val vehicleCap = selectedVehicle?.value("default_capacity_kg").orEmpty()
                 val canSubmit = !state.busy && !state.offline &&
@@ -436,7 +502,9 @@ fun CustomerBookingFlow(
                     handling = handling,
                     contact = normalizedContact ?: contact,
                     notes = notes,
-                    scheduleSummary = CustomerBookingRules.formatSummarySchedule(isPickupNow, scheduledDeparture, bookingClock),
+                    scheduleSummary = CustomerBookingRules.formatSummarySchedule(scheduledDeparture, bookingClock),
+                    estimatedArrivalSummary = estimatedArrivalSummary,
+                    baseLinehaulEstimate = baseLinehaulEstimate,
                     busy = state.busy,
                     offline = state.offline,
                     canSubmit = canSubmit,
@@ -445,9 +513,15 @@ fun CustomerBookingFlow(
                     onEditRoute = { setStep(CustomerBookingStep.HOME) },
                     onSubmitBooking = {
                         val dep = MobileBookingRules.departure(
-                            CustomerBookingRules.resolveDepartureRaw(isPickupNow, scheduledDeparture, Instant.now()),
-                            Instant.now()
+                            raw = scheduledDeparture,
+                            now = Instant.now(),
+                            minLeadTimeHours = minLeadTimeHours.toLong()
                         ) ?: return@BookingSummaryScreen
+                        val estArrival = MobileBookingRules.calculateEstimatedArrival(
+                            departureIso = dep,
+                            routeDurationMinutes = routePreview?.minutes,
+                            loadingBufferMinutes = CustomerBookingRules.loadingBufferMinutes(selectedVehicle)
+                        )
                         val payload = buildJsonObject {
                             put("pickup", pickup.trim())
                             put("dropoff", dropoff.trim())
@@ -456,6 +530,14 @@ fun CustomerBookingFlow(
                             put("vehicle_id", selectedVehicle?.value("id").orEmpty())
                             put("contact", normalizedContact)
                             put("departure", dep)
+                            put("scheduled_departure", dep)
+                            estArrival?.let { put("estimated_arrival", it) }
+                            routePreview?.let {
+                                put("distance_km", it.distanceKm)
+                                put("route_distance_km", it.distanceKm)
+                                put("route_duration_minutes", it.minutes)
+                            }
+                            baseLinehaulEstimate?.let { put("estimated_linehaul", it.amount) }
                             put("notes", notes.trim())
                             put("pickup_lat", pickupLat)
                             put("pickup_lng", pickupLng)
@@ -484,7 +566,7 @@ fun CustomerBookingFlow(
                     pickup = pickup,
                     dropoff = dropoff,
                     vehicleName = selectedVehicle?.value("name").orEmpty(),
-                    scheduleSummary = CustomerBookingRules.formatSchedulePill(isPickupNow, scheduledDeparture, bookingClock),
+                    scheduleSummary = CustomerBookingRules.formatSchedulePill(scheduledDeparture, bookingClock),
                     onTrackShipment = {
                         val targetId = submittedShipmentId
                         resetForm()
@@ -498,18 +580,14 @@ fun CustomerBookingFlow(
 
     if (showScheduleSheet) {
         PickupTimeBottomSheet(
-            isPickupNow = isPickupNow,
             scheduledRaw = scheduledDeparture,
+            minLeadTimeHours = minLeadTimeHours,
+            helperText = leadTimeHelperText,
             now = bookingClock,
             onDismiss = { showScheduleSheet = false },
-            onSelectNow = {
-                isPickupNow = true
-                scheduledDeparture = ""
-                showScheduleSheet = false
-            },
             onSchedule = { formatted ->
-                isPickupNow = false
                 scheduledDeparture = formatted
+                scheduleAdjustmentNotice = null
                 showScheduleSheet = false
             }
         )
