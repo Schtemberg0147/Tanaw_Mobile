@@ -30,7 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +54,7 @@ internal fun PhoneChangeDialog(
     onResend: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    var code by rememberSaveable(state.phoneChangeTarget) { mutableStateOf("") }
+    var code by remember(state.phoneChangeTarget) { mutableStateOf("") }
     val targetPhone = state.phoneChangeTarget.orEmpty()
     val isValidCode = (code.length in 6..8) && code.all { it.isDigit() }
     val canSubmit = !state.busy && !state.offline && isValidCode

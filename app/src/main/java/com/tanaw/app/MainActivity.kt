@@ -28,17 +28,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIncomingIntent(intent)
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
-        intent.dataString?.let { uri -> viewModel.handleDeepLink(uri) }
-        val openAlerts = intent.getBooleanExtra(WorkspaceDeviceNotifier.EXTRA_OPEN_ALERTS, false)
-        val shipmentId = intent.getStringExtra(WorkspaceDeviceNotifier.EXTRA_SHIPMENT_ID)
-        val notificationId = intent.getStringExtra(WorkspaceDeviceNotifier.EXTRA_NOTIFICATION_ID)
-        if (openAlerts || !shipmentId.isNullOrBlank() || !notificationId.isNullOrBlank()) {
-            viewModel.handleNotificationIntent(openAlerts, shipmentId, notificationId)
+        intent.dataString?.let { uri ->
+            viewModel.handleDeepLink(uri)
+            intent.data = null
+        }
+        if (WorkspaceDeviceNotifier.isTrustedNotificationIntent(intent)) {
+            val openAlerts = intent.getBooleanExtra(WorkspaceDeviceNotifier.EXTRA_OPEN_ALERTS, false)
+            val shipmentId = intent.getStringExtra(WorkspaceDeviceNotifier.EXTRA_SHIPMENT_ID)
+            val notificationId = intent.getStringExtra(WorkspaceDeviceNotifier.EXTRA_NOTIFICATION_ID)
+            intent.removeExtra(WorkspaceDeviceNotifier.EXTRA_INTERNAL_TOKEN)
+            intent.removeExtra(WorkspaceDeviceNotifier.EXTRA_OPEN_ALERTS)
+            intent.removeExtra(WorkspaceDeviceNotifier.EXTRA_SHIPMENT_ID)
+            intent.removeExtra(WorkspaceDeviceNotifier.EXTRA_NOTIFICATION_ID)
+            if (openAlerts || !shipmentId.isNullOrBlank() || !notificationId.isNullOrBlank()) {
+                viewModel.handleNotificationIntent(openAlerts, shipmentId, notificationId)
+            }
         }
     }
 }

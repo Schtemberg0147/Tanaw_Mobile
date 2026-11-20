@@ -26,7 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,13 +53,13 @@ internal fun PasswordChangeDialog(
     canVerify: (String) -> Boolean,
     update: (String, String, String) -> Unit
 ) {
-    var code by rememberSaveable(state.passwordChangeOwner, state.recoveryCode) {
+    var code by remember(state.passwordChangeOwner, state.recoveryCode) {
         mutableStateOf(state.recoveryCode.orEmpty())
     }
-    var password by rememberSaveable(state.passwordChangeOwner) { mutableStateOf("") }
-    var confirm by rememberSaveable(state.passwordChangeOwner) { mutableStateOf("") }
-    var passwordVisible by rememberSaveable { mutableStateOf(false) }
-    var confirmVisible by rememberSaveable { mutableStateOf(false) }
+    var password by remember(state.passwordChangeOwner) { mutableStateOf("") }
+    var confirm by remember(state.passwordChangeOwner) { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmVisible by remember { mutableStateOf(false) }
 
     val sent = state.passwordChangeCodeSent
     val focusManager = LocalFocusManager.current

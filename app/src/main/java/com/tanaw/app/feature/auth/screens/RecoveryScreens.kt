@@ -769,10 +769,10 @@ fun VerifyRecoveryCodeScreen(
 ) {
     val focusManager = LocalFocusManager.current
     var code by remember(state.recoveryCode) { mutableStateOf(state.recoveryCode.orEmpty()) }
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirm by rememberSaveable { mutableStateOf("") }
-    var passwordVisible by rememberSaveable { mutableStateOf(false) }
-    var confirmVisible by rememberSaveable { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmVisible by remember { mutableStateOf(false) }
 
     val codeValid = vm.canVerify(code, "recovery")
     val isCodeError = code.isNotBlank() && !codeValid

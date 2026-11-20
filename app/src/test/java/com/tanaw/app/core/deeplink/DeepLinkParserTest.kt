@@ -105,10 +105,32 @@ class DeepLinkParserTest {
     fun parsesPkceAuthCode() {
         val uri = "tanaw://auth/callback?code=pkce_auth_code_1234567890&type=recovery"
         val result = DeepLinkParser.parse(uri, host)
-        assertTrue(result is DeepLinkResult.Otp)
-        val otp = result as DeepLinkResult.Otp
-        assertEquals("pkce_auth_code_1234567890", otp.tokenHash)
-        assertEquals("recovery", otp.type)
+        assertTrue(result is DeepLinkResult.Code)
+        val codeResult = result as DeepLinkResult.Code
+        assertEquals("pkce_auth_code_1234567890", codeResult.code)
+        assertEquals("recovery", codeResult.type)
+        assertTrue(result.isRecovery)
+    }
+
+    @Test
+    fun rejectsSessionTokensInUrlQueryParameters() {
+        val queryTokensUri = "tanaw://auth/callback?access_token=$validAccessToken&refresh_token=$validRefreshToken&type=recovery"
+        assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse(queryTokensUri, host))
+
+        val mixedQueryAndFragmentUri = "tanaw://auth/callback?access_token=$validAccessToken#refresh_token=$validRefreshToken&type=recovery"
+        assertEquals(DeepLinkResult.Invalid, DeepLinkParser.parse(mixedQueryAndFragmentUri, host))
+    }
+
+    @Test
+    fun extractsJwtSubjectAndEmailWithoutSideEffects() {
+        // Header: {"alg":"HS256","typ":"JWT"} -> eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+        // Payload: {"sub":"user-123","email":"driver@example.com"} -> eyJzdWIiOiJ1c2VyLTEyMyIsImVtYWlsIjoiZHJpdmVyQGV4YW1wbGUuY29tIn0
+        val jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImVtYWlsIjoiZHJpdmVyQGV4YW1wbGUuY29tIn0.signature"
+        val (sub, email) = DeepLinkParser.extractJwtSubjectAndEmail(jwt)
+        assertEquals("user-123", sub)
+        assertEquals("driver@example.com", email)
+
+        assertEquals(null to null, DeepLinkParser.extractJwtSubjectAndEmail("not-a-jwt"))
     }
 
     @Test

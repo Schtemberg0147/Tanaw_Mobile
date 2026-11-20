@@ -31,7 +31,21 @@ class WorkspaceDeviceNotifier(private val context: Context) {
         const val EXTRA_OPEN_ALERTS = "com.tanaw.app.EXTRA_OPEN_ALERTS"
         const val EXTRA_SHIPMENT_ID = "com.tanaw.app.EXTRA_SHIPMENT_ID"
         const val EXTRA_NOTIFICATION_ID = "com.tanaw.app.EXTRA_NOTIFICATION_ID"
+        const val EXTRA_INTERNAL_TOKEN = "com.tanaw.app.EXTRA_INTERNAL_TOKEN"
         private const val PREFS_NAME = "tanaw_device_notifications"
+        private val PROCESS_TOKEN: String = run {
+            val bytes = ByteArray(16)
+            java.security.SecureRandom().nextBytes(bytes)
+            bytes.joinToString("") { "%02x".format(it) }
+        }
+
+        fun isTrustedNotificationIntent(intent: Intent?): Boolean {
+            val token = intent?.getStringExtra(EXTRA_INTERNAL_TOKEN) ?: return false
+            return java.security.MessageDigest.isEqual(
+                token.toByteArray(Charsets.UTF_8),
+                PROCESS_TOKEN.toByteArray(Charsets.UTF_8),
+            )
+        }
     }
 
     private val prefs by lazy {
@@ -106,6 +120,7 @@ class WorkspaceDeviceNotifier(private val context: Context) {
         val androidId = DeviceNotificationRules.androidNotificationId(alert.id)
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_INTERNAL_TOKEN, PROCESS_TOKEN)
             putExtra(EXTRA_OPEN_ALERTS, true)
             putExtra(EXTRA_NOTIFICATION_ID, alert.id)
             if (!alert.shipmentId.isNullOrBlank()) {
