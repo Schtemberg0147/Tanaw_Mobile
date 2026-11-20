@@ -864,21 +864,6 @@ internal fun CustomerProfileNotices(
                 )
             }
         }
-        state.message?.let {
-            Surface(
-                color = TanawTheme.extendedColors.successBannerBackground,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = it,
-                    modifier = Modifier.padding(14.dp),
-                    color = TanawTheme.extendedColors.onSuccessBannerText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
     }
 }
 

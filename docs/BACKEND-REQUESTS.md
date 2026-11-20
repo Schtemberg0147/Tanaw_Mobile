@@ -284,4 +284,92 @@ $$;
 ### Client Compatibility
 The Android client implements `CustomerCancellationRules.kt` to enforce pre-transit rules and reason requirements on-device, and executes the cancellation via direct PostgREST table update (matching `mabutol-trucking-react` web behavior) with optimistic state updates in [MobileWorkspaceViewModel.kt](file:///C:/Users/Soriano/AndroidStudioProjects/Tanaw_Mobile/app/src/main/java/com/tanaw/app/feature/workspace/MobileWorkspaceViewModel.kt).
 
+---
+
+## 4. Request C11: Customer-Visible Assigned Driver & Vehicle Summary in `mobile_shipment_details` / `mobile_workspace`
+
+### Motivation
+The refactored customer Shipment Tracking bottom sheet prominently surfaces the assigned driver's name, truck type + plate number, and quick-action Call / SMS buttons in the Peek state.
+
+Currently:
+- `public.drivers` RLS only allows `"driver reads self"` and `"staff full access"`.
+- `public.trucks` RLS only allows `"Staff read trucks"` and `"driver reads own truck"`.
+- `mobile_workspace()` (`20261024155504_mobile_workable_system.sql`) only projects `id, shipment_id, status, assigned_at, departed_at, arrived_at, recipient_name, route_started_at, pickup_arrived_at, customer_showed_at` from `public.deliveries`.
+- `mobile_shipment_details(p_shipment)` (`20261024184621_mobile_shipment_details.sql`) returns `shipment_id, events, history, documents, position` without driver or vehicle fields.
+
+Because `mobile_workspace()` and `mobile_shipment_details()` are `SECURITY INVOKER` and `public.drivers`/`public.trucks` restrict customer direct selects, customers cannot see the assigned driver's name, contact phone, truck type, or plate number.
+
+### Proposed Schema / RPC Changes
+
+Keep general `public.drivers` and `public.trucks` RLS locked down, and expose only the assigned driver/vehicle summary for the customer's own shipment via a narrow `SECURITY DEFINER` projection inside `mobile_shipment_details(p_shipment uuid)` (or a restricted view/helper verifying `customer_id = public.my_customer_id()`):
+
+```sql
+-- Narrow SECURITY DEFINER helper callable only for a shipment visible to the authenticated user
+CREATE OR REPLACE FUNCTION public.mobile_assigned_driver_summary(p_shipment uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_authorized boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM public.shipments s
+    WHERE s.id = p_shipment
+      AND (
+        s.customer_id = public.my_customer_id()
+        OR EXISTS (
+          SELECT 1 FROM public.deliveries d
+          JOIN public.drivers dr ON dr.id = d.driver_id
+          WHERE d.shipment_id = s.id AND dr.user_id = auth.uid()
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.users u
+          WHERE u.id = auth.uid() AND u.role IN ('admin', 'staff') AND u.is_active
+        )
+      )
+  ) INTO v_authorized;
+
+  IF NOT v_authorized THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN (
+    SELECT jsonb_build_object(
+      'driver', CASE WHEN dr.id IS NOT NULL THEN jsonb_build_object(
+        'full_name', dr.full_name,
+        'contact_number', dr.contact_number
+      ) ELSE NULL END,
+      'truck', CASE WHEN t.id IS NOT NULL THEN jsonb_build_object(
+        'vehicle_type', coalesce(vt.name, t.model),
+        'model', t.model,
+        'plate_number', t.plate_number
+      ) ELSE NULL END,
+      'driver_name', dr.full_name,
+      'driver_phone', dr.contact_number,
+      'truck_type', coalesce(vt.name, t.model),
+      'plate_number', t.plate_number
+    )
+    FROM public.deliveries d
+    LEFT JOIN public.drivers dr ON dr.id = d.driver_id
+    LEFT JOIN public.trucks t ON t.id = d.truck_id
+    LEFT JOIN public.vehicle_types vt ON vt.id = t.vehicle_type_id
+    WHERE d.shipment_id = p_shipment
+      AND d.status <> 'cancelled'
+    ORDER BY d.assigned_at DESC
+    LIMIT 1
+  );
+END;
+$$;
+
+-- Include inside mobile_shipment_details(p_shipment):
+-- 'assignment', public.mobile_assigned_driver_summary(p_shipment)
+-- or merge 'driver' and 'truck' keys into the mobile_shipment_details JSONB response.
+```
+
+### Client Compatibility
+The Android client's `ShipmentTrackingPresentation.driverSummary` checks `detail`, `delivery`, `shipment`, and `routing` (including nested `driver` / `truck` objects and top-level `driver_name`, `driver_phone`, `truck_type`, `plate_number` keys). When absent, the Driver & Vehicle Card falls back cleanly to `"Assigned Driver"` / `"Awaiting Driver"`, `"Assigning vehicle details"`, and gracefully disables the Call/Message quick-action buttons.
+
+
 

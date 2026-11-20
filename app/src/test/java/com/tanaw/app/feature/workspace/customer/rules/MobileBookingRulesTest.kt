@@ -18,12 +18,6 @@ class MobileBookingRulesTest {
   assertNotNull(MobileBookingRules.departure(raw,Instant.parse("2026-10-25T15:59:59Z")))
   assertNull(MobileBookingRules.departure(raw,Instant.parse("2026-10-25T16:00:00Z")))
  }
- @Test fun weightMatchesWebsiteCapacityWindowAndRejectsInvalidNumbers() {
-  assertTrue(MobileBookingRules.fits("1000","1000"));assertTrue(MobileBookingRules.fits("1000","3000"))
-  assertFalse(MobileBookingRules.fits("1000","999"));assertFalse(MobileBookingRules.fits("1000","3001"))
-  assertFalse(MobileBookingRules.fits("","2000"));assertFalse(MobileBookingRules.fits("NaN","2000"))
-  assertFalse(MobileBookingRules.fits("1000","Infinity"))
- }
  @Test fun routeParserRejectsUnverifiedAndMalformedRoadGeometry() {
   val valid=Json.parseToJsonElement("""{"roadOnlyVerified":true,"distanceKm":3.5,"estimatedMinutes":8,"geojson":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[[120.98,14.6],[121.0,14.61]]}}]}}""").jsonObject
   assertEquals(3.5,RoutePreview.parse(valid).distanceKm,0.001)

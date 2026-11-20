@@ -6,7 +6,6 @@ import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.*
 import androidx.core.view.doOnLayout
 import androidx.core.graphics.createBitmap
-import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -97,7 +96,17 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
 }
 
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
-@Composable fun ShipmentMap(points:List<Pair<String,LatLng>>,geometry:String?=null,onSelect:((LatLng)->Unit)?=null,styleJson:String?=null) {
+@Composable fun ShipmentMap(
+ points:List<Pair<String,LatLng>>,
+ geometry:String?=null,
+ onSelect:((LatLng)->Unit)?=null,
+ styleJson:String?=null,
+ modifier:Modifier=Modifier.fillMaxWidth().height(300.dp),
+ showCaptionText:Boolean=true,
+ recenterTrigger:Int=0,
+ boundsPaddingPx:Int=50,
+ boundsPaddingTopPx:Int=50
+) {
  val context=LocalContext.current;val lifecycle=LocalLifecycleOwner.current.lifecycle
  val callback by rememberUpdatedState(onSelect)
  val currentPoints by rememberUpdatedState(points)
@@ -146,7 +155,7 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
     if(isInitialOrStopsChanged) {
      if(callback==null && locations.map{it.second}.distinct().size>=2) {
       val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(locations.map{it.second}).build()
-      map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,50))
+      map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,boundsPaddingPx,boundsPaddingTopPx,boundsPaddingPx,boundsPaddingPx))
      } else if(moved!=null) map.cameraPosition=CameraPosition.Builder(map.cameraPosition).target(LatLng(moved.second,moved.third)).zoom(map.cameraPosition.zoom.coerceAtLeast(12.0)).build()
     }
    }
@@ -195,7 +204,7 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
   points.isEmpty() -> "Interactive shipment map"
   else -> "Interactive shipment map showing " + points.joinToString(", ") { (label, _) -> label }
  }
- AndroidView(factory={view},modifier=Modifier.fillMaxWidth().height(300.dp).testTag("Shipment map").semantics { contentDescription = mapDesc },update={mapView ->
+ AndroidView(factory={view},modifier=modifier.testTag("Shipment map").semantics { contentDescription = mapDesc },update={mapView ->
   mapView.getMapAsync {map ->
    if(!requested) {
     requested=true
@@ -208,98 +217,25 @@ internal fun pinIcon(context:android.content.Context,label:String):android.graph
  LaunchedEffect(points.map{Triple(it.first,it.second.latitude,it.second.longitude)},geometry,ready) {
   if(ready)view.getMapAsync {map->map.getStyle {style->render(map,style)}}
  }
- if(failed)Text("Map unavailable. Check your connection and reopen this step.",color=MaterialTheme.colorScheme.error)
- else if(!ready)SupportingText("Loading street map…")
- else if(onSelect!=null)SupportingText("Map ready · drag to move, pinch to zoom, tap to place a pin.")
- else SupportingText(routeError ?: if(previousGeometry!=null)"Route line displayed · ${points.size} saved stops" else "Saved stops displayed · no road route loaded")
- if(points.any { it.first == "Vehicle" || it.first == "Last recorded vehicle position" }) SupportingText("Red: pickup · Blue: destination · Green: last recorded vehicle position")
- if(fallback)SupportingText("© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors")
-}
-/** Inline route editor: tapping places a pin immediately; coordinates stay internal. */
-@Composable fun BookingRouteMap(pickup:String,destination:String,pickupPoint:LatLng?,destinationPoint:LatLng?,enabled:Boolean=true,
- onPickupText:(String)->Unit,onDestinationText:(String)->Unit,onPickup:(SelectedAddress)->Unit,onDestination:(SelectedAddress)->Unit,
- routeLoader:(suspend (LatLng,LatLng)->RoutePreview)?=null,addressLoader:(suspend (LatLng)->String?)?=null) {
- val context=LocalContext.current
- val pickupCallback by rememberUpdatedState(onPickup);val destinationCallback by rememberUpdatedState(onDestination)
- val currentPickup = rememberUpdatedState(pickup);val currentDestination = rememberUpdatedState(destination)
- var lookupMessage by remember {mutableStateOf<String?>(null)}
- var route by remember {mutableStateOf<RoutePreview?>(null)}
- var routing by remember {mutableStateOf(false)}
- var routeError by remember {mutableStateOf<String?>(null)}
- var retry by remember {mutableIntStateOf(0)}
- LaunchedEffect(pickupPoint?.latitude,pickupPoint?.longitude) {
-  val point=pickupPoint ?: return@LaunchedEffect
-  val original=currentPickup.value
-  if(original!="Pickup map pin") return@LaunchedEffect
-  val name=addressLoader?.invoke(point) ?: MobileGeocoding.reverse(context,point)
-  if(currentPickup.value==original) {
-   if(!name.isNullOrBlank())pickupCallback(SelectedAddress(name,point.latitude,point.longitude))
-   else lookupMessage="Address lookup unavailable. The pin is saved; enter a street or landmark."
+ LaunchedEffect(recenterTrigger,ready) {
+  if(recenterTrigger>0 && ready) {
+   view.getMapAsync {map ->
+    val locations=currentPoints
+    if(locations.map{it.second}.distinct().size>=2) {
+     val bounds=org.maplibre.android.geometry.LatLngBounds.Builder().includes(locations.map{it.second}).build()
+     map.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,boundsPaddingPx,boundsPaddingTopPx,boundsPaddingPx,boundsPaddingPx))
+    } else if(locations.size==1) {
+     map.animateCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngZoom(locations.first().second,14.0))
+    }
+   }
   }
  }
- LaunchedEffect(destinationPoint?.latitude,destinationPoint?.longitude) {
-  val point=destinationPoint ?: return@LaunchedEffect
-  val original=currentDestination.value
-  if(original!="Destination map pin") return@LaunchedEffect
-  val name=addressLoader?.invoke(point) ?: MobileGeocoding.reverse(context,point)
-  if(currentDestination.value==original) {
-   if(!name.isNullOrBlank())destinationCallback(SelectedAddress(name,point.latitude,point.longitude))
-   else lookupMessage="Address lookup unavailable. The pin is saved; enter a street or landmark."
-  }
+ if(showCaptionText) {
+  if(failed)Text("Map unavailable. Check your connection and reopen this step.",color=MaterialTheme.colorScheme.error)
+  else if(!ready)SupportingText("Loading street map…")
+  else if(onSelect!=null)SupportingText("Map ready · drag to move, pinch to zoom, tap to place a pin.")
+  else SupportingText(routeError ?: if(previousGeometry!=null)"Route line displayed · ${points.size} saved stops" else "Saved stops displayed · no road route loaded")
+  if(points.any { it.first == "Vehicle" || it.first == "Last recorded vehicle position" }) SupportingText("Red: pickup · Blue: destination · Green: last recorded vehicle position")
+  if(fallback)SupportingText("© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors")
  }
- LaunchedEffect(pickupPoint?.latitude,pickupPoint?.longitude,destinationPoint?.latitude,destinationPoint?.longitude,retry) {
-  route=null;routeError=null;routing=false
-  if(pickupPoint!=null && destinationPoint!=null && routeLoader!=null) {
-   routing=true
-   try {kotlinx.coroutines.delay(450.milliseconds);route=routeLoader(pickupPoint,destinationPoint)}
-   catch(cancelled:kotlinx.coroutines.CancellationException) {throw cancelled}
-   catch(_:Exception) {routeError="Road route unavailable. Retry or adjust the pins; the office will verify the route."}
-   finally {routing=false}
-  }
- }
- var mode by androidx.compose.runtime.saveable.rememberSaveable {mutableStateOf("pickup")}
- var searchRequest by remember {mutableStateOf<Pair<String,String>?>(null)}
- var searchAttempt by remember {mutableIntStateOf(0)}
- var results by remember {mutableStateOf(emptyList<SelectedAddress>())}
- var error by remember {mutableStateOf<String?>(null)}
- var busy by remember {mutableStateOf(false)}
- val query=if(mode=="pickup") pickup else destination
- LaunchedEffect(mode,query,searchRequest,searchAttempt) {
-  results=emptyList();error=null;busy=false
-  val request=searchRequest
-  if(request!=null && request.first==mode && request.second==query) {
-   busy=true
-   try {results=MobileGeocoding.search(query);if(results.isEmpty())error="No matches. Try another address or place the pin on the map."}
-   catch(cancelled:kotlinx.coroutines.CancellationException) {throw cancelled}
-   catch(_:Exception) {error="Address search is unavailable. You can still pan, zoom and tap the map."}
-   finally {busy=false}
-  }
- }
- OutlinedTextField(pickup,{searchRequest=null;onPickupText(it)},label={Text("Pickup address")},supportingText={Text(if(pickupPoint==null)"Place a pickup pin on the map." else "Pickup pin placed · add a street or landmark if needed.")},enabled=enabled,singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Next),modifier=Modifier.fillMaxWidth())
- OutlinedTextField(destination,{searchRequest=null;onDestinationText(it)},label={Text("Destination address")},supportingText={Text(if(destinationPoint==null)"Place a destination pin on the map." else "Destination pin placed · add a street or landmark if needed.")},enabled=enabled,singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Done),modifier=Modifier.fillMaxWidth())
- Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-  FilterChip(selected=mode=="pickup",enabled=enabled,onClick={mode="pickup";searchRequest=null},label={Text("Pin pickup")})
-  FilterChip(selected=mode=="destination",enabled=enabled,onClick={mode="destination";searchRequest=null},label={Text("Pin destination")})
- }
- TextButton(enabled=enabled && !busy && query.trim().length>=3,onClick={searchRequest=mode to query;searchAttempt++}) {Text(if(busy)"Searching…" else if(mode=="pickup")"Search pickup address" else "Search destination address")}
- results.forEach {address -> TextButton(enabled=enabled,onClick={
-  if(mode=="pickup") onPickup(address) else onDestination(address)
-  searchRequest=null
- }) {Text(address.label)} }
- error?.let {SupportingText(it)}
- Text(if(mode=="pickup")"Tap the map to place or move pickup" else "Tap the map to place or move destination",style=MaterialTheme.typography.titleSmall)
- val points=buildList {pickupPoint?.let {add("Pickup" to it)};destinationPoint?.let {add("Destination" to it)}}
- ShipmentMap(points,geometry=route?.geometry,onSelect=if(!enabled)null else {point ->
-  lookupMessage=null
-  val label=if(mode=="pickup")"Pickup map pin" else "Destination map pin"
-  val address=SelectedAddress(label,point.latitude,point.longitude)
-  if(mode=="pickup") onPickup(address) else onDestination(address)
-  searchRequest=null
- })
- if(routing) {LinearProgressIndicator(Modifier.fillMaxWidth());SupportingText("Calculating road route…")}
- route?.let {SupportingText("Road route · ${it.distanceKm} km · about ${it.minutes} min. Office confirmation required.")}
- routeError?.let {SupportingText(it);TextButton(onClick={retry++},enabled=enabled){Text("Retry route")}}
- lookupMessage?.let {SupportingText(it)}
- SupportingText("Red: pickup · Blue: destination")
- SupportingText("Pickup: ${if(pickupPoint!=null)"pin placed" else "not placed"} · Destination: ${if(destinationPoint!=null)"pin placed" else "not placed"}")
 }

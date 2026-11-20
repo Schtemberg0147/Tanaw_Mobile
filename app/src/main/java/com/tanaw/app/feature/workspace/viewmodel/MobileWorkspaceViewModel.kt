@@ -94,8 +94,6 @@ class MobileWorkspaceViewModel @Inject constructor(
     private val expenseDraftStore=ExpenseDraftStore(context)
     internal val bookingDraftStore=BookingDraftStore(context)
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
-    fun hasIncidentDraft(owner:String,delivery:String)=incidentDraftStore.exists(owner,delivery)
-    fun hasExpenseDraft(owner:String,delivery:String)=expenseDraftStore.exists(owner,delivery)
     fun clearRestoredBookingConfirmation() { mutable.update { it.copy(restoredBookingConfirmation = null) } }
     private var signupPhone: String = ""
     private var recoveryPhone: String? = null
@@ -1141,7 +1139,6 @@ class MobileWorkspaceViewModel @Inject constructor(
         catch (_: ClearCredentialException) { /* Supabase sign-out already succeeded. */ }
         mutable.update { MobileState(page="login") }
     }
-    fun book(requestId: String,data: JsonObject,onSuccess: (String) -> Unit) = book(requestId,data) { id,_ -> onSuccess(id) }
     fun book(requestId: String,data: JsonObject,onCreated: (String,String) -> Unit) = operation {
         val customerId = mutable.value.data?.obj("customer")?.value("id")?.ifBlank { client.auth.currentUserOrNull()?.id }.orEmpty()
         if (customerId.isNotBlank()) {
@@ -1652,6 +1649,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         }
     }
     fun closeProof() { mutable.update { it.copy(proof=null,proofTitle="") } }
+    fun clearMessage() { mutable.update { it.copy(message=null) } }
     fun viewEvidence(shipment:String,kind:String,record:String)=operation {
         val version=generation;val uid=client.auth.currentUserOrNull()?.id ?: error("ACTIVE_ACCOUNT_REQUIRED")
         val path=client.postgrest.rpc("mobile_delivery_evidence_file",buildJsonObject {put("p_shipment",shipment);put("p_kind",kind);put("p_record",record)}).decodeAs<String>()
@@ -1659,7 +1657,6 @@ class MobileWorkspaceViewModel @Inject constructor(
         if(version==generation && uid==client.auth.currentUserOrNull()?.id)mutable.update {it.copy(proof=bitmap,proofTitle=if(kind=="expense")"Expense receipt" else "Incident photo")}
         else bitmap.recycle()
     }
-    fun departure(raw:String):String?=MobileBookingRules.departure(raw)
     private suspend fun readRouteStatus(delivery:String):JsonObject {
         val token=client.auth.currentSessionOrNull()?.accessToken ?: error("ACTIVE_ACCOUNT_REQUIRED")
         val payload=buildJsonObject{put("mode","eta");put("delivery_id",delivery)}

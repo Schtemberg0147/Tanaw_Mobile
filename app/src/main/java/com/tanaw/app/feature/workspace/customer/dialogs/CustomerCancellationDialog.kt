@@ -55,7 +55,8 @@ internal fun CustomerCancellationSection(
     state: MobileState,
     onCancelShipment: (shipmentId: String, reason: String, onCancelled: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
-    onClearError: () -> Unit = {}
+    onClearError: () -> Unit = {},
+    showLockedNotice: Boolean = true
 ) {
     val shipmentId = shipment.value("id")
     val trackingNumber = shipment.value("tracking_number")
@@ -92,7 +93,7 @@ internal fun CustomerCancellationSection(
                 SupportingText("You can cancel this shipment before the assigned driver starts heading to the pickup location.")
             }
         }
-    } else if (lockReason != null) {
+    } else if (showLockedNotice && lockReason != null) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
             shape = RoundedCornerShape(10.dp),

@@ -4,7 +4,6 @@ import androidx.compose.ui.graphics.Color
 
 // ─── Light Theme Brand Colors ──────────────────────────────────────────────────
 val NavyPrimary             = Color(0xFF0B2A4A)
-val NavyBanner              = Color(0xFF002B52)
 val PrimaryContainerLight   = Color(0xFFDCE6F2)
 val OrangeAccent            = Color(0xFFE87722) // Decorative accents & map rings only (never pair with white text)
 val OrangeAccessible        = Color(0xFFC2410C) // 5.18:1 on #FFFFFF for links, badges & secondary CTAs
@@ -21,10 +20,7 @@ val SuccessBannerBg         = Color(0xFFDCFCE7)
 // Driver & Semantic Status Colors (Light)
 val StatusGreen             = Color(0xFF22C55E)
 val StatusGreenBg           = Color(0xFFDCFCE7)
-val RedDestinationDot       = Color(0xFFB91C1C)
-val OrangeSpecialTag        = Color(0xFFC2410C)
 val OrangeSpecialTagBg      = Color(0xFFFFEDD5)
-val LightLavenderBg         = Color(0xFFF1F5F9)
 
 // Compliance, Trip & Semantic Status Colors
 val ExpiredRed              = Color(0xFFB91C1C)
@@ -33,8 +29,6 @@ val ExpiringOrange          = Color(0xFF9A3412)
 val ExpiringOrangeBg        = Color(0xFFFEF3C7)
 val OngoingBlue             = Color(0xFF0369A1)
 val OngoingBlueBg           = Color(0xFFE0F2FE)
-val OngoingAccentBar        = Color(0xFF0284C7)
-val CancelledAccentBar      = Color(0xFF94A3B8)
 
 // Map Pin Semantic Colors
 val MapPinPickup            = Color(0xFFDC2626)
@@ -52,7 +46,6 @@ val BackgroundDark          = Color(0xFF10141D)
 val SurfaceDark             = Color(0xFF181D2A)
 val SurfaceVariantDark      = Color(0xFF1E2536)
 val InputDark               = Color(0xFF222938)
-val BorderDark              = Color(0xFF323B4E)
 val OutlineDark             = Color(0xFF526077)
 val HintDark                = Color(0xFF94A3B8)
 val TextLight               = Color(0xFFF0F3F8)
@@ -62,7 +55,6 @@ val SuccessBannerBgDark     = Color(0xFF143823)
 // Driver & Semantic Status Colors (Dark)
 val StatusGreenDark         = Color(0xFF4ADE80)
 val StatusGreenBgDark       = Color(0xFF143823)
-val OrangeSpecialTagDark    = Color(0xFFFFB27D)
 val OrangeSpecialTagBgDark  = Color(0xFF3E2314)
 val WarningOrangeDark       = Color(0xFFFDBA74)
 val WarningBgDark           = Color(0xFF3B2510)

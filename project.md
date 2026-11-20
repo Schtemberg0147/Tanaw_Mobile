@@ -5,7 +5,7 @@ Tanaw is a native Android logistics, freight booking, and fleet delivery applica
 
 The active application runs through a **single state-driven workspace architecture** (`MainActivity` → `MobileWorkspaceApp` → `MobileWorkspaceViewModel`), serving both **Customer** and **Driver** roles from a shared Supabase backend (`mabutol-trucking-react`, Tanaw Dev `wrcrxsvppehuaqennrla.supabase.co`).
 
-> **Note on Legacy Code:** An earlier per-screen `TanawNavHost` + `Repository` implementation (`feature/booking/*`, `feature/history/*`, `feature/tracking/*`, `feature/profile/*`, `feature/notifications/*`, `feature/driver/*Screen`, `data/repository/*Impl`, `data/service/DriverLocationService`) remains compiled in the codebase for reference, but is **never invoked** by `MainActivity.kt`. Only `feature/driver/components/AddTripExpenseSheet.kt` and the active `feature/auth/` UI/rules are reused by `MobileWorkspaceApp`.
+> **Codebase Status:** Dormant legacy `TanawNavHost` + `Repository` packages (`data/`, `domain/`, `feature/booking/`, `feature/history/`, `feature/tracking/`, `feature/profile/`, `feature/notifications/`, `feature/driver/`, and legacy `feature/auth/` ViewModels/screens) have been removed. `AddTripExpenseSheet.kt` now lives under `feature/workspace/driver/components/` alongside the rest of the active workspace.
 
 ---
 
@@ -22,12 +22,12 @@ The active app uses a **single-ViewModel, state-driven workspace** backed by pur
 │          │     RecoveryScreens, verify / verify_phone,                      │
 │          │     PasswordChangeDialog, PhoneChangeDialog                      │
 │          ├── Customer Workspace: CustomerBookingFlow (map picker, details,  │
-│          │     summary, submitted), ShipmentList, ShipmentDetails,          │
+│          │     summary, submitted), ShipmentList, ShipmentTrackingScreen,   │
 │          │     CustomerCancellationDialog, CustomerProfile, Alerts          │
 │          └── Driver Workspace: DriverWorkspace (Home, Navigate, Trips,      │
 │                Profile, Messages, Alerts), DriverNavigateOverview,          │
 │                DriverTripActions, DriverFlowDialogs (POD, Incident),        │
-│                DriverFuelForm, AddTripExpenseSheet                          │
+│                DriverFuelForm, AddTripExpenseSheet, AllowanceRow            │
 └──────────────────────────────────▲──────────────────────────────────────────┘
                                    │ StateFlow<MobileState> (JsonObject data)
 ┌──────────────────────────────────┴──────────────────────────────────────────┐
@@ -39,7 +39,8 @@ The active app uses a **single-ViewModel, state-driven workspace** backed by pur
 │   │     CustomerAddressRules, CustomerBookingRules, CustomerPaginationRules,│
 │   │     CustomerCancellationRules, CustomerProfileRules, PhoneChangePolicy, │
 │   │     PasswordChangePolicy, DriverDatabaseData, DriverGeofenceRules,      │
-│   │     DriverDirections, TrackingFreshnessRules, TruckRestrictionRules,    │
+│   │     DriverDirections, TrackingFreshnessRules,                         │
+│   │     ShipmentTrackingPresentation, TruckRestrictionRules,                │
 │   │     NotificationReadRules                                               │
 │   ├── Connectivity & Background Services:                                   │
 │   │     WorkspaceNetworkMonitor (ConnectivityManager default callback)      │
@@ -236,7 +237,7 @@ sequenceDiagram
 - **External Backend Verification (`⚠ backend unverified`)**: Canonical migrations, RLS policies, and several RPCs/Edge Functions live in the separate `mabutol-trucking-react` repository (`supabase/README.md`). Client calls to `driver_arrive_at_pickup`, `driver_submit_pod`, `driver_report_incident_evidence`, `driver_record_position`, `mobile_driver_history`, `mobile_driver_log_fuel`, `mobile_driver_fuel_history`, `mobile_driver_evidence`, `mobile_delivery_evidence_file`, `delivery_conversation*`, `send_delivery_message`, `read_delivery_messages`, `delivery_expenses`, `mobile-email-login`, `delivery-routing`, and `calculate-route` cannot be verified from this repo alone.
 - **Google Sign-In**: Credential Manager flow is implemented (`GoogleSignIn.kt`), but `GOOGLE_WEB_CLIENT_ID` is optional/unconfigured by default and requires external Google Cloud + Supabase OAuth setup (`GOOGLE_AUTH_SETUP.md`).
 - **Email OTP Signup Branch**: Active signup routes exclusively to `verify_phone` (TextBee SMS); the `verify` email-signup branch in `MobileWorkspaceApp` is currently unreachable.
-- **Dynamic Pricing (`public.pricing_rates`)**: Active bookings submit as `"Awaiting office quotation"` and display office `quoted_amount` / `final_amount`; client-side rate computation exists only in dormant legacy code.
+- **Dynamic Pricing (`public.pricing_rates`)**: Active bookings submit as `"Awaiting office quotation"` and display office `quoted_amount` / `final_amount`; client-side rate calculation is not implemented in the active workspace.
 - **Unpublished Legal/Support Content (`D08`) & Offline Scope**: Driver Terms/Privacy/Support links display explicit unpublished notices until configured in `public.system_settings`. Encrypted cold-start offline workspace snapshots currently cover `driver` accounts only.
 - **Customer Cancellation Backend Policy (`C10`)**: Client executes pre-transit cancellation directly on `public.shipments`; production deployment of the proposed customer `UPDATE` RLS policy or atomic `mobile_cancel_shipment` RPC is tracked in `docs/BACKEND-REQUESTS.md` §3.
 
@@ -251,7 +252,7 @@ sequenceDiagram
 3. **Optional Wave 3 Additions** (require backend design first):
    - `C09`: Customer-to-office support conversations.
    - `C11`: Customer accept/reject versioned quotations.
-4. **Codebase Hygiene**: Eventual removal of dormant `TanawNavHost` legacy screens and consolidation of `app/build.gradle.kts` hardcoded dependency versions into `gradle/libs.versions.toml` (explicit separate tasks).
+4. **Codebase Hygiene**: Dormant `TanawNavHost` legacy screens, unused dependencies (`hilt-navigation-compose`, `play-services-location`, `turbine`), and unused resources have been removed; only consolidating the remaining hardcoded coordinates (`credentials`, `googleid`, `desugar_jdk_libs`, `storage-kt`, `realtime-kt`) in `app/build.gradle.kts` into `gradle/libs.versions.toml` remains.
 
 ---
 

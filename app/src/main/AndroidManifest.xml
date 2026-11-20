@@ -41,7 +41,6 @@
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.proof" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/proof_paths" />
         </provider>
-        <service android:name=".data.service.DriverLocationService" android:enabled="true" android:exported="false" android:foregroundServiceType="location" />
     </application>
 
 </manifest>

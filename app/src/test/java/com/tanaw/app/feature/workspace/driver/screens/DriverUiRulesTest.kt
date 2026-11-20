@@ -41,13 +41,6 @@ class DriverUiRulesTest {
         assertEquals(3,DriverUiRules.stage(obj("status" to "loading")))
         assertEquals(4,DriverUiRules.stage(obj("status" to "in_transit")))
     }
-    @Test fun missingComplianceNeverBecomesValid() {
-        val today=LocalDate.of(2026,10,25)
-        assertEquals("NOT REVIEWED",DriverUiRules.compliance(obj(),today))
-        assertEquals("EXPIRY UNKNOWN",DriverUiRules.compliance(obj("review_status" to "approved"),today))
-        assertEquals("PENDING",DriverUiRules.compliance(obj("review_status" to "pending","expiry_date" to "2030-01-01"),today))
-        assertEquals("EXPIRED",DriverUiRules.compliance(obj("review_status" to "approved","expiry_date" to "2026-10-24"),today))
-    }
     @Test fun periodsUsePhilippineCalendarBoundaries() {
         val today=LocalDate.of(2026,10,25)
         assertTrue(DriverUiRules.inPeriod(obj("scheduled_departure" to "2026-09-30T16:00:00Z"),"This month",today))

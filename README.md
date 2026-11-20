@@ -73,3 +73,13 @@ The app registers a `VIEW` / `BROWSABLE` intent filter for `tanaw://auth/callbac
 To configure this in the Supabase Dashboard:
 1. Navigate to **Authentication → URL Configuration → Redirect URLs**.
 2. Add `tanaw://auth/callback` to the permitted redirect URLs list.
+
+## Architecture & Verification
+
+`MainActivity` launches `MobileWorkspaceApp` (`feature/workspace/`), a single state-driven Jetpack Compose workspace backed by `MobileWorkspaceViewModel`, `core/` rules/sync utilities, `feature/auth/` screens/dialogs, and `di/SupabaseModule`. See [project.md](project.md) for the system architecture and schema reference, and [docs/FEATURES.md](docs/FEATURES.md) for per-feature implementation status.
+
+Local build and verification tasks:
+- Debug APK: `./gradlew :app:assembleDebug`
+- Unit tests: `./gradlew :app:testDebugUnitTest`
+- Android Lint: `./gradlew :app:lintDebug`
+- Instrumented tests (requires device/emulator): `./gradlew :app:connectedDebugAndroidTest`

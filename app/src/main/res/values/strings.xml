@@ -1,28 +1,13 @@
 <resources>
     <string name="app_name">Tanaw</string>
-    <string name="available">AVAILABLE</string>
-    <string name="you_are_available_for_assignments">You are available for assignments</string>
-    <string name="no_trips_assigned">No trips assigned</string>
-    <string name="no_trips_subtitle">You\'ll be notified when a new trip is ready.</string>
-    <string name="new_trip_assigned">New Trip Assigned!</string>
-    <string name="trip_assignment">Trip Assignment</string>
-    <string name="cargo">CARGO</string>
-    <string name="special">SPECIAL</string>
     <string name="pickup">PICK-UP</string>
     <string name="destination">DESTINATION</string>
     <string name="allowance">ALLOWANCE</string>
-    <string name="toll_road">Toll Road</string>
-    <string name="retry">Retry</string>
     <string name="refresh">Refresh</string>
-    <string name="home">HOME</string>
-    <string name="navigate">NAVIGATE</string>
-    <string name="trips">TRIPS</string>
-    <string name="profile">PROFILE</string>
     <string name="notifications">Notifications</string>
     <string name="where_are_you_shipping">Where are you shipping?</string>
     <string name="enter_pickup_location">Enter pick-up location</string>
     <string name="enter_destination">Enter destination</string>
-    <string name="pickup_now">Pick-up now</string>
     <string name="pickup_time_title">Pick-up time</string>
     <string name="schedule_now">Now</string>
     <string name="schedule_button">Schedule</string>
@@ -69,7 +54,6 @@
     <string name="book_another_delivery_button">BOOK ANOTHER DELIVERY</string>
 
     <!-- Customer Profile -->
-    <string name="back_to_profile">← Back to profile</string>
     <string name="default_saved_address">Default Saved Address</string>
     <string name="default_saved_address_desc">Your saved address is prefilled as your pickup address when booking new deliveries.</string>
     <string name="house_street_label">HOUSE / BUILDING / STREET</string>

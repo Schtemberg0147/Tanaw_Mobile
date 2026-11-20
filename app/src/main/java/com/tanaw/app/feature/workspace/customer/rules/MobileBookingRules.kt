@@ -1,6 +1,5 @@
 package com.tanaw.app.feature.workspace.customer.rules
 
-import com.tanaw.app.core.validation.MobileValidation
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
@@ -14,9 +13,4 @@ object MobileBookingRules {
   val instant=local.atZone(zone).toInstant()
   instant.takeIf { !local.isBefore(earliest(now)) && !it.isAfter(now.atZone(zone).plusYears(1).toInstant()) }?.toString()
  }.getOrNull()
- fun fits(weight:String,capacity:String):Boolean {
-  val w=MobileValidation.weight(weight) ?: return false
-  val c=capacity.toDoubleOrNull()?.takeIf {it.isFinite() && it>0} ?: return false
-  return w<=c && c<=w+2000
- }
 }

@@ -161,12 +161,10 @@ dependencies {
     // Lifecycle / ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.hilt.navigation.compose)
 
     // Core / Activity
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.play.services.location)
     implementation(libs.maplibre.android.sdk)
 
     // Compose BOM + UI
@@ -179,7 +177,6 @@ dependencies {
     // Unit tests
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.turbine)
 
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))

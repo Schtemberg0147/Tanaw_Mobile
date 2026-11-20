@@ -35,7 +35,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.view.WindowCompat
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
-import com.tanaw.app.feature.driver.components.AllowanceRow
 import com.tanaw.app.feature.workspace.driver.components.*
 import com.tanaw.app.feature.workspace.driver.dialogs.*
 import com.tanaw.app.feature.workspace.driver.rules.*
@@ -53,9 +52,6 @@ import java.util.UUID
 
 /** Unified Driver tokens aligned with DESIGN.md and TanawTheme. */
 internal val DriverNavy=NavyPrimary
-internal val DriverBackground=BackgroundGray
-internal val DriverMuted=HintGray
-internal val DriverLine=BorderGray
 
 internal val DriverLightColorScheme = LightColorScheme
 
@@ -883,7 +879,6 @@ internal object DriverUiRules {
         d.value("route_started_at").isNotBlank()->1
         else->0
     }
-    fun matches(status:String,filter:String)=when(filter){"Completed"->status in listOf("completed","review","delivered");"Cancelled"->status=="cancelled";"Ongoing","Active"->isActive(status) && status !in listOf("review","delivered");else->true}
     fun matches(shipment:JsonObject,delivery:JsonObject?,filter:String)=when(filter) {
         "Completed"->isDriverCompleted(shipment,delivery)
         "Cancelled"->shipment.value("status")=="cancelled" || delivery?.value("status")=="cancelled"
@@ -912,9 +907,6 @@ internal object DriverUiRules {
             !Instant.parse(arrived).isAfter(Instant.parse(scheduled))
         }.getOrNull()}
         return if(outcomes.isEmpty())"Not recorded" else "${outcomes.count {it}*100/outcomes.size}% (${outcomes.size} recorded)"
-    }
-    fun compliance(doc:JsonObject,today:LocalDate=LocalDate.now(ZoneId.of("Asia/Manila"))):String {
-        return DriverProfileRules.compliance(doc,JsonArray(emptyList()),today)
     }
 }
 
