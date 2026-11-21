@@ -63,6 +63,19 @@ internal object CustomerProfileRules {
     fun validateAddress(address: String): Boolean = address.trim().length <= 500
     fun validateCity(city: String): Boolean = city.trim().length <= 100
 
+    fun resolveEmail(
+        profileEmail: String?,
+        customerEmail: String?,
+        authEmail: String? = null,
+        metadataContactEmail: String? = null,
+        metadataEmail: String? = null
+    ): String {
+        return listOf(profileEmail, customerEmail, authEmail, metadataContactEmail, metadataEmail)
+            .firstOrNull { !it.isNullOrBlank() }
+            ?.trim()
+            .orEmpty()
+    }
+
     suspend fun saveProfile(
         mutate: suspend () -> Unit,
         current: () -> Boolean,

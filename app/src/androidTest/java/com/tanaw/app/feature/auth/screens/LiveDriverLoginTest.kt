@@ -45,11 +45,15 @@ class LiveDriverLoginTest {
         val phone=requireNotNull(args.getString("driverPhone"))
         val vm=viewModel()
         assertEquals("recover_code",vm.state.value.page)
-        compose.runOnUiThread {vm.recover(code,password,password)}
+        compose.runOnUiThread {vm.verifyRecoveryCode(code)}
+        compose.waitUntil(60000) {!vm.state.value.busy}
+        assertNull("Phone recovery code verification failed",vm.state.value.error)
+        assertEquals("recover_password",vm.state.value.page)
+        assertNull(WorkspaceRecoveryStore(compose.activity,BuildConfig.SUPABASE_URL).read("challenge",RecoveryPolicy.CHALLENGE_AGE))
+        compose.runOnUiThread {vm.completePasswordRecovery(password,password)}
         compose.waitUntil(60000) {!vm.state.value.busy}
         assertNull("Phone password recovery failed",vm.state.value.error)
         assertEquals("login",vm.state.value.page)
-        assertNull(WorkspaceRecoveryStore(compose.activity,BuildConfig.SUPABASE_URL).read("challenge",RecoveryPolicy.CHALLENGE_AGE))
         compose.runOnUiThread {vm.login(phone,password)}
         compose.waitUntil(60000) {!vm.state.value.busy}
         assertNull("Recovered phone login failed",vm.state.value.error)

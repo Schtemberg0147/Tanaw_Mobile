@@ -385,4 +385,48 @@ class CustomerProfileRulesTest {
         assertEquals("San Juan", customer?.get("barangay")?.let { (it as JsonPrimitive).content })
         assertEquals("Nueva Ecija", customer?.get("province")?.let { (it as JsonPrimitive).content })
     }
+
+    @Test
+    fun resolveEmailPrefersProfileThenCustomerThenAuthFallbacks() {
+        assertEquals(
+            "profile@example.com",
+            CustomerProfileRules.resolveEmail(
+                profileEmail = " profile@example.com ",
+                customerEmail = "customer@example.com",
+                authEmail = "auth@example.com",
+                metadataContactEmail = "contact@example.com",
+                metadataEmail = "meta@example.com"
+            )
+        )
+        assertEquals(
+            "customer@example.com",
+            CustomerProfileRules.resolveEmail(
+                profileEmail = "",
+                customerEmail = " customer@example.com ",
+                authEmail = "auth@example.com",
+                metadataContactEmail = "contact@example.com",
+                metadataEmail = "meta@example.com"
+            )
+        )
+        assertEquals(
+            "contact@example.com",
+            CustomerProfileRules.resolveEmail(
+                profileEmail = "",
+                customerEmail = "   ",
+                authEmail = null,
+                metadataContactEmail = " contact@example.com ",
+                metadataEmail = "meta@example.com"
+            )
+        )
+        assertEquals(
+            "",
+            CustomerProfileRules.resolveEmail(
+                profileEmail = null,
+                customerEmail = "",
+                authEmail = "",
+                metadataContactEmail = " ",
+                metadataEmail = null
+            )
+        )
+    }
 }

@@ -415,8 +415,6 @@ internal fun DriverPaymentFormContent(
                         when (selectedMethod) {
                             DriverPaymentMethod.CASH -> "e.g. OR-887766 or Cash voucher #"
                             DriverPaymentMethod.GCASH -> "e.g. GCash Ref # 901234567890"
-                            DriverPaymentMethod.BANK_TRANSFER -> "e.g. InstaPay / Bank Ref #"
-                            DriverPaymentMethod.CHECK -> "e.g. Check # 001245"
                         }
                     )
                 },

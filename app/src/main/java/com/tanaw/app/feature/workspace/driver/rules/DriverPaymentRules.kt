@@ -17,9 +17,7 @@ internal enum class DriverPaymentMethod(
     val requiresReference: Boolean
 ) {
     CASH("cash", "Cash", false),
-    GCASH("gcash", "GCash", true),
-    BANK_TRANSFER("bank_transfer", "Bank Transfer", true),
-    CHECK("check", "Check", true);
+    GCASH("gcash", "GCash", true);
 
     companion object {
         fun fromValue(raw: String): DriverPaymentMethod =

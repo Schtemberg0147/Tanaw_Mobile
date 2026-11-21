@@ -341,7 +341,7 @@ TANAW operates strictly for **scheduled Full Truckload (FTL)** deliveries (no LT
 Mabutol Trucking operates a strict **payment-first** workflow after cargo loading:
 1. Final shipment charges (`public.shipments.final_amount`) are always finalized by the office before dispatch.
 2. Right after cargo is loaded onto the truck (`deliveries.status = 'loading'`), the driver and helpers bill the customer face-to-face for the **full remaining balance** (no partial settlements from the driver).
-3. The customer signs a physical paper receipt after paying (for all payment methods: Cash, GCash, Bank Transfer, Check).
+3. The customer signs a physical paper receipt after paying (for all payment methods: Cash, GCash).
 4. To prevent collusion or fake payment proofs, every driver-submitted payment starts as `status = 'pending'` and requires **manual office verification** before the driver is allowed to depart (`loading` → `in_transit`).
 5. Once an admin clicks **Verify** in the web Payment Ledger, the driver's **Start Transit** button unlocks in real time so the driver can depart and record an accurate `departed_at`. If the customer already prepaid at the office and the payment is `verified` (`balance <= 0`), the gate is already satisfied and the driver does not double-bill the customer.
 
@@ -541,7 +541,7 @@ BEGIN
         RAISE EXCEPTION 'PAYMENT_PROOF_REQUIRED';
     END IF;
 
-    IF p_method IN ('gcash', 'bank_transfer', 'check') AND v_ref IS NULL THEN
+    IF p_method = 'gcash' AND v_ref IS NULL THEN
         RAISE EXCEPTION 'PAYMENT_REFERENCE_REQUIRED';
     END IF;
 
@@ -1369,4 +1369,80 @@ WITH CHECK (
 
 ### Client Compatibility (`Tanaw_Mobile`)
 - `MobileWorkspaceViewModel.cancelShipment` and `MobileWorkspaceViewModel.acceptQuote` now invoke `mobile_cancel_shipment` and `mobile_accept_shipment_quote` first, falling back to a direct PostgREST `UPDATE` **only** on `PGRST202` (function not yet deployed). Once the migration above is applied in `mabutol-trucking-react`, all mutations execute atomically through the `SECURITY DEFINER` RPCs.
+
+---
+
+## 9. Request C13: Verify-First Customer Phone Signup (No Account Created Until OTP Verified)
+
+### Motivation
+Currently, `CreateAccountScreen` calls Supabase `signUpWith(Phone)` as soon as the user submits the registration form. In Supabase GoTrue, `signUpWith(Phone)` immediately inserts an unconfirmed `auth.users` row (`phone_confirmed_at = NULL`, firing `handle_new_user()` to insert `public.users`) before the user enters their SMS OTP.
+
+If the user taps **Back** or cancels on `verify_phone` (or closes the app), an unconfirmed account remains in the database:
+- Attempting to log in fails with `phone_not_confirmed` (`"Verify your phone number with the SMS code before signing in."`).
+- Cancelled registrations pollute `auth.users` and `public.users`.
+
+**Desired Product Rule:** No `auth.users` or `public.users` account should be created if SMS OTP verification is cancelled or abandoned.
+
+### Proposed Backend Architecture (`mabutol-trucking-react`)
+
+1. **Pending OTP Verification Table (Service-Role Only, No Public RLS):**
+   ```sql
+   CREATE TABLE IF NOT EXISTS public.pending_phone_signups (
+       phone text PRIMARY KEY,
+       otp_hash text NOT NULL,
+       attempts smallint NOT NULL DEFAULT 0,
+       expires_at timestamptz NOT NULL,
+       resend_available_at timestamptz NOT NULL,
+       created_at timestamptz NOT NULL DEFAULT now()
+   );
+   ALTER TABLE public.pending_phone_signups ENABLE ROW LEVEL SECURITY;
+   -- No policies for anon/authenticated; accessed strictly via service_role Edge Functions.
+   ```
+
+2. **Edge Function 1 — `mobile-send-signup-otp` (`POST`):**
+   - Validates `phone` (`^\+639[0-9]{9}$`) and checks that no confirmed account already owns `phone` in `auth.users` / `public.users` (returning `409 phone_exists` if already registered).
+   - Enforces cooldown (`resend_available_at`, e.g., 60s) and rate limiting (`429 over_sms_send_rate_limit`).
+   - Generates a cryptographically random 6-digit OTP, stores `sha256(otp + secret)` with `expires_at = now() + interval '5 minutes'` in `pending_phone_signups`, and dispatches the SMS via the configured TextBee gateway.
+   - Does **not** create any row in `auth.users`, `public.users`, or `public.customers`.
+
+3. **Edge Function 2 — `mobile-complete-signup` (`POST`):**
+   - Accepts `{ phone, code, first_name, last_name, email, password, address }`.
+   - Validates `code` against `pending_phone_signups` (`expires_at > now()`, max 5 attempts), deleting the pending OTP row on success.
+   - Calls `adminClient.auth.admin.createUser({ phone, phone_confirm: true, password, app_metadata: { provisioned_role: "customer" }, user_metadata: { full_name, phone, contact_email, address } })`.
+   - Signs in / mints a session for the newly confirmed user and returns `{ access_token, refresh_token }`, allowing the mobile app to call `client.auth.importAuthToken(...)` and enter the workspace immediately.
+   - If the user taps **Back** on `verify_phone`, no `auth.users` or `public.users` row ever exists.
+
+### Client Compatibility (`Tanaw_Mobile`)
+- As an immediate bridge for any existing unconfirmed `auth.users` phone accounts, `MobileWorkspaceViewModel.login` catches `phone_not_confirmed`, automatically requests/resumes SMS verification, and routes the user directly to `verify_phone` so they can complete verification and sign in.
+- Once `mobile-send-signup-otp` and `mobile-complete-signup` are deployed in `mabutol-trucking-react`, `MobileWorkspaceViewModel.signup` and `verifyPhoneSignup` can switch to calling those endpoints while retaining `phone_not_confirmed` fallback for legacy unconfirmed rows.
+
+---
+
+## 10. Request AUTH-01: Gmail OTP Change-Password Endpoints (Node.js / Express + Nodemailer)
+
+### Motivation
+When signed-in users with a `@gmail.com` address use the Change Password flow (`PasswordChangeDialog`), the mobile client (`MobileWorkspaceViewModel.sendOtp()` / `verifyAndChangePassword()`) supports calling a Node.js/Express password-reset service (`PASSWORD_API_BASE_URL`) so Gmail OTP verification and password hashing run server-side without embedding SMTP credentials in the Android APK.
+
+### Required Endpoints
+
+1. **`POST /api/password/send-otp`**
+   - Body: `{ "email": "user@gmail.com" }`
+   - Validates `@gmail.com` format and checks that the user exists.
+   - Generates a 6-digit OTP (`crypto.randomInt(100000, 1000000)`), stores its salted HMAC-SHA256 hash with a 10-minute expiry and `attempts = 0` (max 5 attempts).
+   - Sends the OTP via `smtp.gmail.com` (port `587`, STARTTLS) using `process.env.DEV_GMAIL_USER` and `process.env.DEV_GMAIL_APP_PASS`.
+   - Returns `{ "success": true, "message": "Verification code sent to your Gmail address." }`.
+
+2. **`POST /api/password/verify-otp`**
+   - Body: `{ "email": "user@gmail.com", "otp": "123456" }`
+   - Validates `@gmail.com` format, 6-digit OTP, expiry (`<= 10 min`), and attempt limit (`< 5` attempts, timing-safe hash comparison) **without** consuming the OTP yet (or mints a short-lived reset token for `/api/password/reset`).
+   - Required so the mobile client's two-step recovery flow (`VerifyRecoveryCodeScreen` -> `ResetPasswordScreen`) can verify the OTP server-side before revealing password entry fields.
+   - Returns `{ "success": true, "message": "Verification code confirmed." }`.
+
+3. **`POST /api/password/reset`**
+   - Body: `{ "email": "user@gmail.com", "otp": "123456", "newPassword": "..." }`
+   - Verifies `@gmail.com` format, 6-digit OTP, `newPassword.length >= 8`, expiry (`<= 10 min`), and attempt limit (`< 5` attempts, timing-safe hash comparison).
+   - Hashes `newPassword` (`bcrypt`), updates the user record, and deletes/invalidates the used OTP.
+   - Returns `{ "success": true, "message": "Password updated successfully." }`.
+
+
 

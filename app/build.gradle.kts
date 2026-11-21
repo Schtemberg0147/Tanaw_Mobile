@@ -108,6 +108,19 @@ val mapTilerKey = (System.getenv("MAPTILER_KEY")
     }
 }
 
+// Optional password-reset API base URL (defaults to shared Vercel URL in client-config.properties;
+// override via environment or local.properties for local/ngrok development).
+val passwordApiBaseUrl = (System.getenv("PASSWORD_API_BASE_URL")
+    ?: localProperties.getProperty("PASSWORD_API_BASE_URL")
+    ?: sharedClientProperties.getProperty("PASSWORD_API_BASE_URL", "")).trim().trimEnd('/').also {
+    require(it.none { ch -> ch == '\n' || ch == '\r' || ch == '"' || ch == '\\' }) {
+        "Invalid characters in PASSWORD_API_BASE_URL."
+    }
+    require(it.isEmpty() || it.startsWith("https://") || it.startsWith("http://")) {
+        "PASSWORD_API_BASE_URL must start with https:// or http://."
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -124,13 +137,14 @@ android {
         applicationId = "com.tanaw.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         buildConfigField("String", "MAPTILER_KEY", "\"$mapTilerKey\"")
+        buildConfigField("String", "PASSWORD_API_BASE_URL", "\"$passwordApiBaseUrl\"")
     }
 
     buildTypes {

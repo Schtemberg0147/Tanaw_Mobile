@@ -52,7 +52,8 @@ class PublicNavigationTest {
         }
         compose.onNodeWithText("Recovery link opened", substring = true).assertExists()
         compose.onNodeWithText("Verify Code").assertExists()
-        compose.onNodeWithText("Update password").performScrollTo().assertExists()
+        compose.onNodeWithText("Verify code").performScrollTo().assertExists()
+        compose.onNodeWithText("Update password").assertDoesNotExist()
         compose.onNodeWithText(token).performScrollTo().assertExists()
         compose.onNodeWithText("Back to sign in").performScrollTo().performClick()
         compose.onAllNodesWithText("Create Account", substring = true).onFirst().assertExists()

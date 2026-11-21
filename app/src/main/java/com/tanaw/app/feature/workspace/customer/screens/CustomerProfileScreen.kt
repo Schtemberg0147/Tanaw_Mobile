@@ -452,7 +452,10 @@ internal fun CustomerProfile(
     val emailLockedInfo = stringResource(R.string.email_locked_dialog_info)
 
     val fullName = p.value("full_name").ifBlank { defaultCustomerName }
-    val email = p.value("email").ifBlank { phoneAccountFallback }
+    val email = CustomerProfileRules.resolveEmail(
+        profileEmail = p.value("email"),
+        customerEmail = c.value("email")
+    ).ifBlank { phoneAccountFallback }
     val contact = p.value("phone").ifBlank { noContactFallback }
     val defaultAddress = savedStructuredAddress.fullDisplayAddress().ifBlank { c.value("address").ifBlank { noAddressFallback } }
     val memberSince = CustomerProfilePresentation.memberSince(p.value("created_at"))

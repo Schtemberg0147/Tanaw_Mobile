@@ -54,9 +54,11 @@ import com.tanaw.app.BuildConfig
 import com.tanaw.app.core.validation.MobileValidation
 import com.tanaw.app.feature.auth.dialogs.PasswordChangeDialog
 import com.tanaw.app.feature.auth.dialogs.PhoneChangeDialog
+import com.tanaw.app.feature.auth.rules.GmailOtpPasswordRules
 import com.tanaw.app.feature.auth.screens.CreateAccountScreen
 import com.tanaw.app.feature.auth.screens.ForgotPasswordCardScreen
 import com.tanaw.app.feature.auth.screens.LoginScreen
+import com.tanaw.app.feature.auth.screens.ResetPasswordScreen
 import com.tanaw.app.feature.auth.screens.VerificationCodeScreen
 import com.tanaw.app.feature.auth.screens.VerifyRecoveryCodeScreen
 import com.tanaw.app.feature.workspace.customer.components.AddressQuickAssistBar
@@ -69,6 +71,7 @@ import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerHistoryPresentation
 import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerPaginationRules
+import com.tanaw.app.feature.workspace.customer.rules.CustomerProfileRules
 import com.tanaw.app.feature.workspace.customer.screens.AccountSuspendedScreen
 import com.tanaw.app.feature.workspace.customer.screens.CustomerBookingFlow
 import com.tanaw.app.feature.workspace.customer.screens.CustomerProfile
@@ -171,8 +174,14 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     }
 
     if (state.page == "recover_code") {
-        BackHandler(!state.busy) { vm.page("login") }
+        BackHandler(!state.busy) { vm.cancelRecovery() }
         VerifyRecoveryCodeScreen(state = state, vm = vm)
+        return
+    }
+
+    if (state.page == "recover_password") {
+        BackHandler(!state.busy) { vm.cancelRecovery() }
+        ResetPasswordScreen(state = state, vm = vm)
         return
     }
 
@@ -336,12 +345,25 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         }
 
         if (state.passwordChangeOwner != null) {
+            val useGmailOtp = GmailOtpPasswordRules.shouldUseGmailOtpBackend(
+                target = state.email,
+                baseUrl = BuildConfig.PASSWORD_API_BASE_URL
+            )
             PasswordChangeDialog(
                 state,
                 vm::cancelPasswordChange,
-                { vm.resetEmail(state.email) },
-                { vm.canVerify(it, "recovery") },
-                vm::recover
+                { if (useGmailOtp) vm.sendOtp() else vm.resetEmail(state.email) },
+                { code ->
+                    if (useGmailOtp) GmailOtpPasswordRules.isValidOtp(code) else vm.canVerify(code, "recovery")
+                },
+                { code, password, confirm ->
+                    if (useGmailOtp) {
+                        vm.verifyAndChangePassword(code, password, confirm)
+                    } else {
+                        vm.recover(code, password, confirm)
+                    }
+                },
+                onEmailChange = if (BuildConfig.PASSWORD_API_BASE_URL.isNotBlank()) vm::updatePasswordChangeEmail else null
             )
         }
         if (state.phoneChangeTarget != null) {
@@ -1741,9 +1763,13 @@ private fun OnboardingProfileForm(
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary
     )
+    val resolvedEmail = CustomerProfileRules.resolveEmail(
+        profileEmail = p.value("email"),
+        customerEmail = c.value("email")
+    )
     SupportingText(
-        text = if (p.value("email").isNotBlank()) {
-            "Sign-in email: ${p.value("email")}"
+        text = if (resolvedEmail.isNotBlank()) {
+            "Sign-in email: $resolvedEmail"
         } else {
             "Customer account"
         }

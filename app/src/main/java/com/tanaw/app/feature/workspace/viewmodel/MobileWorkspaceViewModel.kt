@@ -20,6 +20,9 @@ import com.tanaw.app.core.network.*
 import com.tanaw.app.core.sync.*
 import com.tanaw.app.core.validation.*
 import com.tanaw.app.feature.auth.components.GoogleSignIn
+import com.tanaw.app.feature.auth.data.KtorPasswordResetApi
+import com.tanaw.app.feature.auth.data.PasswordResetApiException
+import com.tanaw.app.feature.auth.data.PasswordResetRepository
 import com.tanaw.app.feature.auth.rules.*
 import com.tanaw.app.feature.workspace.customer.rules.*
 import com.tanaw.app.feature.workspace.customer.store.*
@@ -97,9 +100,13 @@ class MobileWorkspaceViewModel @Inject constructor(
     internal val bookingDraftStore=BookingDraftStore(context)
     private val avatarStore=CustomerAvatarStore(context)
     private val deviceNotifier=WorkspaceDeviceNotifier(context)
+    private val passwordResetRepository by lazy {
+        PasswordResetRepository(KtorPasswordResetApi(BuildConfig.PASSWORD_API_BASE_URL))
+    }
     fun hasProofDraft(owner:String,delivery:String)=proofDraftStore.exists(owner,delivery)
     fun clearRestoredBookingConfirmation() { mutable.update { it.copy(restoredBookingConfirmation = null) } }
     private var signupPhone: String = ""
+    private var pendingPhoneSignup: PendingPhoneSignup? = null
     private var recoveryPhone: String? = null
     private var pendingPasswordChange:JsonObject?=null
     private val mutable = MutableStateFlow(MobileState())
@@ -329,7 +336,7 @@ class MobileWorkspaceViewModel @Inject constructor(
             if(it.value("return_owner").isNotBlank()) {pendingPasswordChange=it;return@let}
             val target=it.value("target")
             if(it.value("page")=="verify_phone")signupPhone=target else recoveryPhone=MobileValidation.phone(target)
-            mutable.value=MobileState(page=it.value("page"),email=target,message="Resume verification or request a fresh code. Re-enter your code and password.")
+            mutable.value=MobileState(page=it.value("page"),email=target,message="Resume verification or request a fresh code.")
             val remaining=((it.value("created").toLong()+60000-System.currentTimeMillis())/1000).toInt().coerceIn(0,60)
             if(remaining>0)countdown(remaining)
         }
@@ -349,9 +356,16 @@ class MobileWorkspaceViewModel @Inject constructor(
                             generation++
                             mutable.update { it.copy(data=null,details=null,proof=null,proofTitle="",proofSubtitle="",history=null,historyLoading=false,historyError=null,conversationUnread=null,customerHistoryDocuments=emptyList(),notificationsPage=null,notificationsLoading=false,notificationsHasMore=false,notificationsError=null) }
                             loadedUser = id
-                            if(id!=null){restoreWorkspace(id);startLive(id)}
+                            if(id!=null){
+                                restoreWorkspace(id)
+                                if (!mutable.value.page.startsWith("recover") && mutable.value.page != "verify_phone") {
+                                    startLive(id)
+                                }
+                            }
                         }
-                        else if (id != null) { ensureLive(id) }
+                        else if (id != null && !mutable.value.page.startsWith("recover") && mutable.value.page != "verify_phone") {
+                            ensureLive(id)
+                        }
                         if (!mutable.value.page.startsWith("recover")) refresh()
                     }
                     is SessionStatus.NotAuthenticated -> {
@@ -387,8 +401,43 @@ class MobileWorkspaceViewModel @Inject constructor(
             }
         }
     }
-    fun page(page: String) { if (!mutable.value.busy) {if(page=="login"){clearPasswordChallenge();cancelPhoneChange();signupPhone=""};mutable.update { it.copy(page=page,error=null,message=null,resendSeconds=if(page=="login")0 else it.resendSeconds,email=if(page=="login")"" else it.email,
-        passwordChangeOwner=if(page=="login")null else it.passwordChangeOwner,passwordChangeCodeSent=page!="login" && it.passwordChangeCodeSent) }} }
+    fun page(page: String) {
+        if (!mutable.value.busy) {
+            if (page == "login") {
+                cancelRecovery()
+                return
+            }
+            mutable.update {
+                it.copy(
+                    page = page,
+                    error = null,
+                    message = null,
+                    resendSeconds = it.resendSeconds,
+                    email = it.email,
+                    passwordChangeOwner = it.passwordChangeOwner,
+                    passwordChangeCodeSent = it.passwordChangeCodeSent
+                )
+            }
+        }
+    }
+    fun cancelRecovery() {
+        val current = mutable.value
+        if (current.busy) return
+        val signOutNeeded = PasswordRecoveryRules.shouldSignOutOnCancel(current.page, current.passwordChangeOwner)
+        clearPasswordChallenge()
+        cancelPhoneChange()
+        signupPhone = ""
+        pendingPhoneSignup = null
+        if (signOutNeeded) {
+            operation(allowOffline = true) {
+                runCatching { client.auth.signOut() }
+                loadedUser = null
+                mutable.update { MobileState(page = "login") }
+            }
+        } else {
+            mutable.update { MobileState(page = "login") }
+        }
+    }
     private fun clearPasswordChallenge(){recoveryStore.clear("challenge");recoveryPhone=null;pendingPasswordChange=null;timer?.cancel()}
     fun openPasswordChange() {
         if(mutable.value.busy)return
@@ -423,7 +472,16 @@ class MobileWorkspaceViewModel @Inject constructor(
         viewModelScope.launch {
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { mutable.update { it.copy(error=friendly(error)) } }
+            catch (error: Exception) {
+                android.util.Log.e("TanawWorkspaceVM", "Operation failed", error)
+                val message = when {
+                    error is PasswordResetApiException -> error.message
+                    BuildConfig.DEBUG && friendly(error) == "Unable to complete the request. Check your connection, refresh and try again." ->
+                        "Unable to complete the request (${error::class.simpleName}: ${error.message})."
+                    else -> friendly(error)
+                }
+                mutable.update { it.copy(error = message) }
+            }
             finally {
                 mutable.update { it.copy(busy=false) }
                 if (WorkspaceSyncRules.shouldDrainPendingRefresh(pendingBackgroundRefresh, isBusy = mutable.value.busy, page = mutable.value.page)) {
@@ -511,10 +569,23 @@ class MobileWorkspaceViewModel @Inject constructor(
                 data.obj("profile")
             }
             val customerStandingPatch = ftlData["customer_standing_patch"] as? JsonObject
-            val updatedCustomer = if (customerStandingPatch != null && customerStandingPatch.isNotEmpty()) {
+            val baseCustomer = if (customerStandingPatch != null && customerStandingPatch.isNotEmpty()) {
                 JsonObject(data.obj("customer") + customerStandingPatch)
             } else {
                 data.obj("customer")
+            }
+            val authUser = client.auth.currentUserOrNull()
+            val resolvedEmail = CustomerProfileRules.resolveEmail(
+                profileEmail = updatedProfile.value("email"),
+                customerEmail = baseCustomer.value("email"),
+                authEmail = authUser?.email,
+                metadataContactEmail = (authUser?.userMetadata?.get("contact_email") as? JsonPrimitive)?.contentOrNull,
+                metadataEmail = (authUser?.userMetadata?.get("email") as? JsonPrimitive)?.contentOrNull
+            )
+            val updatedCustomer = if (resolvedEmail.isNotBlank() && baseCustomer.value("email").isBlank()) {
+                JsonObject(baseCustomer + ("email" to JsonPrimitive(resolvedEmail)))
+            } else {
+                baseCustomer
             }
             val filteredFtlData = ftlData.filterKeys { it != "avatar_url" && it != "customer_standing_patch" }
             data = JsonObject(
@@ -983,7 +1054,15 @@ class MobileWorkspaceViewModel @Inject constructor(
     fun login(email: String,password: String) = operation {
         require((MobileValidation.email(email) || MobileValidation.phone(email)!=null) && password.isNotEmpty())
         val phone=MobileValidation.phone(email)
-        if(phone!=null) client.auth.signInWith(Phone) {this.phone=phone;this.password=password}
+        if(phone!=null) {
+            try { client.auth.signInWith(Phone) {this.phone=phone;this.password=password} }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (!PhoneSignupRecoveryRules.isPhoneNotConfirmed(error)) throw error
+                resumeUnconfirmedPhoneVerification(phone)
+                return@operation
+            }
+        }
         else {
             try { client.auth.signInWith(Email) { this.email=email.trim(); this.password=password } }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -995,6 +1074,32 @@ class MobileWorkspaceViewModel @Inject constructor(
         loadedUser=client.auth.currentUserOrNull()?.id
         loadedUser?.let(::ensureLive)
         load()
+    }
+    private suspend fun resumeUnconfirmedPhoneVerification(phone: String) {
+        signupPhone = phone
+        var resendSucceeded = false
+        var rateLimited = false
+        try {
+            client.auth.resendPhone(OtpType.Phone.SMS, phone)
+            resendSucceeded = true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (resendError: Exception) {
+            if (MobileErrorClassifier.isNetworkError(resendError)) throw resendError
+            rateLimited = PhoneSignupRecoveryRules.isSmsRateLimited(resendError)
+        }
+        val saved = saveChallenge("verify_phone", phone)
+        mutable.update {
+            it.copy(
+                page = "verify_phone",
+                email = phone,
+                error = null,
+                message = PhoneSignupRecoveryRules.buildResumeMessage(resendSucceeded, rateLimited, saved)
+            )
+        }
+        if (PhoneSignupRecoveryRules.shouldStartCountdown(resendSucceeded, rateLimited)) {
+            countdown()
+        }
     }
     private suspend fun loginWithContactEmail(email:String,password:String) {
         val payload=buildJsonObject {put("email",email);put("password",password)}
@@ -1015,22 +1120,90 @@ class MobileWorkspaceViewModel @Inject constructor(
     fun signup(first: String,last: String,phone: String,email: String,password: String,address: String) = operation {
         val contact=MobileValidation.phone(phone) ?: error("INVALID_CONTACT")
         require(first.isNotBlank() && last.isNotBlank() && password.length>=8 && MobileValidation.email(email) && email.trim().length<=254 && address.trim().length in 1..500)
-        signupPhone=contact
-        client.auth.signUpWith(Phone) {
-            this.phone=contact; this.password=password
-            data=buildJsonObject { put("full_name","${first.trim()} ${last.trim()}");put("phone",contact);put("contact_email",email.trim());put("address",address.trim()) }
+        val pending = PendingPhoneSignup(
+            firstName = first.trim(),
+            lastName = last.trim(),
+            phone = contact,
+            email = email.trim(),
+            password = password,
+            address = address.trim()
+        )
+        sendSignupOtp(contact)
+        pendingPhoneSignup = pending
+        signupPhone = contact
+        recoveryStore.clear("challenge")
+        mutable.update {
+            it.copy(
+                page="verify_phone",
+                email=contact,
+                message="SMS verification requested. Keep this screen open and enter the 6-digit code once it arrives (expires in 5 minutes)."
+            )
         }
-        if (client.auth.currentUserOrNull()!=null) load() else { val saved=saveChallenge("verify_phone",contact);mutable.update { it.copy(page="verify_phone",message=if(saved)null else "Verification requested. Keep this screen open; recovery context could not be saved.") };countdown() }
+        countdown()
     }
     fun verifyPhoneSignup(code: String) = operation {
-        require(code.matches(Regex("[0-9]{6,8}")) && signupPhone.isNotEmpty())
-        client.auth.verifyPhoneOtp(OtpType.Phone.SMS,signupPhone,code)
+        val targetPhone = signupPhone.ifBlank { MobileValidation.phone(mutable.value.email).orEmpty() }
+        require(code.matches(Regex("[0-9]{6,8}")) && targetPhone.isNotEmpty())
+        signupPhone = targetPhone
+        val pending = pendingPhoneSignup
+        if (pending != null && pending.phone == targetPhone) {
+            completePhoneSignup(pending, code)
+            pendingPhoneSignup = null
+            signupPhone = ""
+        } else {
+            client.auth.verifyPhoneOtp(OtpType.Phone.SMS,targetPhone,code)
+        }
         recoveryStore.clear("challenge")
         load()
     }
     fun resendPhoneSignup() {
         if(mutable.value.resendSeconds>0)return
-        operation { client.auth.resendPhone(OtpType.Phone.SMS,signupPhone);saveChallenge("verify_phone",signupPhone);countdown() }
+        operation {
+            val targetPhone = signupPhone.ifBlank { MobileValidation.phone(mutable.value.email).orEmpty() }
+            require(targetPhone.isNotEmpty()) { "INVALID_CONTACT" }
+            signupPhone = targetPhone
+            val pending = pendingPhoneSignup
+            val saved = if (pending != null && pending.phone == targetPhone) {
+                sendSignupOtp(targetPhone)
+                true
+            } else {
+                client.auth.resendPhone(OtpType.Phone.SMS,targetPhone)
+                saveChallenge("verify_phone",targetPhone)
+            }
+            mutable.update {
+                it.copy(
+                    email=targetPhone,
+                    message=if(saved) "A new SMS verification code has been requested. Use the latest code once it arrives."
+                    else "A new SMS verification code has been requested. Keep this screen open; recovery context could not be saved."
+                )
+            }
+            countdown()
+        }
+    }
+    private suspend fun sendSignupOtp(phone: String) {
+        val payload = VerifyFirstSignupRules.sendOtpPayload(phone)
+        val response = client.httpClient.post("${BuildConfig.SUPABASE_URL}/functions/v1/mobile-send-signup-otp") {
+            timeout { connectTimeoutMillis=15_000; socketTimeoutMillis=20_000; requestTimeoutMillis=20_000 }
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        if (response.status.value !in 200..299) {
+            error(VerifyFirstSignupRules.parseEdgeErrorCode(response.status.value, response.bodyAsText()))
+        }
+    }
+    private suspend fun completePhoneSignup(pending: PendingPhoneSignup, code: String) {
+        val payload = VerifyFirstSignupRules.completeSignupPayload(pending, code)
+        val response = client.httpClient.post("${BuildConfig.SUPABASE_URL}/functions/v1/mobile-complete-signup") {
+            timeout { connectTimeoutMillis=15_000; socketTimeoutMillis=20_000; requestTimeoutMillis=20_000 }
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            error(VerifyFirstSignupRules.parseEdgeErrorCode(response.status.value, body))
+        }
+        val (accessToken, refreshToken) = VerifyFirstSignupRules.parseSessionTokens(body)
+        client.auth.importAuthToken(accessToken, refreshToken, retrieveUser = true)
     }
     private suspend fun readSmsPreferences(uid:String):JsonObject = try {
         val rows=client.from("notification_preferences").select {filter {eq("user_id",uid);eq("channel","sms")}}.decodeAs<JsonArray>()
@@ -1081,25 +1254,247 @@ class MobileWorkspaceViewModel @Inject constructor(
         if (mutable.value.resendSeconds>0) return
         operation { client.auth.resendEmail(OtpType.Email.SIGNUP,mutable.value.email);countdown();mutable.update { it.copy(message="Verification email requested. Check your inbox and spam folder.") } }
     }
-    fun resetEmail(email: String) = operation {
-        if(mutable.value.resendSeconds>0)return@operation
-        val changeOwner=mutable.value.passwordChangeOwner
-        if(changeOwner!=null) {
-            val user=client.auth.currentUserOrNull()
-            require(PasswordChangePolicy.current(mutable.value,user?.id) && email.equals(PasswordChangePolicy.target(user?.phone,user?.email),true))
-        }
-        val phone=MobileValidation.phone(email)
-        require(MobileValidation.email(email) || phone!=null)
-        if(phone!=null) client.auth.signInWith(OTP) {this.phone=phone;createUser=false}
-        else client.auth.resetPasswordForEmail(email.trim())
-        if(changeOwner!=null)check(PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
-        recoveryPhone=phone
-        val saved=saveChallenge("recover_code",phone?:email.trim())
-        countdown()
-        val requested=if(phone!=null)"If the account exists, a recovery SMS has been requested." else "If the account exists, a recovery email has been requested."
-        mutable.update { it.copy(page=if(changeOwner!=null)"workspace" else "recover_code",passwordChangeCodeSent=changeOwner!=null,email=email.trim(),message=requested+if(saved)"" else " Keep this screen open; recovery context could not be saved.") }
+    fun updatePasswordChangeEmail(email: String) {
+        val current = mutable.value
+        if (current.busy || current.passwordChangeOwner == null || current.passwordChangeCodeSent) return
+        mutable.update { it.copy(email = email, error = null, message = null) }
     }
-    fun recover(code: String,password: String,confirm: String) = operation {
+    fun resetEmail(email: String) {
+        if (GmailOtpPasswordRules.shouldUseGmailOtpBackend(email, BuildConfig.PASSWORD_API_BASE_URL)) {
+            sendOtp(email)
+            return
+        }
+        operation {
+            if(mutable.value.resendSeconds>0)return@operation
+            val changeOwner=mutable.value.passwordChangeOwner
+            if(changeOwner!=null) {
+                val user=client.auth.currentUserOrNull()
+                require(PasswordChangePolicy.current(mutable.value,user?.id) && email.equals(PasswordChangePolicy.target(user?.phone,user?.email),true))
+            }
+            val phone=MobileValidation.phone(email)
+            require(MobileValidation.email(email) || phone!=null)
+            if(phone!=null) client.auth.signInWith(OTP) {this.phone=phone;createUser=false}
+            else client.auth.resetPasswordForEmail(email.trim())
+            if(changeOwner!=null)check(PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
+            recoveryPhone=phone
+            val saved=saveChallenge("recover_code",phone?:email.trim())
+            countdown()
+            val requested=if(phone!=null)"If the account exists, a recovery SMS has been requested." else "If the account exists, a recovery email has been requested."
+            mutable.update { it.copy(page=if(changeOwner!=null)"workspace" else "recover_code",passwordChangeCodeSent=changeOwner!=null,email=email.trim(),message=requested+if(saved)"" else " Keep this screen open; recovery context could not be saved.") }
+        }
+    }
+
+    fun sendOtp(email: String = mutable.value.email) {
+        val current = mutable.value
+        val validationError = GmailOtpPasswordRules.validateSendOtp(
+            email = email,
+            resendCooldownSeconds = current.resendSeconds,
+            isBusy = current.busy
+        )
+        if (validationError != null) {
+            mutable.update { it.copy(error = validationError) }
+            return
+        }
+        if (current.page == "workspace" && current.offline) {
+            mutable.update { it.copy(error = "Reconnect and refresh before changing saved records.") }
+            return
+        }
+        val normalizedEmail = GmailOtpPasswordRules.normalizeEmail(email)
+        operation {
+            val changeOwner = mutable.value.passwordChangeOwner
+            if (changeOwner != null) {
+                val user = client.auth.currentUserOrNull()
+                val profileEmail = mutable.value.data?.obj("profile")?.value("email")
+                val customerEmail = mutable.value.data?.obj("customer")?.value("email")
+                val matchesAccount = normalizedEmail.equals(user?.email?.trim(), ignoreCase = true) ||
+                    normalizedEmail.equals(profileEmail?.trim(), ignoreCase = true) ||
+                    normalizedEmail.equals(customerEmail?.trim(), ignoreCase = true)
+                require(PasswordChangePolicy.current(mutable.value, user?.id) && (BuildConfig.DEBUG || matchesAccount))
+            }
+            val response = passwordResetRepository.sendOtp(normalizedEmail).getOrThrow()
+            if (changeOwner != null) {
+                check(PasswordChangePolicy.current(mutable.value, client.auth.currentUserOrNull()?.id))
+            }
+            recoveryPhone = null
+            val saved = saveChallenge("recover_code", normalizedEmail)
+            countdown(GmailOtpPasswordRules.RESEND_COOLDOWN_SECONDS)
+            val statusMessage = response.message.ifBlank {
+                "Verification code sent to your Gmail address."
+            } + if (saved) "" else " Keep this screen open; recovery context could not be saved."
+            mutable.update {
+                it.copy(
+                    page = if (changeOwner != null) "workspace" else "recover_code",
+                    passwordChangeCodeSent = changeOwner != null,
+                    email = normalizedEmail,
+                    message = statusMessage
+                )
+            }
+        }
+    }
+
+    fun verifyAndChangePassword(
+        otp: String,
+        newPassword: String,
+        confirmPassword: String,
+        email: String = mutable.value.email
+    ) {
+        val current = mutable.value
+        val validationError = GmailOtpPasswordRules.validateReset(
+            email = email,
+            otp = otp,
+            newPassword = newPassword,
+            confirmPassword = confirmPassword,
+            isBusy = current.busy
+        )
+        if (validationError != null) {
+            mutable.update { it.copy(error = validationError) }
+            return
+        }
+        if (current.page == "workspace" && current.offline) {
+            mutable.update { it.copy(error = "Reconnect and refresh before changing saved records.") }
+            return
+        }
+        val normalizedEmail = GmailOtpPasswordRules.normalizeEmail(email)
+        val trimmedOtp = otp.trim()
+        operation {
+            val changeOwner = mutable.value.passwordChangeOwner
+            if (changeOwner != null) {
+                check(
+                    mutable.value.passwordChangeCodeSent &&
+                        PasswordChangePolicy.current(mutable.value, client.auth.currentUserOrNull()?.id)
+                )
+            }
+            val response = passwordResetRepository.resetPassword(
+                email = normalizedEmail,
+                otp = trimmedOtp,
+                newPassword = newPassword
+            ).getOrThrow()
+            clearPasswordChallenge()
+            runCatching { client.auth.signOut() }
+            val successMessage = response.message.ifBlank {
+                "Password updated. Sign in with your new password."
+            }
+            mutable.update { MobileState(page = "login", message = successMessage) }
+        }
+    }
+    fun canVerifyRecoveryCode(raw: String): Boolean {
+        val host = runCatching { java.net.URI(BuildConfig.SUPABASE_URL).host }.getOrNull().orEmpty()
+        val useGmailOtp = recoveryPhone == null &&
+            GmailOtpPasswordRules.shouldUseGmailOtpBackend(mutable.value.email, BuildConfig.PASSWORD_API_BASE_URL)
+        return PasswordRecoveryRules.canVerifyRecoveryCode(
+            rawCode = raw,
+            target = mutable.value.email,
+            useGmailOtpBackend = useGmailOtp,
+            projectHost = host
+        )
+    }
+
+    fun verifyRecoveryCode(rawCode: String) {
+        val current = mutable.value
+        if (current.busy) return
+        val trimmedCode = rawCode.trim()
+        val host = runCatching { java.net.URI(BuildConfig.SUPABASE_URL).host }.getOrNull().orEmpty()
+        val phone = recoveryPhone ?: MobileValidation.phone(current.email)
+        val isDeepLinkOrToken = PasswordRecoveryRules.isRecoveryDeepLinkOrToken(trimmedCode, host)
+        val useGmailOtp = phone == null &&
+            !isDeepLinkOrToken &&
+            trimmedCode != "session" &&
+            GmailOtpPasswordRules.shouldUseGmailOtpBackend(current.email, BuildConfig.PASSWORD_API_BASE_URL)
+
+        if (!PasswordRecoveryRules.canVerifyRecoveryCode(trimmedCode, current.email, useGmailOtp, host)) {
+            mutable.update { it.copy(error = "Enter a valid verification code before setting a new password.") }
+            return
+        }
+
+        operation {
+            if (trimmedCode != "session") {
+                if (phone != null) {
+                    require(trimmedCode.matches(Regex("[0-9]{6,8}")))
+                    client.auth.verifyPhoneOtp(OtpType.Phone.SMS, phone, trimmedCode)
+                } else if (useGmailOtp) {
+                    val normalizedEmail = GmailOtpPasswordRules.normalizeEmail(current.email)
+                    passwordResetRepository.verifyOtp(normalizedEmail, trimmedCode).getOrThrow()
+                } else {
+                    when (val parsed = DeepLinkParser.parse(trimmedCode, host)) {
+                        is DeepLinkResult.Session -> {
+                            if (parsed.isRecovery) {
+                                client.auth.importAuthToken(parsed.accessToken, parsed.refreshToken, retrieveUser = true)
+                            } else {
+                                verifyEmail(trimmedCode, "recovery", OtpType.Email.RECOVERY)
+                            }
+                        }
+                        is DeepLinkResult.Code -> {
+                            client.auth.exchangeCodeForSession(parsed.code)
+                        }
+                        else -> verifyEmail(trimmedCode, "recovery", OtpType.Email.RECOVERY)
+                    }
+                }
+            }
+            recoveryStore.clear("challenge")
+            timer?.cancel()
+            mutable.update {
+                it.copy(
+                    page = PasswordRecoveryRules.PAGE_RESET_PASSWORD,
+                    recoveryCode = if (useGmailOtp) trimmedCode else "session",
+                    resendSeconds = 0,
+                    error = null,
+                    message = "Code verified. Create a new password for your account."
+                )
+            }
+        }
+    }
+
+    fun completePasswordRecovery(password: String, confirm: String) {
+        val current = mutable.value
+        val validationError = PasswordRecoveryRules.validateVerifiedPasswordUpdate(
+            password = password,
+            confirm = confirm,
+            isBusy = current.busy,
+            isOffline = current.offline
+        )
+        if (validationError != null) {
+            mutable.update { it.copy(error = validationError) }
+            return
+        }
+        val verifiedCode = current.recoveryCode.orEmpty()
+        val phone = recoveryPhone ?: MobileValidation.phone(current.email)
+        val useGmailOtp = phone == null &&
+            verifiedCode != "session" &&
+            GmailOtpPasswordRules.shouldUseGmailOtpBackend(current.email, BuildConfig.PASSWORD_API_BASE_URL)
+        operation {
+            if (useGmailOtp) {
+                val normalizedEmail = GmailOtpPasswordRules.normalizeEmail(current.email)
+                val response = passwordResetRepository.resetPassword(
+                    email = normalizedEmail,
+                    otp = verifiedCode,
+                    newPassword = password
+                ).getOrThrow()
+                clearPasswordChallenge()
+                runCatching { client.auth.signOut() }
+                loadedUser = null
+                val successMessage = response.message.ifBlank {
+                    "Password updated. Sign in with your new password."
+                }
+                mutable.update { MobileState(page = "login", message = successMessage) }
+            } else {
+                check(verifiedCode == "session" || client.auth.currentUserOrNull() != null) {
+                    "Verify your recovery code before updating your password."
+                }
+                client.auth.updateUser { this.password = password }
+                clearPasswordChallenge()
+                runCatching { client.auth.signOut() }
+                loadedUser = null
+                mutable.update { MobileState(page = "login", message = "Password updated. Sign in with your new password.") }
+            }
+        }
+    }
+
+    fun recover(code: String,password: String,confirm: String) {
+        if (recoveryPhone == null && GmailOtpPasswordRules.shouldUseGmailOtpBackend(mutable.value.email, BuildConfig.PASSWORD_API_BASE_URL)) {
+            verifyAndChangePassword(code, password, confirm, mutable.value.email)
+            return
+        }
+        operation {
         require(MobileValidation.password(password,confirm))
         val changeOwner=mutable.value.passwordChangeOwner
         if(changeOwner!=null)check(mutable.value.passwordChangeCodeSent && PasswordChangePolicy.current(mutable.value,client.auth.currentUserOrNull()?.id))
@@ -1132,6 +1527,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         clearPasswordChallenge()
         client.auth.signOut()
         mutable.update { MobileState(page="login",message="Password updated. Sign in with your new password.") }
+        }
     }
     fun handleDeepLink(rawUri: String) {
         val host = runCatching { java.net.URI(BuildConfig.SUPABASE_URL).host }.getOrNull().orEmpty()
@@ -1160,7 +1556,11 @@ class MobileWorkspaceViewModel @Inject constructor(
                             passwordChangeCodeSent = isOwnerChanging,
                             email = if (email.isNotBlank()) email else it.email,
                             recoveryCode = result.tokenHash,
-                            message = "Recovery link opened. Enter and confirm your new password."
+                            message = if (isOwnerChanging) {
+                                "Recovery link opened. Enter and confirm your new password."
+                            } else {
+                                "Recovery link opened. Verify your code to set a new password."
+                            }
                         )
                     }
                 } else if (result.type.equals("signup", ignoreCase = true)) {
@@ -1194,11 +1594,11 @@ class MobileWorkspaceViewModel @Inject constructor(
                             val email = client.auth.currentUserOrNull()?.email ?: result.email.orEmpty()
                             mutable.update {
                                 it.copy(
-                                    page = "recover_code",
+                                    page = PasswordRecoveryRules.PAGE_RESET_PASSWORD,
                                     passwordChangeCodeSent = false,
                                     email = if (email.isNotBlank()) email else it.email,
                                     recoveryCode = "session",
-                                    message = "Recovery link opened. Enter and confirm your new password."
+                                    message = "Recovery link verified. Enter and confirm your new password."
                                 )
                             }
                         } catch (e: Exception) {
@@ -1244,11 +1644,15 @@ class MobileWorkspaceViewModel @Inject constructor(
                             val email = client.auth.currentUserOrNull()?.email.orEmpty()
                             mutable.update {
                                 it.copy(
-                                    page = if (isOwnerChanging) "workspace" else "recover_code",
+                                    page = if (isOwnerChanging) "workspace" else PasswordRecoveryRules.PAGE_RESET_PASSWORD,
                                     passwordChangeCodeSent = isOwnerChanging,
                                     email = if (email.isNotBlank()) email else it.email,
                                     recoveryCode = "session",
-                                    message = "Recovery link opened. Enter and confirm your new password."
+                                    message = if (isOwnerChanging) {
+                                        "Recovery link opened. Enter and confirm your new password."
+                                    } else {
+                                        "Recovery link verified. Enter and confirm your new password."
+                                    }
                                 )
                             }
                         } catch (e: Exception) {
@@ -1558,7 +1962,7 @@ class MobileWorkspaceViewModel @Inject constructor(
         val customerStandingDeferred = async {
             try {
                 client.from("customers").select(
-                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("no_show_strike_count,booking_cooldown_until,standing_status,suspended_at,suspension_reason,reinstated_at")
+                    columns = io.github.jan.supabase.postgrest.query.Columns.raw("email,no_show_strike_count,booking_cooldown_until,standing_status,suspended_at,suspension_reason,reinstated_at")
                 ) {
                     filter { eq("user_id", userId) }
                     limit(1)

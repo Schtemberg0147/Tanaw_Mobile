@@ -120,7 +120,7 @@ class DriverPaymentRulesTest {
                             put("id", "pay-3")
                             put("shipment_id", shipmentId)
                             put("amount", "2500.00")
-                            put("method", "bank_transfer")
+                            put("method", "gcash")
                             put("status", "verified")
                             put("verified_at", "2026-11-20T02:20:00Z")
                         }
@@ -202,6 +202,24 @@ class DriverPaymentRulesTest {
             receiptBytes = validReceipt,
             notes = ""
         )
+
+        // Removed enum values are rejected
+        assertEquals(listOf(DriverPaymentMethod.CASH, DriverPaymentMethod.GCASH), DriverPaymentMethod.entries)
+        listOf("bank_transfer", "check", "other").forEach { removedMethod ->
+            assertFalse(DriverPaymentMethod.isValid(removedMethod))
+            assertTrue(
+                runCatching {
+                    DriverPaymentRules.validateSubmission(
+                        deliveryId = deliveryId,
+                        requestId = requestId,
+                        method = removedMethod,
+                        referenceNumber = "REF-123",
+                        receiptBytes = validReceipt,
+                        notes = ""
+                    )
+                }.isFailure
+            )
+        }
     }
 
     @Test

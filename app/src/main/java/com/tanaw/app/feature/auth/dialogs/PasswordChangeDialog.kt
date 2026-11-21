@@ -52,7 +52,8 @@ internal fun PasswordChangeDialog(
     cancel: () -> Unit,
     request: () -> Unit,
     canVerify: (String) -> Boolean,
-    update: (String, String, String) -> Unit
+    update: (String, String, String) -> Unit,
+    onEmailChange: ((String) -> Unit)? = null
 ) {
     var code by rememberSaveable(state.passwordChangeOwner, state.recoveryCode) {
         mutableStateOf(state.recoveryCode.orEmpty())
@@ -63,11 +64,13 @@ internal fun PasswordChangeDialog(
     var confirmVisible by rememberSaveable { mutableStateOf(false) }
 
     val sent = state.passwordChangeCodeSent
+    val canEditEmail = onEmailChange != null && !sent
     val focusManager = LocalFocusManager.current
+    val hasValidTarget = MobileValidation.email(state.email) || MobileValidation.phone(state.email) != null
     val canSubmit = !state.offline && if (sent) {
         canVerify(code) && MobileValidation.password(password, confirm)
     } else {
-        state.resendSeconds == 0
+        state.resendSeconds == 0 && (!canEditEmail || hasValidTarget)
     }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -110,8 +113,9 @@ internal fun PasswordChangeDialog(
 
         OutlinedTextField(
             value = state.email,
-            onValueChange = {},
-            readOnly = true,
+            onValueChange = { value -> if (canEditEmail && !state.busy) onEmailChange(value) },
+            readOnly = !canEditEmail,
+            enabled = !state.busy,
             label = { Text("Account phone number or email") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
