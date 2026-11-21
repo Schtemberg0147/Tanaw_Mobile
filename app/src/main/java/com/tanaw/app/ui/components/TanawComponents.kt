@@ -5,21 +5,22 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.ui.theme.TanawTheme
 
@@ -49,11 +50,16 @@ fun TanawTextField(
     trailingIcon: @Composable (() -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    isError: Boolean = false,
+    supportingText: @Composable (() -> Unit)? = null,
 ) {
     OutlinedTextField(
         value           = value,
         onValueChange   = onValueChange,
-        modifier        = modifier.fillMaxWidth(),
+        modifier        = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
         shape           = RoundedCornerShape(12.dp),
         placeholder     = {
             Text(
@@ -66,15 +72,28 @@ fun TanawTextField(
         trailingIcon         = trailingIcon,
         visualTransformation = visualTransformation,
         keyboardOptions      = keyboardOptions,
+        keyboardActions      = keyboardActions,
+        isError              = isError,
+        supportingText       = supportingText,
         singleLine           = true,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor      = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor    = MaterialTheme.colorScheme.outline,
-            focusedContainerColor   = MaterialTheme.colorScheme.surfaceContainerHigh,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            cursorColor             = MaterialTheme.colorScheme.primary,
-            focusedTextColor        = MaterialTheme.colorScheme.onSurface,
-            unfocusedTextColor      = MaterialTheme.colorScheme.onSurface,
+            focusedBorderColor         = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor       = MaterialTheme.colorScheme.outline,
+            focusedContainerColor      = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor    = MaterialTheme.colorScheme.surfaceContainerHigh,
+            cursorColor                = MaterialTheme.colorScheme.primary,
+            focusedTextColor           = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor         = MaterialTheme.colorScheme.onSurface,
+            focusedLeadingIconColor    = MaterialTheme.colorScheme.primary,
+            unfocusedLeadingIconColor  = MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedTrailingIconColor   = MaterialTheme.colorScheme.onSurfaceVariant,
+            unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            errorBorderColor           = MaterialTheme.colorScheme.error,
+            errorLeadingIconColor      = MaterialTheme.colorScheme.error,
+            errorTrailingIconColor     = MaterialTheme.colorScheme.onSurfaceVariant,
+            errorTextColor             = MaterialTheme.colorScheme.onSurface,
+            errorContainerColor        = MaterialTheme.colorScheme.surfaceContainerHigh,
+            errorSupportingTextColor   = MaterialTheme.colorScheme.error,
         )
     )
 }
@@ -86,31 +105,33 @@ fun TanawPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isLoading: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    shape: Shape = RoundedCornerShape(10.dp)
 ) {
     Button(
         onClick  = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp),
-        shape   = RoundedCornerShape(28.dp),
+            .heightIn(min = 52.dp),
+        shape   = shape,
         colors  = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor   = MaterialTheme.colorScheme.onPrimary
+            containerColor         = MaterialTheme.colorScheme.primary,
+            contentColor           = MaterialTheme.colorScheme.onPrimary,
+            disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+            disabledContentColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         ),
         enabled = enabled && !isLoading
     ) {
         if (isLoading) {
             CircularProgressIndicator(
                 color       = MaterialTheme.colorScheme.onPrimary,
-                modifier    = Modifier.size(22.dp),
+                modifier    = Modifier.size(20.dp),
                 strokeWidth = 2.dp
             )
         } else {
             Text(
                 text  = text,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimary
+                style = MaterialTheme.typography.labelLarge
             )
         }
     }
@@ -122,23 +143,54 @@ fun TanawOutlinedButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    shape: Shape = RoundedCornerShape(10.dp)
 ) {
     OutlinedButton(
         onClick  = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp),
-        shape   = RoundedCornerShape(28.dp),
-        border  = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+            .heightIn(min = 52.dp),
+        shape   = shape,
+        border  = BorderStroke(
+            1.5.dp,
+            if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+        ),
         colors  = ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.primary
+            contentColor         = MaterialTheme.colorScheme.primary,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         ),
         enabled = enabled
     ) {
         Text(
             text  = text,
             style = MaterialTheme.typography.labelLarge
+        )
+    }
+}
+
+// ─── Text Link ────────────────────────────────────────────────────────────────
+@Composable
+fun TanawTextLink(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.secondary,
+    fontWeight: FontWeight = FontWeight.SemiBold
+) {
+    Box(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text       = text,
+            color      = color,
+            style      = MaterialTheme.typography.labelMedium,
+            fontWeight = fontWeight
         )
     }
 }
@@ -157,9 +209,9 @@ fun OrDivider(modifier: Modifier = Modifier) {
             thickness = 1.dp
         )
         Text(
-            text  = "  OR  ",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
+            text       = "  OR  ",
+            color      = MaterialTheme.colorScheme.onSurfaceVariant,
+            style      = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium
         )
         HorizontalDivider(
@@ -189,7 +241,7 @@ fun SuccessBanner(
         Row(
             modifier          = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
@@ -203,17 +255,21 @@ fun SuccessBanner(
                 text     = message,
                 color    = extendedColors.onSuccessBannerText,
                 style    = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp)
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Image(
-                painter            = painterResource(id = R.drawable.ic_close),
-                contentDescription = "Dismiss",
-                modifier           = Modifier
-                    .size(16.dp)
-                    .clickable { onDismiss() },
-                colorFilter        = ColorFilter.tint(extendedColors.onSuccessBannerText)
-            )
+            IconButton(
+                onClick  = onDismiss,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    painter            = painterResource(id = R.drawable.ic_close),
+                    contentDescription = "Dismiss",
+                    tint               = extendedColors.onSuccessBannerText,
+                    modifier           = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -225,28 +281,60 @@ fun TermsFooter(
     onPrivacyClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val mutedColor  = MaterialTheme.colorScheme.onSurfaceVariant
-    val accentColor = MaterialTheme.colorScheme.secondary
-
-    val annotated = buildAnnotatedString {
-        withStyle(SpanStyle(color = mutedColor, fontSize = 11.sp)) {
-            append("By signing in you agree to our\n")
-        }
-        withStyle(SpanStyle(color = accentColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)) {
-            append("Terms of Service")
-        }
-        withStyle(SpanStyle(color = mutedColor, fontSize = 11.sp)) {
-            append(" and ")
-        }
-        withStyle(SpanStyle(color = accentColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)) {
-            append("Privacy Policy")
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text  = "Company policies",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = onTermsClick,
+                colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Text(
+                    text       = "Terms of Service",
+                    style      = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                text  = "and",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            TextButton(
+                onClick = onPrivacyClick,
+                colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Text(
+                    text       = "Privacy Policy",
+                    style      = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
+}
 
-    Text(
-        text       = annotated,
-        textAlign  = TextAlign.Center,
-        lineHeight = 18.sp,
-        modifier   = modifier
-    )
+@Preview(showBackground = true, name = "Tanaw Components")
+@Composable
+private fun TanawComponentsLightPreview() {
+    TanawTheme {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SuccessBanner(message = "Profile saved and verified.", onDismiss = {})
+            TanawInputLabel(text = "CONTACT NUMBER")
+            TanawTextField(
+                value = "",
+                onValueChange = {},
+                placeholder = "0912 345 6789"
+            )
+            TanawTextLink(text = "Forgot Password?", onClick = {})
+            TanawPrimaryButton(text = "Continue", onClick = {})
+            TanawOutlinedButton(text = "Create Account", onClick = {})
+        }
+    }
 }

@@ -1,9 +1,7 @@
 package com.tanaw.app.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -17,64 +15,73 @@ import androidx.core.view.WindowCompat
 @Immutable
 data class ExtendedColors(
     val successBannerBackground: Color,
-    val onSuccessBannerText: Color
+    val onSuccessBannerText: Color,
+    val warningContainer: Color = ExpiringOrangeBg,
+    val onWarningContainer: Color = ExpiringOrange,
+    val infoContainer: Color = OngoingBlueBg,
+    val onInfoContainer: Color = OngoingBlue,
+    val decorativeOrange: Color = DestinationOrange
 )
 
 val LocalExtendedColors = staticCompositionLocalOf {
     ExtendedColors(
         successBannerBackground = SuccessBannerBg,
-        onSuccessBannerText = SuccessGreen
+        onSuccessBannerText = SuccessGreen,
+        warningContainer = ExpiringOrangeBg,
+        onWarningContainer = ExpiringOrange,
+        infoContainer = OngoingBlueBg,
+        onInfoContainer = OngoingBlue,
+        decorativeOrange = DestinationOrange
     )
 }
 
 val LightColorScheme = lightColorScheme(
-    primary              = NavyPrimary,
-    onPrimary            = Color.White,
-    primaryContainer     = NavyPrimary,
-    onPrimaryContainer   = Color.White,
-    secondary            = OrangeAccent,
-    onSecondary          = Color.White,
-    secondaryContainer   = OrangeAccent.copy(alpha = 0.1f),
-    onSecondaryContainer = OrangeAccent,
-    background           = BackgroundGray,
-    onBackground         = TextDark,
-    surface              = Color.White,
-    onSurface            = TextDark,
-    surfaceContainerHigh = InputGray,
-    surfaceVariant       = BackgroundGray,
-    onSurfaceVariant     = HintGray,
-    outline              = BorderGray,
-    outlineVariant       = BorderGray
-)
-
-val DarkColorScheme = darkColorScheme(
-    primary              = NavyPrimaryDark,
-    onPrimary            = TextDark,
-    primaryContainer     = NavyPrimary,
-    onPrimaryContainer   = Color.White,
-    secondary            = OrangeAccentDark,
-    onSecondary          = TextDark,
-    secondaryContainer   = OrangeAccentDark.copy(alpha = 0.15f),
-    onSecondaryContainer = OrangeAccentDark,
-    background           = BackgroundDark,
-    onBackground         = TextLight,
-    surface              = SurfaceDark,
-    onSurface            = TextLight,
-    surfaceContainerHigh = InputDark,
-    surfaceVariant       = SurfaceDark,
-    onSurfaceVariant     = HintDark,
-    outline              = BorderDark,
-    outlineVariant       = BorderDark
+    primary                 = NavyPrimary,
+    onPrimary               = Color.White,
+    primaryContainer        = PrimaryContainerLight,
+    onPrimaryContainer      = NavyPrimary,
+    secondary               = ElectricBlueSecondary,
+    onSecondary             = Color.White,
+    secondaryContainer      = SecondaryContainerLight,
+    onSecondaryContainer    = OnSecondaryContainerBlue,
+    tertiary                = DestinationOrange,
+    onTertiary              = Color.White,
+    background              = BackgroundGray,
+    onBackground            = TextDark,
+    surface                 = Color.White,
+    onSurface               = TextDark,
+    surfaceContainerHigh    = InputGray,
+    surfaceContainerHighest = BorderGray,
+    surfaceVariant          = InputGray,
+    onSurfaceVariant        = HintGray,
+    outline                 = OutlineGray,
+    outlineVariant          = BorderGray,
+    error                   = ExpiredRed,
+    onError                 = Color.White,
+    errorContainer          = ExpiredRedBg,
+    onErrorContainer        = ExpiredRed
 )
 
 val ExtendedLightColors = ExtendedColors(
     successBannerBackground = SuccessBannerBg,
-    onSuccessBannerText     = SuccessGreen
+    onSuccessBannerText     = SuccessGreen,
+    warningContainer        = ExpiringOrangeBg,
+    onWarningContainer      = ExpiringOrange,
+    infoContainer           = OngoingBlueBg,
+    onInfoContainer         = OngoingBlue,
+    decorativeOrange        = DestinationOrange
 )
 
-val ExtendedDarkColors = ExtendedColors(
-    successBannerBackground = SuccessBannerBgDark,
-    onSuccessBannerText     = SuccessGreenDark
+val CustomerLightColorScheme = LightColorScheme
+
+val CustomerExtendedLightColors = ExtendedColors(
+    successBannerBackground = SuccessBannerBg,
+    onSuccessBannerText     = SuccessGreen,
+    warningContainer        = InputGray,
+    onWarningContainer      = TextDark,
+    infoContainer           = SecondaryContainerLight,
+    onInfoContainer         = OnSecondaryContainerBlue,
+    decorativeOrange        = DestinationOrange
 )
 
 object TanawTheme {
@@ -85,25 +92,52 @@ object TanawTheme {
 
 @Composable
 fun TanawTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val extendedColors = if (darkTheme) ExtendedDarkColors else ExtendedLightColors
-
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
             val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
+            insetsController.isAppearanceLightStatusBars = true
+            insetsController.isAppearanceLightNavigationBars = true
         }
     }
 
-    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+    val windowSize = rememberTanawWindowSize()
+    CompositionLocalProvider(
+        LocalExtendedColors provides ExtendedLightColors,
+        LocalTanawWindowSize provides windowSize
+    ) {
         MaterialTheme(
-            colorScheme = colorScheme,
+            colorScheme = LightColorScheme,
+            typography  = Typography,
+            content     = content
+        )
+    }
+}
+
+@Composable
+fun TanawCustomerTheme(
+    content: @Composable () -> Unit
+) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = true
+            insetsController.isAppearanceLightNavigationBars = true
+        }
+    }
+
+    val windowSize = rememberTanawWindowSize()
+    CompositionLocalProvider(
+        LocalExtendedColors provides CustomerExtendedLightColors,
+        LocalTanawWindowSize provides windowSize
+    ) {
+        MaterialTheme(
+            colorScheme = CustomerLightColorScheme,
             typography  = Typography,
             content     = content
         )

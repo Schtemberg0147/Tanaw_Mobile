@@ -1,0 +1,808 @@
+package com.tanaw.app.feature.auth.screens
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tanaw.app.R
+import com.tanaw.app.core.validation.MobileValidation
+import com.tanaw.app.feature.auth.components.GoogleSignInButton
+import com.tanaw.app.feature.workspace.customer.components.AddressQuickAssistBar
+import com.tanaw.app.feature.workspace.customer.components.CitySuggestionStrip
+import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
+import com.tanaw.app.ui.components.*
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
+import com.tanaw.app.ui.theme.TanawDisplayFontFamily
+import com.tanaw.app.ui.theme.TanawTheme
+
+enum class PasswordStrength(val label: String) {
+    EMPTY(""),
+    WEAK("WEAK"),
+    FAIR("FAIR"),
+    STRONG("STRONG")
+}
+
+typealias PasswordStrengthLevel = PasswordStrength
+
+@Composable
+fun passwordStrengthColor(level: PasswordStrength): Color {
+    val extendedColors = TanawTheme.extendedColors
+    return when (level) {
+        PasswordStrength.EMPTY  -> Color.Transparent
+        PasswordStrength.WEAK   -> MaterialTheme.colorScheme.error
+        PasswordStrength.FAIR   -> MaterialTheme.colorScheme.secondary
+        PasswordStrength.STRONG -> extendedColors.onSuccessBannerText
+    }
+}
+
+fun evaluatePasswordStrength(password: String): PasswordStrength {
+    if (password.isEmpty()) return PasswordStrength.EMPTY
+    var score = 0
+    if (password.length >= 8) score++
+    if (password.any { it.isUpperCase() }) score++
+    if (password.any { it.isDigit() }) score++
+    if (password.any { !it.isLetterOrDigit() }) score++
+    return when {
+        score <= 1 -> PasswordStrength.WEAK
+        score <= 2 -> PasswordStrength.FAIR
+        else       -> PasswordStrength.STRONG
+    }
+}
+
+@Composable
+internal fun PasswordStrengthChecklist(
+    password: String,
+    modifier: Modifier = Modifier
+) {
+    val passwordStrength = evaluatePasswordStrength(password)
+    val filledSegments = when (passwordStrength) {
+        PasswordStrength.EMPTY  -> 0
+        PasswordStrength.WEAK   -> 1
+        PasswordStrength.FAIR   -> 2
+        PasswordStrength.STRONG -> 3
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (passwordStrength != PasswordStrengthLevel.EMPTY) {
+            val strengthColor = passwordStrengthColor(passwordStrength)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    repeat(3) { idx ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(
+                                    if (idx < filledSegments) strengthColor
+                                    else MaterialTheme.colorScheme.outlineVariant
+                                )
+                        )
+                    }
+                }
+                Text(
+                    text = passwordStrength.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = strengthColor
+                )
+            }
+        }
+
+        val criteriaMet = listOf(
+            "8+ chars" to (password.length >= 8),
+            "Uppercase" to password.any { it.isUpperCase() },
+            "Number" to password.any { it.isDigit() },
+            "Symbol" to password.any { !it.isLetterOrDigit() }
+        )
+        Text(
+            text = criteriaMet.joinToString(" · ") { (label, met) ->
+                if (met) "✓ $label" else label
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+@Composable
+fun CreateAccountScreen(
+    onVerifyAndContinue: (
+        firstName: String,
+        lastName: String,
+        contactNumber: String,
+        email: String,
+        password: String,
+        address: String
+    ) -> Unit,
+    onSignIn: () -> Unit,
+    onTermsClick: () -> Unit = {},
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    onGoogleSignIn: (() -> Unit)? = null,
+    phoneSignup: Boolean = false,
+) {
+    var firstName       by rememberSaveable { mutableStateOf("") }
+    var lastName        by rememberSaveable { mutableStateOf("") }
+    var contactNumber   by rememberSaveable { mutableStateOf("") }
+    var email           by rememberSaveable { mutableStateOf("") }
+    var address         by rememberSaveable { mutableStateOf("") }
+    var streetAddress   by rememberSaveable { mutableStateOf("") }
+    var barangay        by rememberSaveable { mutableStateOf("") }
+    var city            by rememberSaveable { mutableStateOf("") }
+    var province        by rememberSaveable { mutableStateOf(CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION) }
+    var password        by rememberSaveable { mutableStateOf("") }
+    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    var passwordVisible        by rememberSaveable { mutableStateOf(false) }
+    var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
+    var agreedToTerms   by rememberSaveable { mutableStateOf(false) }
+
+    val passwordMismatch = confirmPassword.isNotEmpty() && password != confirmPassword
+    val addressValid = !phoneSignup || (streetAddress.isNotBlank() && city.isNotBlank() && CustomerAddressRules.isValidAddress(streetAddress, barangay, city, province))
+    val canSubmit = firstName.isNotBlank()
+            && lastName.isNotBlank()
+            && MobileValidation.phone(contactNumber) != null
+            && MobileValidation.email(email)
+            && addressValid
+            && password.isNotBlank()
+            && confirmPassword.isNotEmpty()
+            && password.length >= 8
+            && !passwordMismatch
+            && agreedToTerms
+            && !isLoading
+
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    val windowSize = LocalTanawWindowSize.current
+    val horizontalPad = if (windowSize.isNarrowPhone) 16.dp else 24.dp
+
+    fun submitForm() {
+        focusManager.clearFocus()
+        val finalAddress = if (phoneSignup) {
+            val (pAddress, pCity) = CustomerAddressRules.formatForRpc(
+                street   = streetAddress.trim(),
+                barangay = barangay.trim(),
+                city     = city.trim(),
+                province = province.trim()
+            )
+            if (pCity.isNotBlank()) "$pAddress, $pCity" else pAddress
+        } else {
+            address.trim()
+        }
+        onVerifyAndContinue(
+            firstName.trim(),
+            lastName.trim(),
+            contactNumber.trim(),
+            email.trim(),
+            password,
+            finalAddress
+        )
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color    = MaterialTheme.colorScheme.background
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = horizontalPad),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Image(
+                painter            = painterResource(id = R.drawable.ic_tanaw_logo),
+                contentDescription = "TANAW logo",
+                modifier           = Modifier.size(48.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text  = "Create Account",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Google Sign In (Optional) ────────────────────────────────
+            onGoogleSignIn?.let { GoogleSignInButton(!isLoading, it) }
+
+            // ── Section 1: Account Details ───────────────────────────────
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Account Details",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // First and Last Name (collapses vertically on narrow / scaled screens)
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val stackNames = maxWidth < 330.dp || density.fontScale > 1.3f
+                        if (stackNames) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                TanawInputLabel(text = "FIRST NAME")
+                                Spacer(modifier = Modifier.height(6.dp))
+                                TanawTextField(
+                                    value           = firstName,
+                                    onValueChange   = { firstName = it },
+                                    placeholder     = "Juan",
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                TanawInputLabel(text = "LAST NAME")
+                                Spacer(modifier = Modifier.height(6.dp))
+                                TanawTextField(
+                                    value           = lastName,
+                                    onValueChange   = { lastName = it },
+                                    placeholder     = "Dela Cruz",
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                                )
+                            }
+                        } else {
+                            Row(
+                                modifier              = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    TanawInputLabel(text = "FIRST NAME")
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    TanawTextField(
+                                        value           = firstName,
+                                        onValueChange   = { firstName = it },
+                                        placeholder     = "Juan",
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    TanawInputLabel(text = "LAST NAME")
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    TanawTextField(
+                                        value           = lastName,
+                                        onValueChange   = { lastName = it },
+                                        placeholder     = "Dela Cruz",
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Contact Number
+                    TanawInputLabel(text = "CONTACT NUMBER")
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val contactInvalid = contactNumber.isNotBlank() && MobileValidation.phone(contactNumber) == null
+                    TanawTextField(
+                        value           = contactNumber,
+                        onValueChange   = { contactNumber = it },
+                        placeholder     = "0912 345 6789",
+                        leadingIcon     = {
+                            Icon(
+                                imageVector        = Icons.Outlined.Phone,
+                                contentDescription = null,
+                                modifier           = Modifier.size(20.dp)
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        isError         = contactInvalid,
+                        supportingText  = if (contactInvalid) {
+                            {
+                                Text(
+                                    text  = "Enter a Philippine mobile number, e.g. 0912 345 6789.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        } else null,
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Email Address
+                    TanawInputLabel(text = "EMAIL ADDRESS")
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val emailInvalid = email.isNotBlank() && !MobileValidation.email(email)
+                    TanawTextField(
+                        value           = email,
+                        onValueChange   = { email = it },
+                        placeholder     = "juandelacruz@gmail.com",
+                        leadingIcon     = {
+                            Icon(
+                                imageVector        = Icons.Outlined.Email,
+                                contentDescription = null,
+                                modifier           = Modifier.size(20.dp)
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        isError         = emailInvalid,
+                        supportingText  = if (emailInvalid) {
+                            {
+                                Text(
+                                    text  = "Enter a valid email address.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        } else null,
+                    )
+
+                    if (phoneSignup) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text     = "For your customer details only. Verification and account messages use SMS.",
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            if (phoneSignup) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // ── Section 2: Default Pickup Address (Assisted) ─────────
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "Default Pickup Address",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontFamily = TanawDisplayFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Autofill using GPS, pick on the map, or search below.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val addressPreview = CustomerAddressRules.StructuredCustomerAddress(
+                            streetAddress = streetAddress,
+                            barangay = barangay,
+                            city = city,
+                            province = province
+                        ).fullDisplayAddress()
+
+                        AddressQuickAssistBar(
+                            currentAddressSummary = addressPreview,
+                            enabled = !isLoading,
+                            onAddressAutofilled = { resolved ->
+                                if (resolved.streetAddress.isNotBlank()) streetAddress = resolved.streetAddress
+                                if (resolved.barangay.isNotBlank()) barangay = resolved.barangay
+                                if (resolved.city.isNotBlank()) city = resolved.city
+                                if (resolved.province.isNotBlank()) province = resolved.province
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        TanawInputLabel(text = "STREET / BUILDING ADDRESS")
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val streetInvalid = streetAddress.isNotBlank() && !CustomerAddressRules.validateStreet(streetAddress)
+                        TanawTextField(
+                            value           = streetAddress,
+                            onValueChange   = { streetAddress = it },
+                            placeholder     = "House/building number, street name",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                            isError         = streetInvalid,
+                            supportingText  = if (streetInvalid) {
+                                { Text("Use 380 characters or fewer.", style = MaterialTheme.typography.bodySmall) }
+                            } else null,
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TanawInputLabel(text = "BARANGAY")
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val brgyInvalid = barangay.isNotBlank() && !CustomerAddressRules.validateBarangay(barangay)
+                        TanawTextField(
+                            value           = barangay,
+                            onValueChange   = { barangay = it },
+                            placeholder     = "e.g. San Josef Sur",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                            isError         = brgyInvalid,
+                            supportingText  = if (brgyInvalid) {
+                                { Text("Use 100 characters or fewer.", style = MaterialTheme.typography.bodySmall) }
+                            } else null,
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TanawInputLabel(text = "CITY / MUNICIPALITY")
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val cityInvalid = city.isNotBlank() && !CustomerAddressRules.validateCity(city)
+                        TanawTextField(
+                            value           = city,
+                            onValueChange   = { city = it },
+                            placeholder     = "e.g. Cabanatuan City",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                            isError         = cityInvalid,
+                            supportingText  = if (cityInvalid) {
+                                { Text("Use 60 characters or fewer.", style = MaterialTheme.typography.bodySmall) }
+                            } else null,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        CitySuggestionStrip(
+                            cityQuery = city,
+                            enabled = !isLoading,
+                            onSelectCity = { suggestion ->
+                                city = suggestion.city
+                                province = suggestion.province
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TanawInputLabel(text = "PROVINCE")
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val provInvalid = province.isNotBlank() && !CustomerAddressRules.validateProvince(province)
+                        TanawTextField(
+                            value           = province,
+                            onValueChange   = { province = it },
+                            placeholder     = "e.g. Nueva Ecija",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                            isError         = provInvalid,
+                            supportingText  = if (provInvalid) {
+                                { Text("Use 35 characters or fewer.", style = MaterialTheme.typography.bodySmall) }
+                            } else null,
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text     = "We will text a verification code to your contact number.",
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── Section 3: Password & Security ───────────────────────────
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Password & Security",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = TanawDisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Password
+                    TanawInputLabel(text = "PASSWORD")
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val passwordTooShort = password.isNotEmpty() && password.length < 8
+                    TanawTextField(
+                        value           = password,
+                        onValueChange   = { password = it },
+                        placeholder     = "••••••••",
+                        leadingIcon     = {
+                            Icon(
+                                imageVector        = Icons.Outlined.Lock,
+                                contentDescription = null,
+                                modifier           = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon    = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector        = if (passwordVisible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    modifier           = Modifier.size(20.dp)
+                                )
+                            }
+                        },
+                        visualTransformation = if (passwordVisible)
+                            VisualTransformation.None
+                        else
+                            PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        isError         = passwordTooShort,
+                        supportingText  = if (passwordTooShort) {
+                            { Text("Password must be at least 8 characters.", style = MaterialTheme.typography.bodySmall) }
+                        } else null,
+                    )
+
+                    PasswordStrengthChecklist(password = password)
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Confirm Password
+                    TanawInputLabel(text = "CONFIRM PASSWORD")
+                    Spacer(modifier = Modifier.height(6.dp))
+                    TanawTextField(
+                        value           = confirmPassword,
+                        onValueChange   = { confirmPassword = it },
+                        placeholder     = "••••••••",
+                        leadingIcon     = {
+                            Icon(
+                                imageVector        = Icons.Outlined.Lock,
+                                contentDescription = null,
+                                modifier           = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon    = {
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector        = if (confirmPasswordVisible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                                    contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password",
+                                    modifier           = Modifier.size(20.dp)
+                                )
+                            }
+                        },
+                        visualTransformation = if (confirmPasswordVisible)
+                            VisualTransformation.None
+                        else
+                            PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            focusManager.clearFocus()
+                            if (canSubmit) submitForm()
+                        }),
+                        isError        = passwordMismatch,
+                        supportingText = if (passwordMismatch) {
+                            { Text("Passwords do not match", style = MaterialTheme.typography.bodySmall) }
+                        } else null,
+                    )
+                }
+            }
+
+            if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    color    = MaterialTheme.colorScheme.errorContainer,
+                    shape    = RoundedCornerShape(10.dp),
+                    border   = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector        = Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier           = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text  = errorMessage,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Terms and Conditions ─────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .toggleable(
+                        value         = agreedToTerms,
+                        role          = Role.Checkbox,
+                        onValueChange = { agreedToTerms = it }
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked         = agreedToTerms,
+                    onCheckedChange = null,
+                    colors          = CheckboxDefaults.colors(
+                        checkedColor   = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.outline
+                    ),
+                    modifier = Modifier.minimumInteractiveComponentSize()
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                val termsText = buildAnnotatedString {
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onBackground, fontSize = 12.sp)) {
+                        append("I agree to Tanaw's ")
+                    }
+                    pushStringAnnotation(tag = "TERMS", annotation = "terms")
+                    withStyle(
+                        SpanStyle(
+                            color      = MaterialTheme.colorScheme.secondary,
+                            fontSize   = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    ) {
+                        append("Terms of Service")
+                    }
+                    pop()
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onBackground, fontSize = 12.sp)) {
+                        append(" and confirm all booking information I provide is accurate.")
+                    }
+                }
+                @Suppress("DEPRECATION")
+                ClickableText(
+                    text     = termsText,
+                    style    = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    modifier = Modifier.weight(1f),
+                    onClick  = { offset ->
+                        val clickedTerms = termsText.getStringAnnotations(tag = "TERMS", start = offset, end = offset).isNotEmpty()
+                        if (clickedTerms) {
+                            onTermsClick()
+                        } else {
+                            agreedToTerms = !agreedToTerms
+                        }
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Primary Action Button ────────────────────────────────────
+            TanawPrimaryButton(
+                text      = "Verify & Continue",
+                onClick   = ::submitForm,
+                isLoading = isLoading,
+                enabled   = canSubmit
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── Footer ───────────────────────────────────────────────────
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Text(
+                    text  = "Already have an account? ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TanawTextLink(
+                    text       = "Sign-in",
+                    onClick    = onSignIn,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier   = Modifier
+                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                        .wrapContentHeight(Alignment.CenterVertically)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
+// ─── Previews ─────────────────────────────────────────────────────────────────
+@Preview(showBackground = true, name = "Create Account")
+@Composable
+fun CreateAccountScreenLightPreview() {
+    TanawTheme {
+        CreateAccountScreen(
+            onVerifyAndContinue = { _, _, _, _, _, _ -> },
+            onSignIn            = {},
+            onTermsClick        = {}
+        )
+    }
+}
+
+@FormFactorPreviews
+@Composable
+fun CreateAccountPhoneSignupLightPreview() {
+    TanawTheme {
+        CreateAccountScreen(
+            onVerifyAndContinue = { _, _, _, _, _, _ -> },
+            onSignIn            = {},
+            onTermsClick        = {},
+            phoneSignup         = true
+        )
+    }
+}

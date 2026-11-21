@@ -1,0 +1,267 @@
+package com.tanaw.app.core.error
+
+import io.github.jan.supabase.auth.exception.AuthRestException
+import io.github.jan.supabase.exceptions.HttpRequestException
+import io.github.jan.supabase.exceptions.RestException
+import io.github.jan.supabase.exceptions.UnauthorizedRestException
+import io.github.jan.supabase.postgrest.exception.PostgrestRestException
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.serialization.SerializationException
+import java.io.EOFException
+import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.PortUnreachableException
+import java.net.ProtocolException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
+
+enum class ErrorCategory {
+    NETWORK,
+    AUTH,
+    CONTRACT,
+    VALIDATION,
+    UNKNOWN
+}
+
+object MobileErrorClassifier {
+
+    private val HTTP_AUTH_ERROR_REGEX = Regex("""\b(?:HTTP\s+|status(?:\s+code)?[:\s]+)?(401|403)\b""", RegexOption.IGNORE_CASE)
+    private val HTTP_SERVER_ERROR_REGEX = Regex("""\b(?:HTTP\s+|status(?:\s+code)?[:\s]+)?(500|502|503|504)\b""", RegexOption.IGNORE_CASE)
+
+    fun isNetworkError(error: Throwable?): Boolean {
+        if (error == null) return false
+        var current: Throwable? = error
+        while (current != null) {
+            when (current) {
+                is UnknownHostException,
+                is SocketTimeoutException,
+                is ConnectException,
+                is NoRouteToHostException,
+                is PortUnreachableException,
+                is SocketException,
+                is SSLException,
+                is EOFException,
+                is ProtocolException,
+                is HttpRequestException,
+                is HttpRequestTimeoutException,
+                is TimeoutCancellationException -> return true
+                is IOException -> {
+                    val msg = current.message.orEmpty()
+                    if (containsNetworkHint(msg)) return true
+                }
+            }
+            val className = current.javaClass.name
+            if (className.contains("HttpRequestException") ||
+                className.contains("SocketTimeoutException") ||
+                className.contains("ConnectTimeoutException") ||
+                className.contains("HttpRequestTimeoutException")
+            ) {
+                return true
+            }
+            if (current is IOException && containsNetworkHint(current.message.orEmpty())) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    fun isAuthError(error: Throwable?): Boolean {
+        if (error == null || error is SerializationException) return false
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is UnauthorizedRestException) return true
+            if (current is AuthRestException) return true
+            if (current is RestException) {
+                if (current.statusCode in listOf(401, 403)) return true
+                if (current is PostgrestRestException && current.code == "PGRST301") return true
+            }
+            val msg = current.message.orEmpty()
+            if (msg.contains("ACTIVE_") ||
+                msg.contains("JWT", ignoreCase = true) ||
+                msg.contains("PGRST301") ||
+                HTTP_AUTH_ERROR_REGEX.containsMatchIn(msg) ||
+                msg.contains("unauthorized", ignoreCase = true) ||
+                msg.contains("invalid_credentials", ignoreCase = true) ||
+                msg.contains("Invalid login", ignoreCase = true) ||
+                msg.contains("invalid_token", ignoreCase = true) ||
+                msg.contains("token is expired", ignoreCase = true) ||
+                msg.contains("token has expired", ignoreCase = true) ||
+                msg.contains("expired token", ignoreCase = true) ||
+                msg.contains("otp_expired", ignoreCase = true) ||
+                msg.contains("otp_disabled", ignoreCase = true) ||
+                MobileAuthErrors.message(msg) != null
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    fun isContractError(error: Throwable?): Boolean {
+        if (error == null) return false
+        if (isBusinessOrValidationError(error)) return false
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is SerializationException) return true
+            if (current is RestException) {
+                if (current.statusCode in 500..599) return true
+                if (current is PostgrestRestException && current.code in listOf("PGRST200", "PGRST202")) return true
+            }
+            val msg = current.message.orEmpty()
+            if (HTTP_SERVER_ERROR_REGEX.containsMatchIn(msg) ||
+                msg.contains("Internal Server Error", ignoreCase = true) ||
+                msg.contains("Bad Gateway", ignoreCase = true) ||
+                msg.contains("Service Unavailable", ignoreCase = true) ||
+                msg.contains("Gateway Timeout", ignoreCase = true) ||
+                msg.contains("PGRST202") || // Function not found
+                msg.contains("PGRST200") // Ambiguous function
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    fun classify(error: Throwable?): ErrorCategory {
+        if (error == null) return ErrorCategory.UNKNOWN
+        return when {
+            isNetworkError(error) -> ErrorCategory.NETWORK
+            isContractError(error) -> ErrorCategory.CONTRACT
+            isAuthError(error) -> ErrorCategory.AUTH
+            error is IllegalArgumentException || error is IllegalStateException -> ErrorCategory.VALIDATION
+            else -> ErrorCategory.UNKNOWN
+        }
+    }
+
+    fun friendlyMessage(error: Throwable): String {
+        if (isNetworkError(error)) {
+            return "Connection issue. Check your network connection and tap Refresh to retry."
+        }
+        if (isContractError(error)) {
+            return "Service temporarily unavailable. Please try again later or contact the office."
+        }
+        val detail = error.message.orEmpty()
+        if (detail.contains("phone_exists", ignoreCase = true) ||
+            detail.contains("phone_already_exists", ignoreCase = true) ||
+            detail.contains("phone number is already registered", ignoreCase = true)
+        ) {
+            return "This phone number is already registered to another account."
+        }
+        MobileAuthErrors.message(detail)?.let { return it }
+
+        return when {
+            detail.contains("ACTIVE_") -> "This account is inactive or does not have access. Contact the office."
+            detail.contains("Invalid login", ignoreCase = true) || detail.contains("invalid_credentials", ignoreCase = true) -> "Email or password is incorrect."
+            detail.contains("email_not_confirmed", ignoreCase = true) -> "Verify your email before signing in."
+            detail.contains("CAPACITY_EXCEEDED") -> "Cargo exceeds registered vehicle capacity. Choose another type or contact the office."
+            detail.contains("MIN_LEAD_TIME") || detail.contains("LEAD_TIME_VIOLATION") -> "Selected pick-up does not meet the required advance booking lead time for this truck."
+            detail.contains("ADVANCE_WINDOW_EXCEEDED") -> "Pick-up date must be within the next 14 days."
+            detail.contains("INVALID_DEPARTURE") -> "Choose a valid future pick-up date and time within the allowed booking window."
+            detail.contains("QUOTE_EXPIRED") -> "This quotation has expired. Contact the office for a new quote."
+            detail.contains("QUOTE_NOT_AVAILABLE") -> "Quotation is not ready yet. Please check back soon."
+            detail.contains("ALREADY_ACCEPTED") -> "This quotation has already been confirmed."
+            detail.contains("REQUEST_ALREADY_SAVED_REFRESH") -> "This request was already saved. Refresh Active shipments before making another request."
+            detail.contains("CUSTOMER_PROFILE_REQUIRED") -> "Your customer profile needs office attention before booking."
+            detail.contains("rate", ignoreCase = true) || detail.contains("429") -> "Too many requests. Please wait before trying again."
+            detail.contains("otp", ignoreCase = true) || detail.contains("invalid_token", ignoreCase = true) || detail.contains("PGRST301") ->
+                "The code is invalid or your session expired. Request another code or sign in again."
+            detail.contains("OUTSIDE_OPERATING_HOURS") -> "This action is only available during operating hours."
+            detail.contains("ARRIVAL_TOO_FAR") -> "Move within the pickup arrival radius and use a fresh accurate location."
+            detail.contains("WAIT_PERIOD_NOT_FINISHED") -> "The pickup waiting period has not finished. The office decides any cancellation."
+            detail.contains("DELIVERY_CLOSED") -> "This delivery has closed. Refresh its current status."
+            detail.contains("DRIVER_ALREADY_EN_ROUTE") -> "Cannot cancel shipment because the driver is already on the way."
+            detail.contains("CANCELLATION_REASON_REQUIRED") -> "Please enter a valid cancellation reason."
+            detail.contains("SHIPMENT_NOT_CANCELLABLE") -> "This shipment can no longer be cancelled. Contact the office for assistance."
+            detail.contains("SHIPMENT_NOT_FOUND") -> "Shipment not found. Refresh your active shipments and try again."
+            detail.contains("PAYMENT_VERIFICATION_REQUIRED") -> "Full payment must be verified by the office before starting transit."
+            detail.contains("PAYMENT_ALREADY_PENDING") -> "A payment submission is already awaiting office verification. Tap Refresh to check its status."
+            detail.contains("PAYMENT_ALREADY_PAID") -> "Full payment for this shipment is already verified. Refresh to unlock transit."
+            detail.contains("FINAL_AMOUNT_REQUIRED") -> "Final shipment charge has not been set by the office yet. Contact dispatch."
+            detail.contains("PAYMENT_PROOF_REQUIRED") -> "Attach a clear photo of the customer-signed receipt before submitting."
+            detail.contains("PAYMENT_REFERENCE_REQUIRED") -> "Enter the transaction reference number for this payment method."
+            detail.contains("INVALID_PAYMENT_STATE") -> "Payment can only be recorded while the trip is in loading status."
+            detail.contains("ACCOUNT_SUSPENDED") -> "Your account is permanently suspended due to confirmed no-shows. Submit an appeal for office review."
+            detail.contains("BOOKING_COOLDOWN_ACTIVE") -> "Booking is temporarily paused due to a recent no-show strike. Please try again after your cooldown ends."
+            detail.contains("NOT_IN_GRACE_WINDOW") -> "Driver notification is only available while the driver is waiting at pick-up."
+            detail.contains("APPEAL_REASON_REQUIRED") -> "Please provide a detailed explanation (at least 10 characters) for your appeal."
+            detail.contains("APPEAL_ALREADY_PENDING") -> "You already have a suspension appeal under review."
+            detail.contains("ACCOUNT_NOT_SUSPENDED") -> "Your account is no longer suspended. Refresh to return to your workspace."
+            detail.contains("INVALID_") || error is IllegalArgumentException -> "Check the entered details and try again."
+            isAuthError(error) -> "Your session could not be verified. Sign in again to verify access."
+            else -> "Unable to complete the request. Check your connection, refresh and try again."
+        }
+    }
+
+    private fun isBusinessOrValidationError(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            val msg = current.message.orEmpty()
+            if (msg.contains("ARRIVAL_TOO_FAR") ||
+                msg.contains("CAPACITY_EXCEEDED") ||
+                msg.contains("MIN_LEAD_TIME") ||
+                msg.contains("LEAD_TIME_VIOLATION") ||
+                msg.contains("ADVANCE_WINDOW_EXCEEDED") ||
+                msg.contains("INVALID_DEPARTURE") ||
+                msg.contains("QUOTE_EXPIRED") ||
+                msg.contains("QUOTE_NOT_AVAILABLE") ||
+                msg.contains("ALREADY_ACCEPTED") ||
+                msg.contains("REQUEST_ALREADY_SAVED_REFRESH") ||
+                msg.contains("CUSTOMER_PROFILE_REQUIRED") ||
+                msg.contains("OUTSIDE_OPERATING_HOURS") ||
+                msg.contains("WAIT_PERIOD_NOT_FINISHED") ||
+                msg.contains("DELIVERY_CLOSED") ||
+                msg.contains("PAYMENT_VERIFICATION_REQUIRED") ||
+                msg.contains("PAYMENT_ALREADY_PENDING") ||
+                msg.contains("PAYMENT_ALREADY_PAID") ||
+                msg.contains("FINAL_AMOUNT_REQUIRED") ||
+                msg.contains("PAYMENT_PROOF_REQUIRED") ||
+                msg.contains("PAYMENT_REFERENCE_REQUIRED") ||
+                msg.contains("INVALID_PAYMENT_STATE") ||
+                msg.contains("ACCOUNT_SUSPENDED") ||
+                msg.contains("BOOKING_COOLDOWN_ACTIVE") ||
+                msg.contains("NOT_IN_GRACE_WINDOW") ||
+                msg.contains("APPEAL_REASON_REQUIRED") ||
+                msg.contains("APPEAL_ALREADY_PENDING") ||
+                msg.contains("ACCOUNT_NOT_SUSPENDED") ||
+                msg.contains("INVALID_CONTACT") ||
+                msg.contains("INVALID_PHONE") ||
+                msg.contains("ACTIVE_ACCOUNT_REQUIRED") ||
+                msg.contains("ACTIVE_DRIVER_REQUIRED")
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
+    private fun containsNetworkHint(msg: String): Boolean {
+        if (msg.isBlank()) return false
+        val lower = msg.lowercase()
+        if (lower.contains("statement timeout") || lower.contains("canceling statement")) return false
+        return lower.contains("unable to resolve host") ||
+                lower.contains("failed to connect") ||
+                lower.contains("connection refused") ||
+                lower.contains("network is unreachable") ||
+                lower.contains("connection reset") ||
+                lower.contains("broken pipe") ||
+                lower.contains("software caused connection abort") ||
+                lower.contains("connect timed out") ||
+                lower.contains("connection timed out") ||
+                lower.contains("read timed out") ||
+                lower.contains("socket timed out") ||
+                lower.contains("request timed out") ||
+                lower.contains("network timeout") ||
+                lower.contains("timed out") ||
+                lower.contains("unexpected end of stream") ||
+                lower.contains("stream was reset") ||
+                lower.contains("connection shutdown") ||
+                lower.contains("\\n not found") ||
+                lower.contains("no address associated with hostname")
+    }
+}
