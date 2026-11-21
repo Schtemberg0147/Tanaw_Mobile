@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -69,6 +71,7 @@ import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.rows
 import com.tanaw.app.feature.workspace.viewmodel.value
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -91,8 +94,8 @@ internal fun CustomerProfile(
 ) {
     var panel by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(panel) { onSubPanelChanged(panel != null) }
-    var linkError by remember { mutableStateOf(false) }
-    var infoDialog by remember { mutableStateOf<String?>(null) }
+    var linkError by rememberSaveable { mutableStateOf(false) }
+    var infoDialog by rememberSaveable { mutableStateOf<String?>(null) }
     var showPhotoSheet by rememberSaveable { mutableStateOf(false) }
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     val uri = LocalUriHandler.current
@@ -179,14 +182,14 @@ internal fun CustomerProfile(
         }
     }
 
-    var editingFieldKey by remember { mutableStateOf<String?>(null) }
-    var editingFieldValue by remember { mutableStateOf("") }
-    var editingBarangayValue by remember { mutableStateOf("") }
-    var editingCityValue by remember { mutableStateOf("") }
-    var editingProvinceValue by remember { mutableStateOf("") }
-    var editError by remember { mutableStateOf<String?>(null) }
+    var editingFieldKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingFieldValue by rememberSaveable { mutableStateOf("") }
+    var editingBarangayValue by rememberSaveable { mutableStateOf("") }
+    var editingCityValue by rememberSaveable { mutableStateOf("") }
+    var editingProvinceValue by rememberSaveable { mutableStateOf("") }
+    var editError by rememberSaveable { mutableStateOf<String?>(null) }
 
-    var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showLogoutConfirm by rememberSaveable { mutableStateOf(false) }
 
     val savedStructuredAddress = CustomerAddressRules.parseFromSaved(
         rawAddress = c.value("address"),
@@ -454,6 +457,9 @@ internal fun CustomerProfile(
     val defaultAddress = savedStructuredAddress.fullDisplayAddress().ifBlank { c.value("address").ifBlank { noAddressFallback } }
     val memberSince = CustomerProfilePresentation.memberSince(p.value("created_at"))
 
+    val windowSize = LocalTanawWindowSize.current
+    val maxBodyWidth = if (windowSize.useTwoPane) windowSize.contentMaxWidth else 760.dp
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -469,120 +475,156 @@ internal fun CustomerProfile(
         }
 
         // ── Scrollable Body ────────────────────────────────────────────────────────
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(top = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            if (showTopBar) {
-                Text(
-                    text = stringResource(R.string.my_profile),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            // Status Notices (Loading / Error / Success)
-            CustomerProfileNotices(state, showLinearProgress = showTopBar)
-
-            // Hero Avatar Section
-            CustomerProfileHeader(
-                fullName = fullName,
-                email = email,
-                memberSince = memberSince,
-                onEditPhotoClick = { showPhotoSheet = true },
-                avatarBitmap = avatarBitmap,
-            )
-
-            val standing = remember(data) { CustomerNoShowRules.evaluateStanding(data) }
-            if (standing.strikeCount > 0) {
-                CustomerStandingCard(standing = standing)
-            }
-
-            // ── Personal Information Section ──────────────────────────────────────────
-            CustomerPersonalInfoCard(
-                fullName = fullName,
-                email = email,
-                contact = contact,
-                defaultAddress = defaultAddress,
-                onEditName = {
-                    editingFieldKey = "full_name"
-                    editingFieldValue = p.value("full_name")
-                    editError = null
-                },
-                onEmailInfo = { infoDialog = emailLockedInfo },
-                onEditPhone = {
-                    editingFieldKey = "phone"
-                    editingFieldValue = p.value("phone")
-                    editError = null
-                },
-                onEditAddress = {
-                    editingFieldKey = "address"
-                    editingFieldValue = savedStructuredAddress.streetAddress
-                    editingBarangayValue = savedStructuredAddress.barangay
-                    editingCityValue = savedStructuredAddress.city
-                    editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
-                    editError = null
-                },
-            )
-
-            // ── SMS Notifications Section ───────────────────────────────────────────
-            CustomerSmsCard(
-                isSmsEnabled = isSmsEnabled,
-                phone = p.value("phone"),
-                hasVerifiedPhone = hasVerifiedPhone,
-                smsError = smsError,
-                isBusy = state.busy,
-                isOffline = state.offline,
-                onSwitchChange = { if (hasVerifiedPhone) vm.smsPreference(it) },
-            )
-
-            // ── Menu Section Card ──────────────────────────────────────────────────
-            CustomerMenuCard(
-                onOpenBookings = onOpenBookings,
-                onOpenSavedAddresses = { panel = "Saved Addresses" },
-                onChangePassword = { vm.openPasswordChange() },
-                onOpenTerms = { panel = "Terms of Service" },
-                onOpenPrivacy = { panel = "Privacy Policy" },
-                onOpenHelp = { panel = "Help & Support" },
-            )
-
-            // ── Log Out Button ──────────────────────────────────────────────────────
-            OutlinedButton(
-                onClick = { showLogoutConfirm = true },
-                enabled = !state.busy,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+            Column(
                 modifier = Modifier
+                    .widthIn(max = maxBodyWidth)
                     .fillMaxWidth()
-                    .heightIn(min = 50.dp),
-                shape = RoundedCornerShape(10.dp),
+                    .padding(horizontal = windowSize.horizontalGutter)
+                    .padding(top = 16.dp, bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                if (showTopBar) {
                     Text(
-                        text = stringResource(R.string.log_out),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold,
+                        text = stringResource(R.string.my_profile),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
                     )
+                }
+
+                // Status Notices (Loading / Error / Success)
+                CustomerProfileNotices(state, showLinearProgress = showTopBar)
+
+                // Hero Avatar Section
+                CustomerProfileHeader(
+                    fullName = fullName,
+                    email = email,
+                    memberSince = memberSince,
+                    onEditPhotoClick = { showPhotoSheet = true },
+                    avatarBitmap = avatarBitmap,
+                )
+
+                val standing = remember(data) { CustomerNoShowRules.evaluateStanding(data) }
+                if (standing.strikeCount > 0) {
+                    CustomerStandingCard(standing = standing)
+                }
+
+                val personalInfoCard: @Composable () -> Unit = {
+                    CustomerPersonalInfoCard(
+                        fullName = fullName,
+                        email = email,
+                        contact = contact,
+                        defaultAddress = defaultAddress,
+                        onEditName = {
+                            editingFieldKey = "full_name"
+                            editingFieldValue = p.value("full_name")
+                            editError = null
+                        },
+                        onEmailInfo = { infoDialog = emailLockedInfo },
+                        onEditPhone = {
+                            editingFieldKey = "phone"
+                            editingFieldValue = p.value("phone")
+                            editError = null
+                        },
+                        onEditAddress = {
+                            editingFieldKey = "address"
+                            editingFieldValue = savedStructuredAddress.streetAddress
+                            editingBarangayValue = savedStructuredAddress.barangay
+                            editingCityValue = savedStructuredAddress.city
+                            editingProvinceValue = savedStructuredAddress.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION }
+                            editError = null
+                        },
+                    )
+                }
+
+                val smsCard: @Composable () -> Unit = {
+                    CustomerSmsCard(
+                        isSmsEnabled = isSmsEnabled,
+                        phone = p.value("phone"),
+                        hasVerifiedPhone = hasVerifiedPhone,
+                        smsError = smsError,
+                        isBusy = state.busy,
+                        isOffline = state.offline,
+                        onSwitchChange = { if (hasVerifiedPhone) vm.smsPreference(it) },
+                    )
+                }
+
+                val menuCard: @Composable () -> Unit = {
+                    CustomerMenuCard(
+                        onOpenBookings = onOpenBookings,
+                        onOpenSavedAddresses = { panel = "Saved Addresses" },
+                        onChangePassword = { vm.openPasswordChange() },
+                        onOpenTerms = { panel = "Terms of Service" },
+                        onOpenPrivacy = { panel = "Privacy Policy" },
+                        onOpenHelp = { panel = "Help & Support" },
+                    )
+                }
+
+                if (windowSize.useTwoPane) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(20.dp),
+                        ) {
+                            personalInfoCard()
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(20.dp),
+                        ) {
+                            smsCard()
+                            menuCard()
+                        }
+                    }
+                } else {
+                    personalInfoCard()
+                    smsCard()
+                    menuCard()
+                }
+
+                // ── Log Out Button ──────────────────────────────────────────────────────
+                OutlinedButton(
+                    onClick = { showLogoutConfirm = true },
+                    enabled = !state.busy,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 50.dp),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.log_out),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
         }

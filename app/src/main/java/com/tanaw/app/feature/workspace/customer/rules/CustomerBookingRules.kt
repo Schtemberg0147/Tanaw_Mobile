@@ -290,8 +290,16 @@ object CustomerBookingRules {
         rawCity: String,
         explicitBarangay: String = "",
         explicitProvince: String = "",
-        pickupAddress: String = ""
+        pickupAddress: String = "",
+        liveLocationCity: String = "",
+        liveLocationAddress: String = ""
     ): String {
+        val trimmedLiveCity = liveLocationCity.trim()
+        if (trimmedLiveCity.isNotBlank()) {
+            return trimmedLiveCity
+        }
+        extractCityProvinceFromAddress(liveLocationAddress)?.let { return it }
+
         val parsed = CustomerAddressRules.parseFromSaved(
             rawAddress = rawAddress,
             rawCity = rawCity,
@@ -334,6 +342,42 @@ object CustomerBookingRules {
                 val city = segments[segments.size - 2]
                 val province = segments.last()
                 if (streetOrBarangayHintRegex.containsMatchIn(city)) province else "$city, $province"
+            }
+        }
+    }
+
+    val COMMON_CARGO_PRESETS: List<String> = listOf(
+        "Rice / Grains",
+        "Fresh Produce",
+        "Dry Goods / Retail",
+        "Construction Materials",
+        "Beverages / Bottled",
+        "Machinery / Equipment"
+    )
+
+    val COMMON_DRIVER_NOTE_PRESETS: List<String> = listOf(
+        "Call upon arrival",
+        "Loading dock available",
+        "Gate pass required",
+        "Handle with care"
+    )
+
+    fun quickWeightPresets(capacityRaw: String): List<Int> {
+        val cap = capacityRaw.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }?.roundToInt()
+            ?: return listOf(500, 1000, 2000, 5000)
+        val candidates = listOf(250, 500, 1000, 1500, 2000, 3000, 5000, 8000, 10000, 15000, 20000)
+        val fitting = candidates.filter { it <= cap }
+        return when {
+            fitting.isEmpty() -> listOf(cap)
+            fitting.size <= 4 -> fitting
+            else -> {
+                val picked = linkedSetOf(
+                    fitting[fitting.size / 4],
+                    fitting[fitting.size / 2],
+                    fitting[(fitting.size * 3) / 4],
+                    fitting.last()
+                )
+                picked.toList()
             }
         }
     }

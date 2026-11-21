@@ -3,12 +3,15 @@ package com.tanaw.app.feature.workspace.driver.dialogs
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -21,6 +24,9 @@ import com.tanaw.app.feature.workspace.state.MobileState
 import java.math.BigDecimal
 import java.util.UUID
 
+private val FUEL_LITERS_PRESETS = listOf("20" to "20 L", "40" to "40 L", "60" to "60 L", "100" to "100 L")
+private val FUEL_STATION_PRESETS = listOf("Shell", "Petron", "Caltex", "Phoenix", "Seaoil", "Cleanfuel")
+
 @Composable
 internal fun DriverFuelForm(
     delivery: String,
@@ -28,13 +34,14 @@ internal fun DriverFuelForm(
     close: () -> Unit,
     submit: (String, FuelEntry, () -> Unit) -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     var liters by rememberSaveable(delivery) { mutableStateOf("") }
     var price by rememberSaveable(delivery) { mutableStateOf("") }
     var odometer by rememberSaveable(delivery) { mutableStateOf("") }
     var station by rememberSaveable(delivery) { mutableStateOf("") }
     val request = rememberSaveable(delivery) { UUID.randomUUID().toString() }
     var unconfirmed by rememberSaveable(delivery) { mutableStateOf(false) }
-    var confirmClose by remember { mutableStateOf(false) }
+    var confirmClose by rememberSaveable(delivery) { mutableStateOf(false) }
     val entry = FuelEntry.parse(liters, price, odometer, station)
     val editable = !state.busy && !unconfirmed
 
@@ -83,6 +90,7 @@ internal fun DriverFuelForm(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
+        // Chunk 1: Fuel Purchase Quantities
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(16.dp),
@@ -92,6 +100,26 @@ internal fun DriverFuelForm(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Text(
+                    text = "FUEL PURCHASE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FUEL_LITERS_PRESETS.forEach { (raw, label) ->
+                        val selected = liters.trim() == raw
+                        FilterChip(
+                            selected = selected,
+                            onClick = { liters = if (selected) "" else raw },
+                            enabled = editable,
+                            label = { Text(label) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = liters,
                     onValueChange = { liters = it },
@@ -106,7 +134,8 @@ internal fun DriverFuelForm(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = fieldColors,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
                 OutlinedTextField(
                     value = price,
@@ -122,7 +151,26 @@ internal fun DriverFuelForm(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = fieldColors,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                )
+            }
+        }
+
+        // Chunk 2: Vehicle Odometer & Station
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "ODOMETER & STATION",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = odometer,
@@ -138,8 +186,24 @@ internal fun DriverFuelForm(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = fieldColors,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FUEL_STATION_PRESETS.forEach { brand ->
+                        val selected = station.trim().equals(brand, ignoreCase = true)
+                        FilterChip(
+                            selected = selected,
+                            onClick = { station = if (selected) "" else brand },
+                            enabled = editable,
+                            label = { Text(brand) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = station,
                     onValueChange = { station = it.take(200) },
@@ -151,7 +215,8 @@ internal fun DriverFuelForm(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = fieldColors,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
                 )
             }
         }

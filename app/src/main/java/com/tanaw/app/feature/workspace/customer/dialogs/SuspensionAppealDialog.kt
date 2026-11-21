@@ -3,12 +3,14 @@ package com.tanaw.app.feature.workspace.customer.dialogs
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -18,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,7 +29,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -46,6 +51,13 @@ import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TextDark
 
+private val APPEAL_REASON_STARTERS = listOf(
+    "Traffic or road delay at pickup",
+    "Warehouse loading gate delay",
+    "Missed driver call — updated contact",
+    "Schedule mix-up with consignee"
+)
+
 /**
  * In-app suspension appeal form submitted by a suspended customer directly to office review.
  */
@@ -58,6 +70,7 @@ internal fun SuspensionAppealDialog(
     onDismiss: () -> Unit,
     onSubmit: (reason: String, contactNumber: String?) -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     var reason by rememberSaveable { mutableStateOf("") }
     var contactNumber by rememberSaveable(initialPhone) { mutableStateOf(initialPhone) }
 
@@ -110,6 +123,31 @@ internal fun SuspensionAppealDialog(
                     }
                 }
 
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    APPEAL_REASON_STARTERS.forEach { starter ->
+                        SuggestionChip(
+                            onClick = {
+                                val trimmed = reason.trim()
+                                val updated = when {
+                                    trimmed.isEmpty() -> starter
+                                    trimmed.contains(starter, ignoreCase = true) -> reason
+                                    trimmed.endsWith(".") -> "$trimmed $starter"
+                                    else -> "$trimmed. $starter"
+                                }
+                                if (updated.length <= CustomerNoShowRules.MAX_APPEAL_REASON_LENGTH) {
+                                    reason = updated
+                                }
+                            },
+                            enabled = !isSubmitting,
+                            label = { Text(starter) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { input ->
@@ -130,6 +168,13 @@ internal fun SuspensionAppealDialog(
                             Text("$trimmedLength/${CustomerNoShowRules.MAX_APPEAL_REASON_LENGTH} characters")
                         }
                     },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = InputGray,
@@ -160,6 +205,9 @@ internal fun SuspensionAppealDialog(
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Phone,
                         imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { focusManager.clearFocus() }
                     ),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(

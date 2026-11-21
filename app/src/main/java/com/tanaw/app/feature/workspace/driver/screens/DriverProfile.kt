@@ -23,6 +23,9 @@ import com.tanaw.app.feature.workspace.driver.components.*
 import com.tanaw.app.feature.workspace.driver.rules.DriverProfileRules
 import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.value
+import com.tanaw.app.ui.components.ResponsiveCenteredBox
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -43,9 +46,10 @@ internal fun DriverProfile(
     initialPanel: String? = null
 ) {
     var panel by rememberSaveable { mutableStateOf(initialPanel) }
-    var linkError by remember { mutableStateOf(false) }
-    var confirmClearOffline by remember { mutableStateOf(false) }
+    var linkError by rememberSaveable { mutableStateOf(false) }
+    var confirmClearOffline by rememberSaveable { mutableStateOf(false) }
     val uri = LocalUriHandler.current
+    val windowSize = LocalTanawWindowSize.current
 
     fun openUri(value: String) {
         linkError = runCatching { uri.openUri(value) }.isFailure
@@ -103,114 +107,166 @@ internal fun DriverProfile(
     val top = remember { BringIntoViewRequester() }
     LaunchedEffect(panel) { top.bringIntoView() }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ResponsiveCenteredBox(
+        maxWidth = if (windowSize.useTwoPane) windowSize.contentMaxWidth else 720.dp,
+        modifier = modifier,
+        horizontalPadding = windowSize.horizontalGutter
     ) {
-        Spacer(Modifier.height(1.dp).bringIntoViewRequester(top))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Spacer(Modifier.height(1.dp).bringIntoViewRequester(top))
 
-        if (panel != null) {
-            DriverProfileSubPanel(
-                panel = panel!!,
-                content = content,
-                settings = settings,
-                busy = busy,
-                offline = offline,
-                linkError = linkError,
-                onBack = { panel = null },
-                onOpenMessages = messages,
-                onRecover = recover,
-                onRetry = refresh,
-                onOpenUri = ::openUri
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "My Profile",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary
+            if (panel != null) {
+                DriverProfileSubPanel(
+                    panel = panel!!,
+                    content = content,
+                    settings = settings,
+                    busy = busy,
+                    offline = offline,
+                    linkError = linkError,
+                    onBack = { panel = null },
+                    onOpenMessages = messages,
+                    onRecover = recover,
+                    onRetry = refresh,
+                    onOpenUri = ::openUri
                 )
-                Text(
-                    text = "Your account, assigned vehicle, and compliance credentials",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            DriverProfileHeader(
-                fullName = p.value("full_name"),
-                email = p.value("email"),
-                badge = DriverProfileRules.availabilityBadge(data, offline)
-            )
-
-            DriverPersonalInfoCard(
-                data = data,
-                busy = busy,
-                onRetry = refresh
-            )
-
-            DriverVehicleCard(
-                data = data,
-                busy = busy,
-                onRetry = refresh
-            )
-
-            DriverComplianceCard(
-                data = data,
-                settings = settings,
-                busy = busy,
-                onRetry = refresh
-            )
-
-            DriverAccountCard(
-                busy = busy,
-                offline = offline,
-                hasClearOffline = onClearOffline != null,
-                onRecover = recover,
-                onOpenPanel = { title ->
-                    panel = title
-                    linkError = false
-                },
-                onRequestClearOffline = { confirmClearOffline = true }
-            )
-
-            Spacer(Modifier.height(4.dp))
-
-            OutlinedButton(
-                onClick = logout,
-                enabled = !busy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(
-                    1.5.dp,
-                    if (busy) MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
-                    else MaterialTheme.colorScheme.error
-                ),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "My Profile",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Log Out", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "Your account, assigned vehicle, and compliance credentials",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
 
-            Spacer(Modifier.height(8.dp))
+                DriverProfileHeader(
+                    fullName = p.value("full_name"),
+                    email = p.value("email"),
+                    badge = DriverProfileRules.availabilityBadge(data, offline)
+                )
+
+                if (windowSize.useTwoPane) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            DriverPersonalInfoCard(
+                                data = data,
+                                busy = busy,
+                                onRetry = refresh
+                            )
+                            DriverVehicleCard(
+                                data = data,
+                                busy = busy,
+                                onRetry = refresh
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            DriverComplianceCard(
+                                data = data,
+                                settings = settings,
+                                busy = busy,
+                                onRetry = refresh
+                            )
+                            DriverAccountCard(
+                                busy = busy,
+                                offline = offline,
+                                hasClearOffline = onClearOffline != null,
+                                onRecover = recover,
+                                onOpenPanel = { title ->
+                                    panel = title
+                                    linkError = false
+                                },
+                                onRequestClearOffline = { confirmClearOffline = true }
+                            )
+                        }
+                    }
+                } else {
+                    DriverPersonalInfoCard(
+                        data = data,
+                        busy = busy,
+                        onRetry = refresh
+                    )
+
+                    DriverVehicleCard(
+                        data = data,
+                        busy = busy,
+                        onRetry = refresh
+                    )
+
+                    DriverComplianceCard(
+                        data = data,
+                        settings = settings,
+                        busy = busy,
+                        onRetry = refresh
+                    )
+
+                    DriverAccountCard(
+                        busy = busy,
+                        offline = offline,
+                        hasClearOffline = onClearOffline != null,
+                        onRecover = recover,
+                        onOpenPanel = { title ->
+                            panel = title
+                            linkError = false
+                        },
+                        onRequestClearOffline = { confirmClearOffline = true }
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                OutlinedButton(
+                    onClick = logout,
+                    enabled = !busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(
+                        1.5.dp,
+                        if (busy) MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+                        else MaterialTheme.colorScheme.error
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Log Out", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+            }
         }
     }
 }
@@ -271,7 +327,7 @@ private fun previewDriverProfileErrorData(): JsonObject = buildJsonObject {
     })
 }
 
-@Preview(showBackground = true, name = "Driver Profile")
+@FormFactorPreviews
 @Composable
 private fun DriverProfileLightPreview() {
     DriverTheme {

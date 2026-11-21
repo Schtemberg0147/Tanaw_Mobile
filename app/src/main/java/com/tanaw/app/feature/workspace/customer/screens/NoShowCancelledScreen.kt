@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,7 +51,9 @@ import com.tanaw.app.ui.theme.BackgroundGray
 import com.tanaw.app.ui.theme.BorderGray
 import com.tanaw.app.ui.theme.ExpiredRed
 import com.tanaw.app.ui.theme.ExpiredRedBg
+import com.tanaw.app.ui.theme.FormFactorPreviews
 import com.tanaw.app.ui.theme.HintGray
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.NavyPrimary
 import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
@@ -77,6 +80,7 @@ internal fun NoShowCancelledScreen(
 ) {
     val canBookAgain = !standing.isBookingBlocked && !busy
     val timelineHeader = if (strikeNumber >= 2) "WHY WAS THIS CANCELLED?" else "CANCELLATION TIMELINE"
+    val windowSize = LocalTanawWindowSize.current
 
     Scaffold(
         modifier = modifier
@@ -99,13 +103,15 @@ internal fun NoShowCancelledScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
+                        .navigationBarsPadding(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     HorizontalDivider(color = BorderGray, thickness = 1.dp)
                     Column(
                         modifier = Modifier
+                            .widthIn(max = windowSize.formMaxWidth)
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                            .padding(horizontal = windowSize.horizontalGutter, vertical = 14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -222,10 +228,15 @@ internal fun NoShowCancelledScreen(
                 }
             }
 
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter
+            ) {
             Column(
                 modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 NoShowTimelineCard(
@@ -238,11 +249,12 @@ internal fun NoShowCancelledScreen(
                     maxStrikes = standing.maxStrikes
                 )
             }
+            }
         }
     }
 }
 
-@Preview(name = "Booking Cancelled — Strike 1 of 3 (Screen 3)", showBackground = true)
+@FormFactorPreviews
 @Composable
 private fun NoShowCancelledStrike1Preview() {
     TanawCustomerTheme {

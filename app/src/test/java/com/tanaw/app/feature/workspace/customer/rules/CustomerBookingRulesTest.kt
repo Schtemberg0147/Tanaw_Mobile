@@ -246,7 +246,23 @@ class CustomerBookingRulesTest {
     }
 
     @Test
-    fun resolveHeaderCityUsesProfileThenPickupAndReturnsBlankWhenUnset() {
+    fun resolveHeaderCityPrioritizesLiveLocationThenProfileThenPickup() {
+        assertEquals(
+            "Malolos, Bulacan",
+            CustomerBookingRules.resolveHeaderCity(
+                rawAddress = "123 Katipunan Ave, Brgy. Loyola Heights",
+                rawCity = "Quezon City, Metro Manila",
+                liveLocationCity = "Malolos, Bulacan"
+            )
+        )
+        assertEquals(
+            "Cabanatuan City, Nueva Ecija",
+            CustomerBookingRules.resolveHeaderCity(
+                rawAddress = "123 Katipunan Ave, Brgy. Loyola Heights",
+                rawCity = "Quezon City, Metro Manila",
+                liveLocationAddress = "Maharlika Highway, Cabanatuan City, 3100 Nueva Ecija, Philippines"
+            )
+        )
         assertEquals(
             "Quezon City, Metro Manila",
             CustomerBookingRules.resolveHeaderCity(
@@ -277,5 +293,23 @@ class CustomerBookingRulesTest {
                 pickupAddress = ""
             )
         )
+    }
+
+    @Test
+    fun quickWeightPresetsRespectSelectedVehicleCapacity() {
+        val twoTonPresets = CustomerBookingRules.quickWeightPresets("2000")
+        assertTrue(twoTonPresets.isNotEmpty())
+        assertTrue(twoTonPresets.all { it <= 2000 })
+        assertEquals(2000, twoTonPresets.last())
+
+        val tenTonPresets = CustomerBookingRules.quickWeightPresets("10000")
+        assertTrue(tenTonPresets.size <= 4)
+        assertTrue(tenTonPresets.all { it <= 10000 })
+        assertEquals(10000, tenTonPresets.last())
+
+        val lightPresets = CustomerBookingRules.quickWeightPresets("200")
+        assertEquals(listOf(200), lightPresets)
+
+        assertEquals(listOf(500, 1000, 2000, 5000), CustomerBookingRules.quickWeightPresets(""))
     }
 }

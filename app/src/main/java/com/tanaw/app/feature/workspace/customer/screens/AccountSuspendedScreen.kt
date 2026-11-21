@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,7 +60,9 @@ import com.tanaw.app.ui.theme.ExpiredRed
 import com.tanaw.app.ui.theme.ExpiredRedBg
 import com.tanaw.app.ui.theme.ExpiringOrange
 import com.tanaw.app.ui.theme.ExpiringOrangeBg
+import com.tanaw.app.ui.theme.FormFactorPreviews
 import com.tanaw.app.ui.theme.HintGray
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.NavyPrimary
 import com.tanaw.app.ui.theme.SuccessBannerBg
 import com.tanaw.app.ui.theme.SuccessGreen
@@ -88,6 +91,7 @@ internal fun AccountSuspendedScreen(
 ) {
     val latestAppeal = standing.latestAppeal
     val hasPendingAppeal = latestAppeal?.isPending == true
+    val windowSize = LocalTanawWindowSize.current
 
     Scaffold(
         modifier = modifier
@@ -215,10 +219,15 @@ internal fun AccountSuspendedScreen(
                 }
             }
 
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter
+            ) {
             Column(
                 modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 if (offline) {
@@ -559,11 +568,12 @@ internal fun AccountSuspendedScreen(
                     )
                 }
             }
+            }
         }
     }
 }
 
-@Preview(name = "Account Suspended — Strike 3 of 3 (Screen 5)", showBackground = true)
+@FormFactorPreviews
 @Composable
 private fun AccountSuspendedScreenPreview() {
     TanawCustomerTheme {

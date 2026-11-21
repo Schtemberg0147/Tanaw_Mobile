@@ -3,6 +3,7 @@ package com.tanaw.app.feature.workspace.customer.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,7 +39,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
@@ -45,6 +46,8 @@ import com.tanaw.app.feature.workspace.customer.components.RouteSummaryCard
 import com.tanaw.app.feature.workspace.customer.rules.BaseLinehaulEstimate
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.model.RoutePreview
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TanawMonoFontFamily
@@ -73,6 +76,7 @@ fun BookingSummaryScreen(
     estimatedArrivalSummary: String = "",
     baseLinehaulEstimate: BaseLinehaulEstimate? = null
 ) {
+    val windowSize = LocalTanawWindowSize.current
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -119,58 +123,70 @@ fun BookingSummaryScreen(
                 shadowElevation = 8.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Button(
-                        onClick = onSubmitBooking,
-                        enabled = canSubmit,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
+                    Column(
                         modifier = Modifier
+                            .widthIn(max = windowSize.formMaxWidth)
                             .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("ConfirmBookingButton")
+                            .navigationBarsPadding()
+                            .padding(horizontal = windowSize.horizontalGutter, vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (busy) {
-                            CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(
-                                text = stringResource(R.string.confirm_booking_button),
-                                fontWeight = FontWeight.Bold
-                            )
+                        Button(
+                            onClick = onSubmitBooking,
+                            enabled = canSubmit,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 50.dp)
+                                .testTag("ConfirmBookingButton")
+                        ) {
+                            if (busy) {
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.confirm_booking_button),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
+                        Text(
+                            text = stringResource(R.string.booking_terms_notice),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
                     }
-                    Text(
-                        text = stringResource(R.string.booking_terms_notice),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
-                    )
                 }
             }
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             errorMessage?.let {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
@@ -477,11 +493,12 @@ fun BookingSummaryScreen(
                     modifier = Modifier.padding(14.dp)
                 )
             }
+            }
         }
     }
 }
 
-@Preview(showBackground = true, name = "Booking Summary")
+@FormFactorPreviews
 @Composable
 private fun BookingSummaryPreview() {
     TanawCustomerTheme {

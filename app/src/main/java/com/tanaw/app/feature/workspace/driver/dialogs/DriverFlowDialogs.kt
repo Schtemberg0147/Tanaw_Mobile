@@ -8,6 +8,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -22,6 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -64,11 +67,16 @@ internal fun DriverTransaction(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         DriverTheme {
+            val windowSize = LocalTanawWindowSize.current
             BackHandler { if (!busy) close() }
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {
-                    Column(Modifier.statusBarsPadding()) {
+                    Column(
+                        Modifier
+                            .statusBarsPadding()
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    ) {
                         DriverPageHeading(title) { if (!busy) close() }
                         if (busy) {
                             LinearProgressIndicator(
@@ -84,11 +92,21 @@ internal fun DriverTransaction(
                     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
                         Column {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Column(Modifier.navigationBarsPadding().padding(16.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
+                                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Button(
                                     onClick = submit,
                                     enabled = enabled && !busy,
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                                    modifier = Modifier
+                                        .widthIn(max = windowSize.formMaxWidth)
+                                        .fillMaxWidth()
+                                        .heightIn(min = 52.dp),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.primary,
@@ -114,16 +132,24 @@ internal fun DriverTransaction(
                     }
                 }
             ) { padding ->
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
                         .imePadding()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    content = content
-                )
+                        .verticalScroll(rememberScrollState()),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = windowSize.formMaxWidth)
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                            .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        content = content
+                    )
+                }
             }
         }
     }
@@ -166,6 +192,7 @@ internal fun DriverIncidentForm(
     owner: String = "",
     submit: (String, String, String, Int, List<ByteArray>) -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember(owner, id) { if (owner.isNotBlank()) IncidentDraftStore(context) else null }
@@ -178,6 +205,42 @@ internal fun DriverIncidentForm(
     var request by rememberSaveable(id) { mutableStateOf(restored?.request ?: UUID.randomUUID().toString()) }
     var photos by remember(id) { mutableStateOf(restored?.photos ?: emptyList<ByteArray>()) }
     var preparingPhotos by remember { mutableStateOf(false) }
+
+    val quickDescriptions = remember(category) {
+        when (category) {
+            "traffic" -> listOf(
+                "Heavy highway traffic",
+                "Roadwork / lane closure",
+                "Port or warehouse queue"
+            )
+            "breakdown" -> listOf(
+                "Flat tire / wheel check",
+                "Engine warning / overheat",
+                "Brake or electrical check"
+            )
+            "accident" -> listOf(
+                "Minor road incident ahead",
+                "Safety inspection stop"
+            )
+            "weather" -> listOf(
+                "Heavy rain / low visibility",
+                "Flooded road detour"
+            )
+            else -> listOf(
+                "Customer / dock delay",
+                "Document or permit check"
+            )
+        }
+    }
+    val quickDelayPresets = remember {
+        listOf(
+            "0" to "0 min",
+            "15" to "15 min",
+            "30" to "30 min",
+            "60" to "1 hr",
+            "120" to "2 hrs"
+        )
+    }
 
     fun persist(
         c: String = category,
@@ -278,6 +341,26 @@ internal fun DriverIncidentForm(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    quickDescriptions.forEach { template ->
+                        SuggestionChip(
+                            onClick = {
+                                if (description != template) {
+                                    description = template
+                                    val nextReq = UUID.randomUUID().toString()
+                                    request = nextReq
+                                    persist(d = template, r = nextReq)
+                                }
+                            },
+                            enabled = !state.busy && !preparingPhotos,
+                            label = { Text(template) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = description,
                     onValueChange = {
@@ -303,6 +386,9 @@ internal fun DriverIncidentForm(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Next
                     ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -313,6 +399,28 @@ internal fun DriverIncidentForm(
                         errorBorderColor = MaterialTheme.colorScheme.error
                     )
                 )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    quickDelayPresets.forEach { (raw, label) ->
+                        val selected = minutes.trim() == raw
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                if (minutes != raw) {
+                                    minutes = raw
+                                    val nextReq = UUID.randomUUID().toString()
+                                    request = nextReq
+                                    persist(m = raw, r = nextReq)
+                                }
+                            },
+                            enabled = !state.busy && !preparingPhotos,
+                            label = { Text(label) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = minutes,
                     onValueChange = {
@@ -331,6 +439,9 @@ internal fun DriverIncidentForm(
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { focusManager.clearFocus() }
                     ),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = RoundedCornerShape(12.dp),
@@ -441,7 +552,7 @@ internal fun DriverProofForm(
     var canvasSize by remember { mutableStateOf(IntSize(1, 1)) }
     var error by remember { mutableStateOf<String?>(null) }
     var submitted by rememberSaveable(owner, id) { mutableStateOf(false) }
-    var confirmDiscard by remember { mutableStateOf(false) }
+    var confirmDiscard by rememberSaveable(owner, id) { mutableStateOf(false) }
     var processing by remember { mutableStateOf(false) }
     val editable = !state.busy && !processing && !draft.frozen && restored.isSuccess
 

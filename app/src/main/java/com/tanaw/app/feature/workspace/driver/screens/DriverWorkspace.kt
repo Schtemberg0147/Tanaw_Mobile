@@ -68,7 +68,11 @@ internal val DriverLightColorScheme = LightColorScheme
             }
         }
     }
-    CompositionLocalProvider(LocalExtendedColors provides ExtendedLightColors) {
+    val windowSize = rememberTanawWindowSize()
+    CompositionLocalProvider(
+        LocalExtendedColors provides ExtendedLightColors,
+        LocalTanawWindowSize provides windowSize
+    ) {
         MaterialTheme(
             colorScheme = DriverLightColorScheme,
             typography = Typography,
@@ -195,192 +199,293 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
             else -> tab="Home"
         }
     }
-    Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
-        val unreadCount = if(state.offline || state.conversationUnread==null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf{it.value("unread").toIntOrNull()?:0}
-        val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
-        DriverTopAppBar(
-            trackingNumber = if(tab=="Navigate") shipment?.value("tracking_number") else null,
-            showMessages = conversation!=null,
-            unreadMessagesCount = unreadCount,
-            unreadAlertsCount = unreadAlerts,
-            isBusy = state.busy,
-            onSwitchTrip = {
-                if (tab == "Navigate" && active.size > 1) {
-                    chooseTripRequested = true
+    val windowSize = LocalTanawWindowSize.current
+    val showBottomBar = !(tab == "Profile" && profileSubPanelOpen)
+    val useNavRail = showBottomBar && windowSize.useNavRail
+    val isLiveMessageThread = tab == "Messages" && messageThread != null
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (useNavRail) {
+            DriverNavigationRail(
+                tab = tab,
+                busy = state.busy,
+                onTab = { nextTab ->
+                    tab = nextTab
                     selected = null
-                } else if (tab == "Navigate") {
-                    selected = null
-                    tab = "Home"
-                } else {
-                    selected = null
+                    chooseTripRequested = false
                 }
-            },
-            onOpenMessages = {tab="Messages";selected=null;messageThread=null},
-            onOpenAlerts = {tab="Alerts";selected=null},
-            onRefresh = onRefresh
-        )
-    },bottomBar={
-        if(!(tab=="Profile" && profileSubPanelOpen)) {
-            DriverBottomBar(tab,state.busy) { nextTab ->
-                tab = nextTab
-                selected = null
-                chooseTripRequested = false
-            }
+            )
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
         }
-    }) {padding->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().then(if(tab=="Messages" && messageThread!=null) Modifier else Modifier.verticalScroll(rememberScrollState()))) {
-            state.error?.let {DriverNotice(it,true)}
-            state.message?.let {DriverNotice(it)}
-            if(state.offline) {
-                DriverNotice("Offline · saved ${state.lastSync.ifBlank {"at an unknown time"}}. Records may have changed. Reconnect and refresh before making changes.")
-                TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry connection")}
+
+        Scaffold(
+            modifier = Modifier.weight(1f),
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                val unreadCount = if (state.offline || state.conversationUnread == null) null else state.conversationUnread.filterIsInstance<JsonObject>().sumOf { it.value("unread").toIntOrNull() ?: 0 }
+                val unreadAlerts = data.rows("notifications").count { it.value("read_at").isBlank() }
+                DriverTopAppBar(
+                    trackingNumber = if (tab == "Navigate") shipment?.value("tracking_number") else null,
+                    showMessages = conversation != null,
+                    unreadMessagesCount = unreadCount,
+                    unreadAlertsCount = unreadAlerts,
+                    isBusy = state.busy,
+                    onSwitchTrip = {
+                        if (tab == "Navigate" && active.size > 1) {
+                            chooseTripRequested = true
+                            selected = null
+                        } else if (tab == "Navigate") {
+                            selected = null
+                            tab = "Home"
+                        } else {
+                            selected = null
+                        }
+                    },
+                    onOpenMessages = { tab = "Messages"; selected = null; messageThread = null },
+                    onOpenAlerts = { tab = "Alerts"; selected = null },
+                    onRefresh = onRefresh
+                )
+            },
+            bottomBar = {
+                if (showBottomBar && !useNavRail) {
+                    DriverBottomBar(tab, state.busy) { nextTab ->
+                        tab = nextTab
+                        selected = null
+                        chooseTripRequested = false
+                    }
+                }
             }
-            data.value("driver_read_error").takeIf(String::isNotBlank)?.let {DriverNotice(it,true)}
-            when {
-                selected!=null && shipment==null -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverPageHeading("Selected trip unavailable")
-                    Text("This trip is no longer in your available records. Its assignment or access may have changed. No other trip has been opened.")
-                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh selected trip")}
-                    DriverButton("Choose another trip",!state.busy){selected=null;tab="Home"}
-                }
-                selected!=null && shipment!=null && DriverUiRules.isActive(shipment.value("status")) && delivery?.value("id").isNullOrBlank() -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverPageHeading("Selected trip details unavailable")
-                    Text("${shipment.value("tracking_number")}: current delivery access could not be confirmed. Refresh before opening navigation or trip actions. No other trip has been opened.")
-                    TextButton(onClick=onRefresh,enabled=!state.busy){Text("Refresh selected trip")}
-                    DriverButton("Choose another trip",!state.busy){selected=null;tab="Home"}
-                }
-                selected!=null && tab!="Navigate" && shipment!=null -> {
-                    DriverPageHeading("Trip details") {selected=null}
-                    val showComplete=!DriverUiRules.isActive(shipment.value("status")) || delivery?.value("status")=="delivered"
-                    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                        if(showComplete) DriverComplete(shipment,delivery,state.details){selected=null;tab="Home"}
-                        else {DriverAssignment(shipment,delivery?:buildJsonObject{}){tab="Navigate"};DriverButton("Open navigation",!state.busy){tab="Navigate"}}
-                        if(showComplete && delivery?.value("status")=="delivered")tripActions(shipment,delivery){selected=null;tab="Home"}
-                        DriverRecords(shipment,state,onDetails,onProof,onEvidence)
-                        delivery?.takeIf{it.value("id").isNotBlank()}?.let {conversation?.invoke(it)}
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .imePadding()
+                    .then(if (isLiveMessageThread) Modifier else Modifier.verticalScroll(rememberScrollState())),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(
+                            max = if (tab == "Navigate" && shipment != null) {
+                                windowSize.wideContentMaxWidth
+                            } else {
+                                windowSize.contentMaxWidth
+                            }
+                        )
+                        .fillMaxWidth()
+                        .then(if (isLiveMessageThread) Modifier.fillMaxHeight() else Modifier)
+                ) {
+                    state.error?.let { DriverNotice(it, true) }
+                    state.message?.let { DriverNotice(it) }
+                    if (state.offline) {
+                        DriverNotice("Offline · saved ${state.lastSync.ifBlank { "at an unknown time" }}. Records may have changed. Reconnect and refresh before making changes.")
+                        TextButton(onClick = onRefresh, enabled = !state.busy) { Text("Retry connection") }
                     }
-                }
-                tab=="Home" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverIdentity(data)
-                    DriverHomeReadNotices(data,state.busy,onRefresh)
-                    if(active.isEmpty())DriverEmpty(data)
-                    else {
-                        if(active.any {s->val d=DriverUiRules.delivery(data,s.value("id"));d.value("status")=="assigned" && d.value("route_started_at").isBlank()})
-                            Surface(color=MaterialTheme.colorScheme.primary,shape=RoundedCornerShape(12.dp)) {
-                                Row(Modifier.fillMaxWidth().padding(16.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
-                                    DriverAsset(R.drawable.figma_driver_e588e,17,12,tint=MaterialTheme.colorScheme.onPrimary);Spacer(Modifier.width(8.dp));Text("New Trip Assigned!",color=MaterialTheme.colorScheme.onPrimary,fontWeight=FontWeight.ExtraBold)
-                                }
-                            }
-                        active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){chooseTripRequested=false;selected=s.value("id");tab="Navigate"}}
-                    }
-                }
-                tab=="Navigate" && shipment!=null -> {
-                    val hasConversation = conversation != null && !delivery?.value("id").isNullOrBlank()
-                    DriverNavigation(
-                        s = shipment,
-                        d = delivery ?: buildJsonObject {},
-                        state = state,
-                        actions = { s, d -> tripActions(s, d) { selected = null; tab = "Home" } },
-                        expense = { expense = true },
-                        fuel = if(onFuel!=null && delivery?.value("status") in listOf("assigned","loading","in_transit","delivered"))({fuel=true})else null,
-                        routePreview = routePreview,
-                        onMessageOffice = if (hasConversation) ({ navigateChatOpen = true }) else null,
-                        tripLogsContent = { DriverRecords(shipment, state, onDetails, onProof, onEvidence) }
-                    )
-                }
-                tab=="Navigate" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverPageHeading("Choose a trip to navigate")
-                    DriverHomeReadNotices(data,state.busy,onRefresh)
-                    if(active.isEmpty())DriverEmpty(data)
-                    else active.forEach {s->DriverAssignment(s,DriverUiRules.delivery(data,s.value("id"))){chooseTripRequested=false;selected=s.value("id")}}
-                }
-                tab=="Messages" -> Column(Modifier.then(if(messageThread!=null) Modifier.weight(1f) else Modifier).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                    val threads=(state.conversationUnread?.filterIsInstance<JsonObject>().orEmpty().map {JsonObject(it+mapOf("id" to JsonPrimitive(it.value("delivery_id"))))}+
-                        DriverRecordPresentation.deliveries(data,state.history)).distinctBy{it.value("id")}
-                    val opened=threads.firstOrNull {it.value("id")==messageThread}
-                    DriverPageHeading(if(messageThread==null) "Messages" else "Office conversation") {if(messageThread!=null)messageThread=null else tab="Home"}
-                    if(messageThread!=null) {
-                        if(opened==null) {
-                            DriverNotice("This conversation is no longer available. Refresh to check your delivery access.",true)
-                            TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry message inbox")}
-                        } else key(opened.value("id"),opened.value("driver_id")) {
-                            conversation?.invoke(JsonObject(opened+mapOf("inbox_open" to JsonPrimitive(true))))
+                    data.value("driver_read_error").takeIf(String::isNotBlank)?.let { DriverNotice(it, true) }
+                    when {
+                        selected != null && shipment == null -> Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DriverPageHeading("Selected trip unavailable")
+                            Text("This trip is no longer in your available records. Its assignment or access may have changed. No other trip has been opened.")
+                            TextButton(onClick = onRefresh, enabled = !state.busy) { Text("Refresh selected trip") }
+                            DriverButton("Choose another trip", !state.busy) { selected = null; tab = "Home" }
                         }
-                    } else {
-                        Text("Your delivery conversations",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        if(state.offline || state.conversationUnread==null) {
-                            DriverNotice(if(state.offline) "Reconnect to view current unread counts." else "Unread messages unavailable. Refresh to retry.")
-                            if (!state.offline) {
-                                TextButton(onClick=onRefresh,enabled=!state.busy,modifier=Modifier.heightIn(min=48.dp)){Text("Retry unread messages")}
+                        selected != null && shipment != null && DriverUiRules.isActive(shipment.value("status")) && delivery?.value("id").isNullOrBlank() -> Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DriverPageHeading("Selected trip details unavailable")
+                            Text("${shipment.value("tracking_number")}: current delivery access could not be confirmed. Refresh before opening navigation or trip actions. No other trip has been opened.")
+                            TextButton(onClick = onRefresh, enabled = !state.busy) { Text("Refresh selected trip") }
+                            DriverButton("Choose another trip", !state.busy) { selected = null; tab = "Home" }
+                        }
+                        selected != null && tab != "Navigate" && shipment != null -> {
+                            DriverPageHeading("Trip details") { selected = null }
+                            val showComplete = !DriverUiRules.isActive(shipment.value("status")) || delivery?.value("status") == "delivered"
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                if (showComplete) DriverComplete(shipment, delivery, state.details) { selected = null; tab = "Home" }
+                                else { DriverAssignment(shipment, delivery ?: buildJsonObject {}) { tab = "Navigate" }; DriverButton("Open navigation", !state.busy) { tab = "Navigate" } }
+                                if (showComplete && delivery?.value("status") == "delivered") tripActions(shipment, delivery) { selected = null; tab = "Home" }
+                                DriverRecords(shipment, state, onDetails, onProof, onEvidence)
+                                delivery?.takeIf { it.value("id").isNotBlank() }?.let { conversation?.invoke(it) }
                             }
                         }
-                        if(threads.isEmpty())Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
-                            Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                Text("No conversations yet",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
-                                Text("Your office conversations will appear here when a delivery is assigned.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        threads.forEach {d->key(d.value("id"),d.value("driver_id")) {
-                            val reference=d.value("tracking_number").ifBlank {shipments.firstOrNull {it.value("id")==d.value("shipment_id")}?.value("tracking_number").orEmpty()}.ifBlank {"Assigned delivery"}
-                            val count=if(state.offline || state.conversationUnread==null)null else ConversationRules.unread(state.conversationUnread.filterIsInstance<JsonObject>(),d.value("id"))
-                            Surface(onClick={messageThread=d.value("id")},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant),modifier=Modifier.fillMaxWidth()) {
-                                Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                                    Surface(color=MaterialTheme.colorScheme.surfaceContainerHigh,shape=CircleShape) {Box(Modifier.size(44.dp),contentAlignment=Alignment.Center){Text("O",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)}}
-                                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                                        Text("Office",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
-                                        Text("Delivery $reference",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(if(count==null) "Unread unavailable" else if(count>0) "$count unread" else "Open conversation",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+                        tab == "Home" -> Column(Modifier.padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DriverIdentity(data)
+                            DriverHomeReadNotices(data, state.busy, onRefresh)
+                            if (active.isEmpty()) DriverEmpty(data)
+                            else {
+                                if (active.any { s -> val d = DriverUiRules.delivery(data, s.value("id")); d.value("status") == "assigned" && d.value("route_started_at").isBlank() })
+                                    Surface(color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(12.dp)) {
+                                        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                            DriverAsset(R.drawable.figma_driver_e588e, 17, 12, tint = MaterialTheme.colorScheme.onPrimary); Spacer(Modifier.width(8.dp)); Text("New Trip Assigned!", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.ExtraBold)
+                                        }
                                     }
-                                    Text("›",fontSize=26.sp,color=MaterialTheme.colorScheme.primary)
+                                if (windowSize.gridColumns >= 2 && active.size > 1) {
+                                    active.chunked(2).forEach { pair ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)) {
+                                            pair.forEach { s ->
+                                                DriverAssignment(
+                                                    s = s,
+                                                    d = DriverUiRules.delivery(data, s.value("id")),
+                                                    modifier = Modifier.weight(1f)
+                                                ) { chooseTripRequested = false; selected = s.value("id"); tab = "Navigate" }
+                                            }
+                                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                        }
+                                    }
+                                } else {
+                                    active.forEach { s ->
+                                        DriverAssignment(s, DriverUiRules.delivery(data, s.value("id"))) { chooseTripRequested = false; selected = s.value("id"); tab = "Navigate" }
+                                    }
                                 }
                             }
-                        }}
-                    }
-                }
-                tab=="Trips" -> DriverTrips(data,state,onHistory){selected=it}
-                tab=="Profile" -> {
-                    DriverProfile(
-                        data = data,
-                        busy = state.busy,
-                        offline = state.offline,
-                        refresh = onRefresh,
-                        recover = onRecovery,
-                        logout = onLogout,
-                        messages = {tab="Messages";messageThread=null;selected=null},
-                        onClearOffline = onClearOffline,
-                        onSubPanelChanged = {profileSubPanelOpen=it}
-                    )
-                }
-                tab=="Alerts" -> Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                    DriverPageHeading("Notifications") {tab="Home"}
-                    LaunchedEffect(Unit) {
-                        if (state.notificationsPage == null && onLoadNotifications != null) {
-                            onLoadNotifications(false)
                         }
-                    }
-                    val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
-                    if(state.notificationsLoading && state.notificationsPage == null) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
-                    state.notificationsError?.let {
-                        DriverNotice(it, true)
-                    }
-                    if(DriverRecordPresentation.section(data,"notifications") in listOf("error","unavailable") && displayedNotifications.isEmpty()) {
-                        DriverNotice("Notifications unavailable. Refresh to retry.",true)
-                        TextButton(onClick=onRefresh,enabled=!state.busy){Text("Retry notifications")}
-                    } else if(displayedNotifications.isEmpty() && !state.notificationsLoading)Text("No notifications yet.")
-                    displayedNotifications.forEach {n->DriverCard {
-                        Text(n.value("title"),fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface);SupportingText(n.value("body"));SupportingText(MobilePresentation.time(n.value("created_at")))
-                        if(n.value("read_at").isBlank())TextButton(onClick={onRead(n.value("id"))},enabled=!state.busy){Text("Mark read")}
-                        if(shipments.any {it.value("id")==n.value("shipment_id")})TextButton(onClick={selected=n.value("shipment_id");tab="Trips"}){Text("Open trip")}
-                    }}
-                    if(state.notificationsHasMore && onLoadNotifications != null) {
-                        OutlinedButton(
-                            onClick = { onLoadNotifications(true) },
-                            enabled = !state.notificationsLoading,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(if(state.notificationsLoading) "Loading more notifications..." else "Load more notifications")
+                        tab == "Navigate" && shipment != null -> {
+                            val hasConversation = conversation != null && !delivery?.value("id").isNullOrBlank()
+                            DriverNavigation(
+                                s = shipment,
+                                d = delivery ?: buildJsonObject {},
+                                state = state,
+                                actions = { s, d -> tripActions(s, d) { selected = null; tab = "Home" } },
+                                expense = { expense = true },
+                                fuel = if (onFuel != null && delivery?.value("status") in listOf("assigned", "loading", "in_transit", "delivered")) ({ fuel = true }) else null,
+                                routePreview = routePreview,
+                                onMessageOffice = if (hasConversation) ({ navigateChatOpen = true }) else null,
+                                tripLogsContent = { DriverRecords(shipment, state, onDetails, onProof, onEvidence) }
+                            )
+                        }
+                        tab == "Navigate" -> Column(Modifier.padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DriverPageHeading("Choose a trip to navigate")
+                            DriverHomeReadNotices(data, state.busy, onRefresh)
+                            if (active.isEmpty()) DriverEmpty(data)
+                            else if (windowSize.gridColumns >= 2 && active.size > 1) {
+                                active.chunked(2).forEach { pair ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)) {
+                                        pair.forEach { s ->
+                                            DriverAssignment(
+                                                s = s,
+                                                d = DriverUiRules.delivery(data, s.value("id")),
+                                                modifier = Modifier.weight(1f)
+                                            ) { chooseTripRequested = false; selected = s.value("id") }
+                                        }
+                                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            } else {
+                                active.forEach { s -> DriverAssignment(s, DriverUiRules.delivery(data, s.value("id"))) { chooseTripRequested = false; selected = s.value("id") } }
+                            }
+                        }
+                        tab == "Messages" -> Column(Modifier.then(if (messageThread != null) Modifier.weight(1f) else Modifier).padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            val threads = (state.conversationUnread?.filterIsInstance<JsonObject>().orEmpty().map { JsonObject(it + mapOf("id" to JsonPrimitive(it.value("delivery_id")))) } +
+                                DriverRecordPresentation.deliveries(data, state.history)).distinctBy { it.value("id") }
+                            val opened = threads.firstOrNull { it.value("id") == messageThread }
+                            DriverPageHeading(if (messageThread == null) "Messages" else "Office conversation") { if (messageThread != null) messageThread = null else tab = "Home" }
+                            if (messageThread != null) {
+                                if (opened == null) {
+                                    DriverNotice("This conversation is no longer available. Refresh to check your delivery access.", true)
+                                    TextButton(onClick = onRefresh, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry message inbox") }
+                                } else key(opened.value("id"), opened.value("driver_id")) {
+                                    conversation?.invoke(JsonObject(opened + mapOf("inbox_open" to JsonPrimitive(true))))
+                                }
+                            } else {
+                                Text("Your delivery conversations", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (state.offline || state.conversationUnread == null) {
+                                    DriverNotice(if (state.offline) "Reconnect to view current unread counts." else "Unread messages unavailable. Refresh to retry.")
+                                    if (!state.offline) {
+                                        TextButton(onClick = onRefresh, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry unread messages") }
+                                    }
+                                }
+                                if (threads.isEmpty()) Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                    Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("No conversations yet", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                        Text("Your office conversations will appear here when a delivery is assigned.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                val renderThreadCard: @Composable (JsonObject, Modifier) -> Unit = { d, cardMod ->
+                                    key(d.value("id"), d.value("driver_id")) {
+                                        val reference = d.value("tracking_number").ifBlank { shipments.firstOrNull { it.value("id") == d.value("shipment_id") }?.value("tracking_number").orEmpty() }.ifBlank { "Assigned delivery" }
+                                        val count = if (state.offline || state.conversationUnread == null) null else ConversationRules.unread(state.conversationUnread.filterIsInstance<JsonObject>(), d.value("id"))
+                                        Surface(onClick = { messageThread = d.value("id") }, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = cardMod) {
+                                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = CircleShape) { Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { Text("O", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) } }
+                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text("Office", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                                    Text("Delivery $reference", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text(if (count == null) "Unread unavailable" else if (count > 0) "$count unread" else "Open conversation", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                                Text("›", fontSize = 26.sp, color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                    }
+                                }
+                                if (windowSize.gridColumns >= 2 && threads.size > 1) {
+                                    threads.chunked(2).forEach { pair ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)) {
+                                            pair.forEach { d -> renderThreadCard(d, Modifier.weight(1f)) }
+                                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                        }
+                                    }
+                                } else {
+                                    threads.forEach { d -> renderThreadCard(d, Modifier.fillMaxWidth()) }
+                                }
+                            }
+                        }
+                        tab == "Trips" -> DriverTrips(data, state, onHistory) { selected = it }
+                        tab == "Profile" -> {
+                            DriverProfile(
+                                data = data,
+                                busy = state.busy,
+                                offline = state.offline,
+                                refresh = onRefresh,
+                                recover = onRecovery,
+                                logout = onLogout,
+                                messages = { tab = "Messages"; messageThread = null; selected = null },
+                                onClearOffline = onClearOffline,
+                                onSubPanelChanged = { profileSubPanelOpen = it }
+                            )
+                        }
+                        tab == "Alerts" -> Column(Modifier.padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DriverPageHeading("Notifications") { tab = "Home" }
+                            LaunchedEffect(Unit) {
+                                if (state.notificationsPage == null && onLoadNotifications != null) {
+                                    onLoadNotifications(false)
+                                }
+                            }
+                            val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
+                            if (state.notificationsLoading && state.notificationsPage == null) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                            }
+                            state.notificationsError?.let {
+                                DriverNotice(it, true)
+                            }
+                            if (DriverRecordPresentation.section(data, "notifications") in listOf("error", "unavailable") && displayedNotifications.isEmpty()) {
+                                DriverNotice("Notifications unavailable. Refresh to retry.", true)
+                                TextButton(onClick = onRefresh, enabled = !state.busy) { Text("Retry notifications") }
+                            } else if (displayedNotifications.isEmpty() && !state.notificationsLoading) Text("No notifications yet.")
+                            val renderAlertCard: @Composable (JsonObject, Modifier) -> Unit = { n, cardMod ->
+                                DriverCard(modifier = cardMod) {
+                                    Text(n.value("title"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface); SupportingText(n.value("body")); SupportingText(MobilePresentation.time(n.value("created_at")))
+                                    if (n.value("read_at").isBlank()) TextButton(onClick = { onRead(n.value("id")) }, enabled = !state.busy) { Text("Mark read") }
+                                    if (shipments.any { it.value("id") == n.value("shipment_id") }) TextButton(onClick = { selected = n.value("shipment_id"); tab = "Trips" }) { Text("Open trip") }
+                                }
+                            }
+                            if (windowSize.gridColumns >= 2 && displayedNotifications.size > 1) {
+                                displayedNotifications.chunked(2).forEach { pair ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)) {
+                                        pair.forEach { n -> renderAlertCard(n, Modifier.weight(1f)) }
+                                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            } else {
+                                displayedNotifications.forEach { n -> renderAlertCard(n, Modifier.fillMaxWidth()) }
+                            }
+                            if (state.notificationsHasMore && onLoadNotifications != null) {
+                                OutlinedButton(
+                                    onClick = { onLoadNotifications(true) },
+                                    enabled = !state.notificationsLoading,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(if (state.notificationsLoading) "Loading more notifications..." else "Load more notifications")
+                                }
+                            }
                         }
                     }
                 }
@@ -408,6 +513,57 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
                 key(delivery.value("id"), delivery.value("driver_id")) {
                     conversation(JsonObject(delivery + mapOf("inbox_open" to JsonPrimitive(true))))
                 }
+            }
+        }
+    }
+}
+
+@Composable private fun DriverNavigationRail(tab: String, busy: Boolean, onTab: (String) -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxHeight()
+    ) {
+        NavigationRail(
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Start))
+                .padding(vertical = 8.dp)
+        ) {
+            listOf(
+                Triple("Home", R.drawable.figma_driver_0699e, 18),
+                Triple("Navigate", R.drawable.figma_driver_10a8b, 19),
+                Triple("Trips", R.drawable.figma_driver_8b002, 18),
+                Triple("Profile", R.drawable.figma_driver_dce13, 16)
+            ).forEach { (name, icon, height) ->
+                val selectedTab = tab == name
+                val color = if (selectedTab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                NavigationRailItem(
+                    selected = selectedTab,
+                    enabled = !busy,
+                    onClick = { onTab(name) },
+                    icon = {
+                        DriverAsset(icon, if (name == "Trips") 18 else 16, height, tint = color)
+                    },
+                    label = {
+                        Text(
+                            text = name.uppercase(),
+                            fontSize = 10.sp,
+                            fontWeight = if (selectedTab) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             }
         }
     }
@@ -497,8 +653,8 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
     }
 }
 
-@Composable private fun DriverAssignment(s:JsonObject,d:JsonObject,open:()->Unit) {
-    Surface(onClick=open,color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {Column {
+@Composable private fun DriverAssignment(s:JsonObject,d:JsonObject,modifier:Modifier=Modifier,open:()->Unit) {
+    Surface(onClick=open,modifier=modifier,color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {Column {
         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
             Text("Trip Assignment",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
             Spacer(Modifier.width(8.dp))
@@ -653,15 +809,16 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
 }
 
 @Composable private fun DriverTrips(data:JsonObject,state:MobileState,onHistory:((String,Boolean)->Unit)?,open:(String)->Unit) {
+    val windowSize = LocalTanawWindowSize.current
     var filter by rememberSaveable {mutableStateOf("All")}
     var period by rememberSaveable {mutableStateOf("This month")}
-    var showFilter by remember {mutableStateOf(false)}
+    var showFilter by rememberSaveable {mutableStateOf(false)}
     val extendedColors = TanawTheme.extendedColors
     LaunchedEffect(period) {onHistory?.invoke(period,false)}
     val history=DriverHistory.reconcileWithLive(data,state.history,period)
     val recordData=JsonObject((history?:data)+mapOf("driver_deliveries" to JsonArray(DriverRecordPresentation.deliveries(data,history?:state.history))))
     val records=if(onHistory==null)data.rows("shipments").filter {DriverUiRules.inPeriod(it,period)} else history?.rows("shipments").orEmpty()
-    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.padding(horizontal=windowSize.horizontalGutter,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("My Trips",style=MaterialTheme.typography.headlineMedium,color=MaterialTheme.colorScheme.onSurface)
             IconButton(onClick={showFilter=!showFilter},modifier=Modifier.size(48.dp)) {
@@ -678,13 +835,39 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
                 )
             }
         }
+        val completedValue = "${history?.value("completed")?:if(onHistory==null)records.count {DriverUiRules.isDriverCompleted(it,DriverUiRules.delivery(recordData,it.value("id")))}.toString() else "—"} Completed"
+        val allowanceValue = history?.let(DriverHistory::allowance)?:if(onHistory==null)DriverUiRules.allowanceTotal(recordData,records)else "Not loaded"
+        val onTimeValue = history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(recordData,records)else "Not loaded"
         DriverCard(accent=MaterialTheme.colorScheme.primary) {
-            DriverCaption(if(period=="This month")"MONTHLY TRIPS" else period.uppercase())
-            Text("${history?.value("completed")?:if(onHistory==null)records.count {DriverUiRules.isDriverCompleted(it,DriverUiRules.delivery(recordData,it.value("id")))}.toString() else "—"} Completed",fontSize=24.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
-            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("TOTAL ALLOWANCE")
-            Text(history?.let(DriverHistory::allowance)?:if(onHistory==null)DriverUiRules.allowanceTotal(recordData,records)else "Not loaded",fontSize=24.sp,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
-            HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("ON-TIME RATE")
-            Text(history?.let(DriverHistory::onTime)?:if(onHistory==null)DriverUiRules.onTime(recordData,records)else "Not loaded",fontSize=24.sp,color=extendedColors.onSuccessBannerText,fontWeight=FontWeight.Bold)
+            if (windowSize.widthClass != WindowWidthClass.COMPACT) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DriverCaption(if(period=="This month")"MONTHLY TRIPS" else period.uppercase())
+                        Text(completedValue, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DriverCaption("TOTAL ALLOWANCE")
+                        Text(allowanceValue, fontSize = 22.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DriverCaption("ON-TIME RATE")
+                        Text(onTimeValue, fontSize = 22.sp, color = extendedColors.onSuccessBannerText, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                DriverCaption(if(period=="This month")"MONTHLY TRIPS" else period.uppercase())
+                Text(completedValue,fontSize=24.sp,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurface)
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("TOTAL ALLOWANCE")
+                Text(allowanceValue,fontSize=24.sp,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant);DriverCaption("ON-TIME RATE")
+                Text(onTimeValue,fontSize=24.sp,color=extendedColors.onSuccessBannerText,fontWeight=FontWeight.Bold)
+            }
         }
         Text(if(onHistory==null)"$period · latest 200 permitted shipment records" else "$period · ${records.size} of ${history?.value("total")?:"—"} trips · totals include the full period",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(onHistory!=null) {
@@ -708,25 +891,36 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
         }
         val visible=records.filter {s->DriverUiRules.matches(s,DriverUiRules.delivery(recordData,s.value("id")),filter)}
         if(visible.isEmpty() && !state.historyLoading && state.historyError==null)Text(if(history!=null && records.size<(history.value("total").toIntOrNull()?:0))"No matching trips loaded. Load more to search further." else "No trips in this view.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        visible.forEach {s->
-            val d=DriverUiRules.delivery(recordData,s.value("id"))
-            Surface(onClick={open(s.value("id"))},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
-            Column {
-                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                        Text(s.value("tracking_number"),style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface,modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
-                        Spacer(Modifier.width(8.dp))
-                        DriverBadge(DriverUiRules.tripStatusLabel(s,d))
+        val renderTripCard: @Composable (JsonObject, Modifier) -> Unit = { s, cardMod ->
+            val d = DriverUiRules.delivery(recordData, s.value("id"))
+            Surface(onClick = { open(s.value("id")) }, modifier = cardMod, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                Column {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.value("tracking_number"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.width(8.dp))
+                            DriverBadge(DriverUiRules.tripStatusLabel(s, d))
+                        }
+                        Text("○  ${s.value("pickup_address")}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("○  ${s.value("dropoff_address")}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Text(MobilePresentation.time(s.value("scheduled_departure")), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(d.value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money) ?: "Allowance not recorded", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     }
-                    Text("○  ${s.value("pickup_address")}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    Text("○  ${s.value("dropoff_address")}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
-                    Text(MobilePresentation.time(s.value("scheduled_departure")),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(d.value("driver_allowance").takeIf(String::isNotBlank)?.let(MobilePresentation::money)?:"Allowance not recorded",style=MaterialTheme.typography.titleSmall,color=MaterialTheme.colorScheme.primary)
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(if (DriverUiRules.isDriverCompleted(s, d)) extendedColors.onSuccessBannerText else MaterialTheme.colorScheme.outlineVariant))
                 }
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if(DriverUiRules.isDriverCompleted(s,d)) extendedColors.onSuccessBannerText else MaterialTheme.colorScheme.outlineVariant))
             }
-        }}
+        }
+        if (windowSize.gridColumns >= 2 && visible.size > 1) {
+            visible.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)) {
+                    pair.forEach { s -> renderTripCard(s, Modifier.weight(1f)) }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        } else {
+            visible.forEach { s -> renderTripCard(s, Modifier.fillMaxWidth()) }
+        }
         if(onHistory!=null && history!=null && records.size<(history.value("total").toIntOrNull()?:0))
             OutlinedButton(onClick={onHistory(period,true)},enabled=!state.historyLoading,shape=RoundedCornerShape(10.dp),modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Load more trips")}
     }
@@ -818,8 +1012,8 @@ private fun autoSelectNavigateTripId(active: List<JsonObject>, data: JsonObject)
 @Composable private fun DriverBadge(label:String,color:Color=MaterialTheme.colorScheme.primary,background:Color=MaterialTheme.colorScheme.surfaceVariant,uppercase:Boolean=true) {
     Surface(color=background,shape=RoundedCornerShape(6.dp)) {Text(if(uppercase)label.uppercase()else label,Modifier.padding(horizontal=10.dp,vertical=4.dp),color=color,style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis)}
 }
-@Composable private fun DriverCard(accent:Color?=null,content:@Composable ColumnScope.()->Unit) {
-    Surface(color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+@Composable private fun DriverCard(accent:Color?=null,modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit) {
+    Surface(modifier=modifier,color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             if(accent!=null)Box(Modifier.width(4.dp).fillMaxHeight().background(accent))
             Column(Modifier.weight(1f).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
@@ -1085,7 +1279,7 @@ private fun previewDriverWorkspaceData() = buildJsonObject {
     })
 }
 
-@Preview(showBackground = true, name = "Driver Home")
+@FormFactorPreviews
 @Composable
 private fun DriverHomeLightPreview() {
     val data = previewDriverWorkspaceData()
@@ -1102,7 +1296,7 @@ private fun DriverHomeLightPreview() {
     }
 }
 
-@Preview(showBackground = true, name = "Driver Trips")
+@FormFactorPreviews
 @Composable
 private fun DriverTripsLightPreview() {
     val data = previewDriverWorkspaceData()

@@ -219,4 +219,87 @@ class CustomerAddressRulesTest {
         assertEquals("Calle España, Piso 3, Brgy. Santo Niño", pAddress)
         assertEquals("Valenzuela City, Metro Manila", pCity)
     }
+
+    @Test
+    fun suggestCitiesFiltersAndPrioritizesPrefixMatches() {
+        val defaults = CustomerAddressRules.suggestCities("", limit = 5)
+        assertEquals(5, defaults.size)
+        assertEquals("Cabanatuan City", defaults.first().city)
+
+        val cabanatuan = CustomerAddressRules.suggestCities("Cab", limit = 5)
+        assertTrue(cabanatuan.any { it.city == "Cabanatuan City" && it.province == "Nueva Ecija" })
+        assertTrue(cabanatuan.any { it.city == "Cabiao" && it.province == "Nueva Ecija" })
+
+        val pampanga = CustomerAddressRules.suggestCities("Pampanga", limit = 5)
+        assertTrue(pampanga.any { it.city == "San Fernando City" })
+        assertTrue(pampanga.any { it.city == "Angeles City" })
+
+        assertTrue(CustomerAddressRules.suggestCities("Cab", limit = 0).isEmpty())
+    }
+
+    @Test
+    fun parseFromGeocodedLabelExtractsStreetBarangayCityAndProvince() {
+        val full = CustomerAddressRules.parseFromGeocodedLabel(
+            "123 Rizal St, Brgy. San Josef Sur, Cabanatuan City, 3100 Nueva Ecija, Philippines"
+        )
+        assertEquals("123 Rizal St", full.streetAddress)
+        assertEquals("San Josef Sur", full.barangay)
+        assertEquals("Cabanatuan City", full.city)
+        assertEquals("Nueva Ecija", full.province)
+
+        val landmark = CustomerAddressRules.parseFromGeocodedLabel(
+            "SM City Cabanatuan, Maharlika Highway, Cabanatuan City, Nueva Ecija"
+        )
+        assertEquals("SM City Cabanatuan, Maharlika Highway", landmark.streetAddress)
+        assertEquals("", landmark.barangay)
+        assertEquals("Cabanatuan City", landmark.city)
+        assertEquals("Nueva Ecija", landmark.province)
+
+        val plusCode = CustomerAddressRules.parseFromGeocodedLabel(
+            "8HVM+7Q Cabanatuan City, Nueva Ecija, Philippines"
+        )
+        assertEquals("", plusCode.streetAddress)
+        assertEquals("Cabanatuan City", plusCode.city)
+        assertEquals("Nueva Ecija", plusCode.province)
+
+        val twoPartStreetAndCity = CustomerAddressRules.parseFromGeocodedLabel(
+            "Purok 3 Mabini St, Cabanatuan City"
+        )
+        assertEquals("Purok 3 Mabini St", twoPartStreetAndCity.streetAddress)
+        assertEquals("Cabanatuan City", twoPartStreetAndCity.city)
+        assertEquals("Nueva Ecija", twoPartStreetAndCity.province)
+    }
+
+    @Test
+    fun fromAndroidAddressComponentsNormalizesRegionsAndExtractsBarangay() {
+        val nuevaEcija = CustomerAddressRules.fromAndroidAddressComponents(
+            featureName = "123",
+            thoroughfare = "Maharlika Highway",
+            subThoroughfare = "123",
+            subLocality = "Brgy. Valdefuente",
+            locality = "Cabanatuan City",
+            subAdminArea = "Nueva Ecija",
+            adminArea = "Central Luzon",
+            addressLine = "123 Maharlika Highway, Brgy. Valdefuente, Cabanatuan City, Nueva Ecija, Philippines"
+        )
+        assertEquals("123 Maharlika Highway", nuevaEcija.streetAddress)
+        assertEquals("Valdefuente", nuevaEcija.barangay)
+        assertEquals("Cabanatuan City", nuevaEcija.city)
+        assertEquals("Nueva Ecija", nuevaEcija.province)
+
+        val ncr = CustomerAddressRules.fromAndroidAddressComponents(
+            featureName = "North Harbor Pier 4",
+            thoroughfare = "Radial Road 10",
+            subThoroughfare = null,
+            subLocality = "Tondo",
+            locality = "Manila",
+            subAdminArea = null,
+            adminArea = "National Capital Region",
+            addressLine = "North Harbor Pier 4, Radial Road 10, Tondo, Manila, Metro Manila"
+        )
+        assertEquals("Radial Road 10, North Harbor Pier 4", ncr.streetAddress)
+        assertEquals("Tondo", ncr.barangay)
+        assertEquals("Manila", ncr.city)
+        assertEquals("Metro Manila", ncr.province)
+    }
 }

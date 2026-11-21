@@ -1,9 +1,18 @@
 package com.tanaw.app.feature.workspace.customer.screens
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Looper
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,8 +21,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tanaw.app.core.validation.MobileValidation
+import com.tanaw.app.feature.workspace.customer.components.DEFAULT_ADDRESS_CENTER
 import com.tanaw.app.feature.workspace.customer.components.PickupTimeBottomSheet
+import com.tanaw.app.feature.workspace.customer.components.fetchBestDeviceLatLng
+import com.tanaw.app.feature.workspace.customer.components.findCachedDeviceLatLng
+import com.tanaw.app.feature.workspace.customer.components.hasLocationPermission
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
@@ -25,6 +42,7 @@ import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.rows
 import com.tanaw.app.feature.workspace.viewmodel.value
+import com.tanaw.app.ui.components.MobileGeocoding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -36,6 +54,7 @@ import kotlinx.serialization.json.put
 import org.maplibre.android.geometry.LatLng
 import java.time.Instant
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -78,6 +97,184 @@ fun CustomerBookingFlow(
         )
     }
     val fullSavedProfileAddress = savedDefaultAddress.fullDisplayAddress().ifBlank { customer.value("address") }
+
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    var userOriginLat by rememberSaveable { mutableStateOf<Double?>(null) }
+    var userOriginLng by rememberSaveable { mutableStateOf<Double?>(null) }
+    val userOriginPoint = userOriginLat?.let { lat -> userOriginLng?.let { lng -> LatLng(lat, lng) } }
+    var userOriginAddress by rememberSaveable { mutableStateOf("") }
+    var userOriginCity by rememberSaveable { mutableStateOf("") }
+    var isLocatingUser by remember { mutableStateOf(false) }
+    var locationPermissionGranted by remember { mutableStateOf(hasLocationPermission(context)) }
+    var locationPermissionPrompted by rememberSaveable(customerId) { mutableStateOf(false) }
+
+    fun updateOriginCoordinate(point: LatLng) {
+        val currentLat = userOriginLat
+        val currentLng = userOriginLng
+        if (currentLat == null || currentLng == null ||
+            abs(currentLat - point.latitude) >= 0.0005 ||
+            abs(currentLng - point.longitude) >= 0.0005
+        ) {
+            userOriginLat = point.latitude
+            userOriginLng = point.longitude
+        }
+    }
+
+    fun refreshUserLocation() {
+        locationPermissionGranted = hasLocationPermission(context)
+        if (!locationPermissionGranted) return
+        findCachedDeviceLatLng(context)?.let { cached ->
+            updateOriginCoordinate(cached)
+        }
+        coroutineScope.launch {
+            isLocatingUser = true
+            try {
+                fetchBestDeviceLatLng(context)?.let { fresh ->
+                    updateOriginCoordinate(fresh)
+                }
+            } finally {
+                isLocatingUser = false
+            }
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            hasLocationPermission(context)
+        locationPermissionGranted = granted
+        if (granted) {
+            refreshUserLocation()
+        }
+    }
+
+    // Automatically track user location on login/home entry, or prompt for precise/approximate permission if not yet configured
+    LaunchedEffect(customerId) {
+        val granted = hasLocationPermission(context)
+        locationPermissionGranted = granted
+        if (granted) {
+            refreshUserLocation()
+        } else if (!locationPermissionPrompted) {
+            locationPermissionPrompted = true
+            runCatching {
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
+        }
+    }
+
+    // Continuous location tracking while in the foreground when permission is granted
+    @SuppressLint("MissingPermission")
+    DisposableEffect(context, lifecycle, locationPermissionGranted) {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        val locationListener = LocationListener { location ->
+            updateOriginCoordinate(LatLng(location.latitude, location.longitude))
+        }
+        var registered = false
+
+        fun startTracking() {
+            if (registered || !hasLocationPermission(context) || manager == null) return
+            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            providers.forEach { provider ->
+                if (runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)) {
+                    runCatching {
+                        manager.requestLocationUpdates(
+                            provider,
+                            15_000L,
+                            50f,
+                            locationListener,
+                            Looper.getMainLooper()
+                        )
+                        registered = true
+                    }
+                }
+            }
+        }
+
+        fun stopTracking() {
+            if (!registered || manager == null) return
+            runCatching { manager.removeUpdates(locationListener) }
+            registered = false
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    val nowGranted = hasLocationPermission(context)
+                    locationPermissionGranted = nowGranted
+                    if (nowGranted) {
+                        refreshUserLocation()
+                        startTracking()
+                    }
+                }
+                Lifecycle.Event.ON_PAUSE -> stopTracking()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && locationPermissionGranted) {
+            startTracking()
+        }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            stopTracking()
+        }
+    }
+
+    // Reverse-geocode the tracked user origin coordinates into city & address
+    LaunchedEffect(userOriginLat, userOriginLng) {
+        val point = userOriginPoint ?: return@LaunchedEffect
+        isLocatingUser = true
+        try {
+            val structured = MobileGeocoding.reverseStructured(context, point)
+            if (structured != null) {
+                val city = structured.city.trim()
+                val province = structured.province.trim()
+                val formattedCity = when {
+                    city.isNotBlank() && province.isNotBlank() -> "$city, $province"
+                    city.isNotBlank() -> city
+                    province.isNotBlank() -> province
+                    else -> ""
+                }
+                if (formattedCity.isNotBlank()) {
+                    userOriginCity = formattedCity
+                }
+                val fullAddr = structured.fullDisplayAddress()
+                if (fullAddr.isNotBlank()) {
+                    userOriginAddress = fullAddr
+                }
+            }
+            if (userOriginAddress.isBlank() || userOriginCity.isBlank()) {
+                val rawLabel = MobileGeocoding.reverse(context, point)
+                if (!rawLabel.isNullOrBlank()) {
+                    if (userOriginAddress.isBlank()) {
+                        userOriginAddress = rawLabel
+                    }
+                    if (userOriginCity.isBlank()) {
+                        userOriginCity = CustomerBookingRules.resolveHeaderCity(
+                            rawAddress = "",
+                            rawCity = "",
+                            liveLocationAddress = rawLabel
+                        )
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Keep existing resolved origin city/address if geocoding fails offline
+        } finally {
+            isLocatingUser = false
+        }
+    }
 
     var stepName by rememberSaveable { mutableStateOf(CustomerBookingStep.HOME.name) }
     val step = runCatching { CustomerBookingStep.valueOf(stepName) }.getOrDefault(CustomerBookingStep.HOME)
@@ -326,13 +523,15 @@ fun CustomerBookingFlow(
     Box(modifier = modifier.fillMaxSize()) {
         when (step) {
             CustomerBookingStep.HOME -> {
-                val resolvedHeaderCity = remember(customer, pickup) {
+                val resolvedHeaderCity = remember(customer, pickup, userOriginCity, userOriginAddress) {
                     CustomerBookingRules.resolveHeaderCity(
                         rawAddress = customer.value("address"),
                         rawCity = customer.value("city"),
                         explicitBarangay = customer.value("barangay"),
                         explicitProvince = customer.value("province"),
-                        pickupAddress = pickup
+                        pickupAddress = pickup,
+                        liveLocationCity = userOriginCity,
+                        liveLocationAddress = userOriginAddress
                     )
                 }
                 CustomerBookingHomeContent(
@@ -364,6 +563,21 @@ fun CustomerBookingFlow(
                     pricingRates = pricingRates,
                     isScheduleSet = hasValidSchedule,
                     customerStanding = customerStanding,
+                    isLocatingUser = isLocatingUser,
+                    onLocationHeaderClick = {
+                        if (hasLocationPermission(context)) {
+                            refreshUserLocation()
+                        } else {
+                            runCatching {
+                                locationPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            }
+                        }
+                    },
                     onDestinationClick = { setStep(CustomerBookingStep.DESTINATION_MAP) },
                     onSwapLocations = {
                         val tmpAddr = pickup
@@ -391,13 +605,14 @@ fun CustomerBookingFlow(
             }
 
             CustomerBookingStep.PICKUP_MAP -> {
+                val originFallback = userOriginPoint ?: findCachedDeviceLatLng(context)
                 FullScreenLocationPicker(
                     isDestination = false,
                     initialAddress = pickup,
-                    initialPoint = pickupPoint ?: dropoffPoint ?: LatLng(15.4865, 120.9679),
+                    initialPoint = pickupPoint ?: originFallback ?: dropoffPoint ?: DEFAULT_ADDRESS_CENTER,
                     counterpartAddress = dropoff,
                     counterpartPoint = dropoffPoint,
-                    savedProfileAddress = customer.value("address"),
+                    savedProfileAddress = fullSavedProfileAddress,
                     routePreview = routePreview,
                     routeLoading = routeLoading,
                     onBack = { setStep(CustomerBookingStep.HOME) },
@@ -406,18 +621,21 @@ fun CustomerBookingFlow(
                         pickupLat = selected.latitude
                         pickupLng = selected.longitude
                         setStep(CustomerBookingStep.HOME)
-                    }
+                    },
+                    userOriginPoint = originFallback,
+                    userOriginAddress = userOriginAddress
                 )
             }
 
             CustomerBookingStep.DESTINATION_MAP -> {
+                val originFallback = userOriginPoint ?: findCachedDeviceLatLng(context) ?: pickupPoint
                 FullScreenLocationPicker(
                     isDestination = true,
                     initialAddress = dropoff,
-                    initialPoint = dropoffPoint ?: pickupPoint ?: LatLng(14.6158, 120.9585),
+                    initialPoint = dropoffPoint ?: originFallback ?: LatLng(14.6158, 120.9585),
                     counterpartAddress = pickup,
                     counterpartPoint = pickupPoint,
-                    savedProfileAddress = customer.value("address"),
+                    savedProfileAddress = fullSavedProfileAddress,
                     routePreview = routePreview,
                     routeLoading = routeLoading,
                     onBack = { setStep(CustomerBookingStep.HOME) },
@@ -426,7 +644,9 @@ fun CustomerBookingFlow(
                         dropoffLat = selected.latitude
                         dropoffLng = selected.longitude
                         setStep(CustomerBookingStep.HOME)
-                    }
+                    },
+                    userOriginPoint = originFallback,
+                    userOriginAddress = userOriginAddress
                 )
             }
 
@@ -460,7 +680,8 @@ fun CustomerBookingFlow(
                     onSelectVehicle = { selectVehicleAndValidateSchedule(it) },
                     onHandlingChange = { handling = it },
                     onNotesChange = { notes = it },
-                    onConfirm = { setStep(CustomerBookingStep.SUMMARY) }
+                    onConfirm = { setStep(CustomerBookingStep.SUMMARY) },
+                    savedContact = profile.value("phone").ifBlank { customer.value("phone") }
                 )
             }
 

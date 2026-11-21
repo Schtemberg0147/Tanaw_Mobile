@@ -5,15 +5,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,11 +41,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
 import com.tanaw.app.feature.workspace.customer.components.TimelineRow
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.StatusGreen
 import com.tanaw.app.ui.theme.StatusGreenBg
 import com.tanaw.app.ui.theme.TanawCustomerTheme
@@ -49,6 +54,7 @@ import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TanawMonoFontFamily
 
 // ─── Booking Submitted! Confirmation Screen (Image 1, Screen 4) ───────────────
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BookingSubmittedScreen(
     trackingNumber: String,
@@ -61,21 +67,28 @@ fun BookingSubmittedScreen(
 ) {
     val greenAccent = StatusGreen
     val greenBg = StatusGreenBg
+    val windowSize = LocalTanawWindowSize.current
 
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
+                    .fillMaxWidth()
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
             // Green Checkmark Box
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -185,11 +198,12 @@ fun BookingSubmittedScreen(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
 
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Column(modifier = Modifier.widthIn(min = 96.dp, max = 180.dp)) {
                                 Text(
                                     text = stringResource(R.string.vehicle_label),
                                     style = MaterialTheme.typography.labelSmall,
@@ -208,7 +222,7 @@ fun BookingSubmittedScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Column(modifier = Modifier.widthIn(min = 96.dp, max = 180.dp)) {
                                 Text(
                                     text = stringResource(R.string.schedule_label),
                                     style = MaterialTheme.typography.labelSmall,
@@ -229,8 +243,7 @@ fun BookingSubmittedScreen(
                                 )
                             }
                             Column(
-                                modifier = Modifier.weight(1f, fill = false),
-                                horizontalAlignment = Alignment.End
+                                modifier = Modifier.widthIn(min = 96.dp, max = 180.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.total_fee_label),
@@ -287,7 +300,7 @@ fun BookingSubmittedScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Button(
                 onClick = onTrackShipment,
@@ -298,7 +311,7 @@ fun BookingSubmittedScreen(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag("TrackShipmentButton")
             ) {
                 Text(
@@ -312,7 +325,7 @@ fun BookingSubmittedScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag("BookAnotherButton")
             ) {
                 Text(
@@ -320,11 +333,12 @@ fun BookingSubmittedScreen(
                     fontWeight = FontWeight.Bold
                 )
             }
+            }
         }
     }
 }
 
-@Preview(showBackground = true, name = "Booking Submitted")
+@FormFactorPreviews
 @Composable
 private fun BookingSubmittedPreview() {
     TanawCustomerTheme {

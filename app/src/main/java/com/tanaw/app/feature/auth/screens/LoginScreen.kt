@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -27,13 +28,15 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
 import com.tanaw.app.feature.auth.components.GoogleSignInButton
 import com.tanaw.app.ui.components.*
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawTheme
+import com.tanaw.app.ui.theme.WindowWidthClass
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 /**
@@ -67,13 +70,15 @@ fun LoginScreen(
     allowPhone: Boolean = false,
 ) {
     // Local UI-only state
-    var email           by remember { mutableStateOf("") }
-    var emailTouched    by remember { mutableStateOf(false) }
-    var useEmail        by remember(allowPhone) { mutableStateOf(!allowPhone) }
-    var password        by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var showBanner      by remember { mutableStateOf(successMessage != null) }
+    var email           by rememberSaveable { mutableStateOf("") }
+    var emailTouched    by rememberSaveable { mutableStateOf(false) }
+    var useEmail        by rememberSaveable(allowPhone) { mutableStateOf(!allowPhone) }
+    var password        by rememberSaveable { mutableStateOf("") }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var showBanner      by rememberSaveable { mutableStateOf(successMessage != null) }
     val focusManager = LocalFocusManager.current
+    val windowSize = LocalTanawWindowSize.current
+    val horizontalPad = if (windowSize.isNarrowPhone) 16.dp else 24.dp
 
     val isEmailInvalid = emailTouched && email.isNotBlank() && !MobileValidation.email(email)
     val isPhoneInvalid = emailTouched && email.isNotBlank() && MobileValidation.phone(email) == null
@@ -98,16 +103,28 @@ fun LoginScreen(
         modifier = Modifier.fillMaxSize(),
         color    = MaterialTheme.colorScheme.background
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(horizontal = horizontalPad),
+            contentAlignment = if (windowSize.widthClass == WindowWidthClass.COMPACT && !windowSize.isCompactLandscape) {
+                Alignment.TopCenter
+            } else {
+                Alignment.Center
+            }
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.authMaxWidth)
+                    .fillMaxWidth()
+                    .padding(vertical = if (windowSize.widthClass != WindowWidthClass.COMPACT) 24.dp else 0.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             if (showBanner && successMessage != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 SuccessBanner(
@@ -322,12 +339,13 @@ fun LoginScreen(
             )
 
             Spacer(modifier = Modifier.height(32.dp))
+            }
         }
     }
 }
 
 // ─── Previews ─────────────────────────────────────────────────────────────────
-@Preview(showBackground = true, name = "Login Screen")
+@FormFactorPreviews
 @Composable
 fun LoginScreenLightPreview() {
     TanawTheme {

@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,8 +41,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -59,12 +59,13 @@ import com.tanaw.app.feature.auth.screens.ForgotPasswordCardScreen
 import com.tanaw.app.feature.auth.screens.LoginScreen
 import com.tanaw.app.feature.auth.screens.VerificationCodeScreen
 import com.tanaw.app.feature.auth.screens.VerifyRecoveryCodeScreen
+import com.tanaw.app.feature.workspace.customer.components.AddressQuickAssistBar
+import com.tanaw.app.feature.workspace.customer.components.CitySuggestionStrip
 import com.tanaw.app.feature.workspace.customer.components.CustomerTopBar
 import com.tanaw.app.feature.workspace.customer.components.TanawBrandLogo
 import com.tanaw.app.feature.workspace.customer.dialogs.CustomerCancellationSection
 import com.tanaw.app.feature.workspace.customer.dialogs.SuspensionAppealDialog
 import com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules
-import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerHistoryPresentation
 import com.tanaw.app.feature.workspace.customer.rules.CustomerNoShowRules
 import com.tanaw.app.feature.workspace.customer.rules.CustomerPaginationRules
@@ -81,17 +82,16 @@ import com.tanaw.app.feature.workspace.driver.screens.DriverWorkspace
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
 import com.tanaw.app.feature.workspace.rules.ShipmentDeliveryRules
 import com.tanaw.app.feature.workspace.state.MobileState
-import com.tanaw.app.feature.workspace.store.RecoveryPolicy
 import com.tanaw.app.feature.workspace.tracking.TrackingFreshnessRules
 import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.feature.workspace.viewmodel.obj
 import com.tanaw.app.feature.workspace.viewmodel.rows
 import com.tanaw.app.feature.workspace.viewmodel.value
 import com.tanaw.app.ui.components.ShipmentMap
-import com.tanaw.app.ui.components.StatusBadge
 import com.tanaw.app.ui.components.SupportingText
 import com.tanaw.app.ui.components.TanawSubScreenTopBar
 import com.tanaw.app.ui.components.WorkspaceCard
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawBodyFontFamily
 import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
@@ -100,8 +100,6 @@ import com.tanaw.app.ui.theme.TanawTheme
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -148,7 +146,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
 
     if (state.page == "signup") {
         BackHandler(!state.busy) { vm.page("login") }
-        var terms by remember { mutableStateOf(false) }
+        var terms by rememberSaveable { mutableStateOf(false) }
         CreateAccountScreen(
             onVerifyAndContinue = vm::signup,
             onSignIn = { vm.page("login") },
@@ -216,7 +214,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                 )
             }
             "verify_phone" -> {
-                var code by remember { mutableStateOf("") }
+                var code by rememberSaveable { mutableStateOf("") }
                 val codeValid = code.matches(Regex("[0-9]{6,8}"))
                 val isCodeError = code.isNotBlank() && !codeValid
                 VerificationCodeScreen(
@@ -252,13 +250,16 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
         return
     }
 
-    val isCustomer = data.obj("profile").value("role") == "customer"
+    val profile = data.obj("profile")
+    val role = profile.value("role").trim().lowercase()
+    val isCustomer = role == "customer"
+    val isDriver = role == "driver"
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = {}
     )
-    var notificationPermissionPrompted by rememberSaveable(data.obj("profile").value("id")) { mutableStateOf(false) }
-    LaunchedEffect(data.obj("profile").value("id")) {
+    var notificationPermissionPrompted by rememberSaveable(profile.value("id")) { mutableStateOf(false) }
+    LaunchedEffect(profile.value("id")) {
         if (!notificationPermissionPrompted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionPrompted = true
             val granted = ContextCompat.checkSelfPermission(
@@ -279,12 +280,12 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
     }
 
     renderCustomerOrDefault {
-        key(data.obj("profile").value("id")) {
+        key(profile.value("id")) {
             val customerStanding = remember(data) {
                 if (isCustomer) CustomerNoShowRules.evaluateStanding(data) else null
             }
             if (isCustomer &&
-                MobileValidation.phone(data.obj("profile").value("phone")) == null
+                MobileValidation.phone(profile.value("phone")) == null
             ) {
                 OnboardingProfileGate(
                     vm = vm,
@@ -305,7 +306,7 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                 )
                 if (showAppealDialog) {
                     SuspensionAppealDialog(
-                        initialPhone = data.obj("profile").value("phone"),
+                        initialPhone = profile.value("phone"),
                         isSubmitting = state.busy,
                         offline = state.offline,
                         errorMessage = state.error,
@@ -319,10 +320,18 @@ fun MobileWorkspaceApp(vm: MobileWorkspaceViewModel) {
                         }
                     )
                 }
-            } else if (data.obj("profile").value("role") == "driver") {
+            } else if (isDriver) {
                 DriverWorkspace(vm, state, data)
-            } else {
+            } else if (isCustomer) {
                 Workspace(vm, state, data)
+            } else {
+                OfficePortalNoticeScreen(
+                    role = role,
+                    email = profile.value("email"),
+                    state = state,
+                    onRetry = vm::refresh,
+                    onLogout = vm::logout
+                )
             }
         }
 
@@ -473,45 +482,211 @@ private fun AccessAttentionScreen(
 }
 
 @Composable
+private fun OfficePortalNoticeScreen(
+    role: String,
+    email: String,
+    state: MobileState,
+    onRetry: () -> Unit,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val roleLabel = role.takeIf { it.isNotBlank() }?.uppercase() ?: "OFFICE ACCOUNT"
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            WorkspaceCard(modifier = Modifier.widthIn(max = 420.dp)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TanawBrandLogo(modifier = Modifier.size(48.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = roleLabel,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = TanawMonoFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                    Text(
+                        text = "Use the Tanaw web portal",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontFamily = TanawDisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "This mobile app supports Customer and Driver accounts. Office admin and staff operations are managed on the Tanaw web dashboard.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    if (email.isNotBlank()) {
+                        Text(
+                            text = "Signed in as $email",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = TanawMonoFontFamily,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Notices(state, showLinearProgress = false)
+                    Action(label = "Refresh account", enabled = !state.busy, onClick = onRetry)
+                    OutlinedButton(
+                        onClick = onLogout,
+                        enabled = !state.busy,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                    ) {
+                        Text("Sign out", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun OnboardingProfileGate(
     vm: MobileWorkspaceViewModel,
     state: MobileState,
     data: JsonObject,
     modifier: Modifier = Modifier
 ) {
+    var showSignOutConfirm by rememberSaveable { mutableStateOf(false) }
+    val windowSize = LocalTanawWindowSize.current
+
+    if (showSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!state.busy) showSignOutConfirm = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "Sign out of Tanaw?",
+                    fontFamily = TanawDisplayFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            text = {
+                Text(
+                    text = "Any unsaved profile details will be cleared until you sign in again.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSignOutConfirm = false
+                        vm.logout()
+                    },
+                    enabled = !state.busy
+                ) {
+                    Text("Sign out", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showSignOutConfirm = false },
+                    enabled = !state.busy
+                ) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TanawSubScreenTopBar(
-                title = "Complete your profile",
-                onBack = vm::logout,
-                busy = state.busy
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.statusBarsPadding()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 60.dp)
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TanawBrandLogo(modifier = Modifier.size(30.dp))
+                        Text(
+                            text = "Complete your profile",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontFamily = TanawDisplayFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (state.busy) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+                    }
+                }
+            }
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .navigationBarsPadding()
                 .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
+                    .fillMaxWidth()
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             Notices(state, showLinearProgress = false)
-            SupportingText("Add your contact number before continuing to shipments.")
+            SupportingText("Add your verified Philippine mobile number and default pickup address before booking shipments.")
             WorkspaceCard {
-                ProfileForm(
-                    vm = vm,
+                OnboardingProfileForm(
                     state = state,
                     data = data,
-                    isOnboardingGate = true
+                    onSaveProfile = vm::profile
                 )
             }
             OutlinedButton(
-                onClick = vm::logout,
+                onClick = { showSignOutConfirm = true },
                 enabled = !state.busy,
                 shape = RoundedCornerShape(10.dp),
                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
@@ -525,6 +700,7 @@ private fun OnboardingProfileGate(
             ) {
                 Text("Sign out", fontWeight = FontWeight.Bold)
             }
+            }
         }
     }
 }
@@ -533,7 +709,6 @@ private fun OnboardingProfileGate(
 private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: JsonObject) {
     var tab by rememberSaveable { mutableStateOf(if (state.passwordChangeOwner != null) "Profile" else "Home") }
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
-    var info by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable(tab) { mutableStateOf("") }
     var historyFilter by rememberSaveable { mutableStateOf("All") }
     var fullScreenBookingStep by rememberSaveable { mutableStateOf(false) }
@@ -541,8 +716,8 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
     val bookingDraft = rememberSaveableStateHolder()
     val profile = data.obj("profile")
     val role = profile.value("role")
-    val isCustomerHome = role == "customer" && tab == "Home" && detail == null
-    val isCustomerProfile = role == "customer" && tab == "Profile" && detail == null
+    val isCustomerHome = tab == "Home" && detail == null
+    val isCustomerProfile = tab == "Profile" && detail == null
     val isCustomerShipments = tab in listOf("Active", "History") && detail == null
 
     BackHandler(detail != null) { detail = null }
@@ -594,125 +769,205 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
     val showDetailFallbackTopBar = detail != null && selectedShipment == null
     val showRootTopBar = detail == null && !hideChromeForChildFlow
     val showBottomBar = detail == null && !hideChromeForChildFlow
+    val windowSize = LocalTanawWindowSize.current
+    val useNavRail = showBottomBar && windowSize.useNavRail
+    val customerTabs = listOf(
+        "Home" to Icons.Outlined.Home,
+        "Active" to Icons.Outlined.LocalShipping,
+        "History" to Icons.Outlined.History,
+        "Alerts" to Icons.Outlined.Notifications,
+        "Profile" to Icons.Outlined.Person
+    )
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = {
-            if (showDetailFallbackTopBar) {
-                TanawSubScreenTopBar(
-                    title = "Shipment details",
-                    onBack = { detail = null },
-                    busy = state.busy || state.detailLoading
-                )
-            } else if (showRootTopBar) {
-                CustomerTopBar(
-                    unreadAlertsCount = unreadAlertsCount,
-                    isBusy = state.busy,
-                    onRefresh = vm::refresh,
-                    onOpenAlerts = { tab = "Alerts"; detail = null },
-                    applyStatusBarsPadding = true
-                )
-            }
-        },
-        bottomBar = {
-            if (showBottomBar) {
-                Surface(
-                    color = Color.White,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
-                                .heightIn(min = 64.dp)
-                                .selectableGroup(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val icons = listOf(
-                                Icons.Outlined.Home,
-                                Icons.Outlined.LocalShipping,
-                                Icons.Outlined.History,
-                                Icons.Outlined.Notifications,
-                                Icons.Outlined.Person
-                            )
-                            listOf("Home", "Active", "History", "Alerts", "Profile").forEachIndexed { index, label ->
-                                val selected = tab == label
-                                val unreadAlerts = if (label == "Alerts") unreadAlertsCount else 0
-                                val activeNavColor = Color(0xFF002D54)
-                                val inactiveNavColor = Color(0xFF64748B)
-                                val itemColor = when {
-                                    state.busy -> inactiveNavColor.copy(alpha = 0.45f)
-                                    selected -> activeNavColor
-                                    else -> inactiveNavColor
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 64.dp)
-                                        .selectable(
-                                            selected = selected,
-                                            enabled = !state.busy,
-                                            role = Role.Tab,
-                                            onClick = {
-                                                tab = label
-                                                detail = null
-                                                if (label != "Profile") profileSubPanelOpen = false
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (useNavRail) {
+            Surface(
+                color = Color.White,
+                modifier = Modifier.fillMaxHeight()
+            ) {
+                Row(modifier = Modifier.fillMaxHeight()) {
+                    NavigationRail(
+                        containerColor = Color.White,
+                        contentColor = Color(0xFF002D54),
+                        modifier = Modifier
+                            .statusBarsPadding()
+                            .navigationBarsPadding()
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Start))
+                            .padding(vertical = 8.dp)
+                    ) {
+                        customerTabs.forEach { (label, icon) ->
+                            val selected = tab == label
+                            val unreadAlerts = if (label == "Alerts") unreadAlertsCount else 0
+                            NavigationRailItem(
+                                selected = selected,
+                                enabled = !state.busy,
+                                onClick = {
+                                    tab = label
+                                    detail = null
+                                    if (label != "Profile") profileSubPanelOpen = false
+                                },
+                                icon = {
+                                    if (unreadAlerts > 0) {
+                                        BadgedBox(
+                                            badge = {
+                                                Badge(
+                                                    containerColor = Color(0xFF0383D5),
+                                                    contentColor = Color.White
+                                                ) { Text("$unreadAlerts") }
                                             }
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (selected) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.TopCenter)
-                                                .width(36.dp)
-                                                .height(3.dp)
-                                                .clip(RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp))
-                                                .background(activeNavColor)
+                                        ) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = label,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = label,
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(top = 8.dp, bottom = 6.dp)
-                                    ) {
-                                        if (unreadAlerts > 0) {
-                                            BadgedBox(
-                                                badge = {
-                                                    Badge(
-                                                        containerColor = Color(0xFF0383D5),
-                                                        contentColor = Color.White
-                                                    ) { Text("$unreadAlerts") }
+                                },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        fontFamily = TanawBodyFontFamily,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                colors = NavigationRailItemDefaults.colors(
+                                    selectedIconColor = Color(0xFF002D54),
+                                    selectedTextColor = Color(0xFF002D54),
+                                    indicatorColor = Color(0xFF002D54).copy(alpha = 0.12f),
+                                    unselectedIconColor = Color(0xFF64748B),
+                                    unselectedTextColor = Color(0xFF64748B)
+                                )
+                            )
+                        }
+                    }
+                    VerticalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                }
+            }
+        }
+
+        Scaffold(
+            modifier = Modifier.weight(1f),
+            containerColor = MaterialTheme.colorScheme.background,
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            topBar = {
+                if (showDetailFallbackTopBar) {
+                    TanawSubScreenTopBar(
+                        title = "Shipment details",
+                        onBack = { detail = null },
+                        busy = state.busy || state.detailLoading
+                    )
+                } else if (showRootTopBar) {
+                    CustomerTopBar(
+                        unreadAlertsCount = unreadAlertsCount,
+                        isBusy = state.busy,
+                        onRefresh = vm::refresh,
+                        onOpenAlerts = { tab = "Alerts"; detail = null },
+                        applyStatusBarsPadding = true
+                    )
+                }
+            },
+            bottomBar = {
+                if (showBottomBar && !useNavRail) {
+                    Surface(
+                        color = Color.White,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
+                                    .heightIn(min = 64.dp)
+                                    .selectableGroup(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                customerTabs.forEach { (label, icon) ->
+                                    val selected = tab == label
+                                    val unreadAlerts = if (label == "Alerts") unreadAlertsCount else 0
+                                    val activeNavColor = Color(0xFF002D54)
+                                    val inactiveNavColor = Color(0xFF64748B)
+                                    val itemColor = when {
+                                        state.busy -> inactiveNavColor.copy(alpha = 0.45f)
+                                        selected -> activeNavColor
+                                        else -> inactiveNavColor
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 64.dp)
+                                            .selectable(
+                                                selected = selected,
+                                                enabled = !state.busy,
+                                                role = Role.Tab,
+                                                onClick = {
+                                                    tab = label
+                                                    detail = null
+                                                    if (label != "Profile") profileSubPanelOpen = false
                                                 }
-                                            ) {
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (selected) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopCenter)
+                                                    .width(36.dp)
+                                                    .height(3.dp)
+                                                    .clip(RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp))
+                                                    .background(activeNavColor)
+                                            )
+                                        }
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center,
+                                            modifier = Modifier.padding(top = 8.dp, bottom = 6.dp)
+                                        ) {
+                                            if (unreadAlerts > 0) {
+                                                BadgedBox(
+                                                    badge = {
+                                                        Badge(
+                                                            containerColor = Color(0xFF0383D5),
+                                                            contentColor = Color.White
+                                                        ) { Text("$unreadAlerts") }
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = label,
+                                                        tint = itemColor,
+                                                        modifier = Modifier.size(22.dp)
+                                                    )
+                                                }
+                                            } else {
                                                 Icon(
-                                                    imageVector = icons[index],
+                                                    imageVector = icon,
                                                     contentDescription = label,
                                                     tint = itemColor,
                                                     modifier = Modifier.size(22.dp)
                                                 )
                                             }
-                                        } else {
-                                            Icon(
-                                                imageVector = icons[index],
-                                                contentDescription = label,
-                                                tint = itemColor,
-                                                modifier = Modifier.size(22.dp)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = label,
+                                                fontFamily = TanawBodyFontFamily,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 11.sp,
+                                                color = itemColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = label,
-                                            fontFamily = TanawBodyFontFamily,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = 11.sp,
-                                            color = itemColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
                                     }
                                 }
                             }
@@ -720,8 +975,7 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                     }
                 }
             }
-        }
-    ) { padding ->
+        ) { padding ->
         if (isTrackingDetail) {
             Box(modifier = Modifier.fillMaxSize()) {
                 ShipmentDetails(
@@ -833,15 +1087,21 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                 )
             }
         } else {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .let { if (detail != null) it.navigationBarsPadding() else it }
                     .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                contentAlignment = Alignment.TopCenter
+            ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.contentMaxWidth)
+                    .fillMaxWidth()
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Notices(state, showLinearProgress = false)
                 if (state.offline) {
@@ -879,181 +1139,207 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
                         }
                     }
                 } else {
-                    when (tab) {
-                        "Home" -> {
-                            Text(
-                                text = "Hello, ${profile.value("full_name").ifBlank { "there" }}",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            SupportingText("Your deliveries and office updates, in one place.")
-                            WorkspaceCard {
-                                Text("Delivery overview", style = MaterialTheme.typography.titleMedium)
-                                val shipments = data.rows("shipments")
-                                Text(
-                                    text = "${shipments.count { it.value("status") !in listOf("completed", "cancelled") }} active  ·  ${shipments.count { it.value("status") == "completed" }} completed",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                    // Alerts tab
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            when (event) {
+                                Lifecycle.Event.ON_RESUME -> vm.onCustomerAlertsOpened()
+                                Lifecycle.Event.ON_PAUSE -> vm.onCustomerAlertsClosed()
+                                else -> Unit
                             }
-                            Text(
-                                text = "Shipment overview",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            SupportingText(
-                                text = "Dispatch, quotation and completion review are available on the office website."
-                            )
-                            ShipmentList(
-                                rows = data.rows("shipments").filter { it.value("status") !in listOf("completed", "cancelled") },
-                                emptyTitle = "No active shipments",
-                                emptyBody = "No active deliveries are currently recorded.",
-                                open = { detail = it }
-                            )
                         }
-
-                        "Alerts" -> {
-                            val lifecycleOwner = LocalLifecycleOwner.current
-                            DisposableEffect(lifecycleOwner) {
-                                val observer = LifecycleEventObserver { _, event ->
-                                    when (event) {
-                                        Lifecycle.Event.ON_RESUME -> vm.onCustomerAlertsOpened()
-                                        Lifecycle.Event.ON_PAUSE -> vm.onCustomerAlertsClosed()
-                                        else -> Unit
-                                    }
-                                }
-                                lifecycleOwner.lifecycle.addObserver(observer)
-                                if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                                    vm.onCustomerAlertsOpened()
-                                }
-                                onDispose {
-                                    lifecycleOwner.lifecycle.removeObserver(observer)
-                                    vm.onCustomerAlertsClosed()
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                            vm.onCustomerAlertsOpened()
+                        }
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                            vm.onCustomerAlertsClosed()
+                        }
+                    }
+                    Text(
+                        text = "Delivery milestones, quotation updates, and dispatch alerts.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
+                    if (state.notificationsLoading && state.notificationsPage == null) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (state.notificationsError != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = state.notificationsError!!,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                TextButton(
+                                    onClick = { vm.loadNotifications(loadMore = false) },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text("Retry", fontWeight = FontWeight.Bold)
                                 }
                             }
-                            val displayedNotifications = state.notificationsPage ?: data.rows("notifications")
-                            if (state.notificationsLoading && state.notificationsPage == null) {
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = MaterialTheme.colorScheme.primary
+                        }
+                    }
+                    if (displayedNotifications.isEmpty() && !state.notificationsLoading) {
+                        WorkspaceCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.NotificationsNone,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Text(
+                                    text = "No notifications yet",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontFamily = TanawDisplayFontFamily,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                SupportingText(
+                                    text = "Delivery milestones, quotation updates, and dispatch alerts will appear here.",
                                 )
                             }
-                            if (state.notificationsError != null) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
+                        }
+                    }
+                    val renderAlertCard: @Composable (JsonObject, Modifier) -> Unit = { n, cardMod ->
+                        val isUnread = n.value("read_at").isBlank()
+                        val hasLinkedShipment = allShipments.any { it.value("id") == n.value("shipment_id") }
+                        val clickableModifier = cardMod
+                            .let {
+                                if (hasLinkedShipment) {
+                                    it.clip(RoundedCornerShape(16.dp)).clickable { detail = n.value("shipment_id") }
+                                } else {
+                                    it
+                                }
+                            }
+                        Surface(
+                            modifier = clickableModifier,
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isUnread) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (isUnread) {
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                }
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = state.notificationsError!!,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                        TextButton(
-                                            onClick = { vm.loadNotifications(loadMore = false) },
-                                            modifier = Modifier.heightIn(min = 48.dp)
-                                        ) {
-                                            Text("Retry", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                            if (displayedNotifications.isEmpty() && !state.notificationsLoading) {
-                                WorkspaceCard {
-                                    Text(
-                                        text = "No notifications.",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    SupportingText("Delivery milestones, quotation updates, and dispatch alerts will appear here.")
-                                }
-                            }
-                            displayedNotifications.forEach { n ->
-                                WorkspaceCard {
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
+                                        if (isUnread) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.secondary)
+                                            )
+                                        }
                                         Text(
                                             text = n.value("title"),
                                             style = MaterialTheme.typography.titleSmall,
                                             fontFamily = TanawDisplayFontFamily,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f)
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
-                                        if (n.value("read_at").isBlank()) {
-                                            Spacer(Modifier.width(8.dp))
-                                            StatusBadge("unread")
-                                        }
                                     }
-                                    SupportingText(n.value("body"))
+                                    Text(
+                                        text = n.value("body"),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                     Text(
                                         text = MobilePresentation.time(n.value("created_at")),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.labelSmall,
                                         fontFamily = TanawMonoFontFamily,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    if (allShipments.any { it.value("id") == n.value("shipment_id") }) {
-                                        TextButton(
-                                            onClick = { detail = n.value("shipment_id") },
-                                            modifier = Modifier.heightIn(min = 48.dp)
-                                        ) {
-                                            Text("Open shipment", fontWeight = FontWeight.SemiBold)
-                                        }
-                                    }
                                 }
-                            }
-                            if (state.notificationsHasMore) {
-                                OutlinedButton(
-                                    onClick = { vm.loadNotifications(loadMore = true) },
-                                    enabled = !state.notificationsLoading,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 48.dp)
-                                ) {
-                                    Text(if (state.notificationsLoading) "Loading more notifications..." else "Load more notifications")
+                                if (hasLinkedShipment) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                        contentDescription = "Open shipment",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
                                 }
                             }
                         }
-
-                        "Profile" -> {
-                            WorkspaceCard { ProfileForm(vm, state, data) }
-                            Action("Saved address", !state.busy) {
-                                info = data.obj("customer").value("address").ifBlank {
-                                    "No saved address. Add your address above and save your profile."
+                    }
+                    if (windowSize.gridColumns >= 2 && displayedNotifications.size > 1) {
+                        displayedNotifications.chunked(2).forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(windowSize.cardSpacing)
+                            ) {
+                                pair.forEach { n ->
+                                    renderAlertCard(n, Modifier.weight(1f))
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(Modifier.weight(1f))
                                 }
                             }
-                            Action("Help and service information", true) {
-                                info = "Contact the office with your tracking reference for quotations, dispatch, account activation or changes. Drivers share location during active trips and submit private proof for office review. Chat, payments and profile photos are not available in this release."
-                            }
-                            Action("Password recovery", !state.busy) { vm.page("recover") }
-                            SupportingText("Login email changes require a verified account-change flow. Contact the office; editing profile details does not change your sign-in email.")
-                            OutlinedButton(
-                                onClick = vm::logout,
-                                enabled = !state.busy,
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                            ) {
-                                Text("Sign out", fontWeight = FontWeight.Bold)
-                            }
+                        }
+                    } else {
+                        displayedNotifications.forEach { n ->
+                            renderAlertCard(n, Modifier.fillMaxWidth())
+                        }
+                    }
+                    if (state.notificationsHasMore) {
+                        OutlinedButton(
+                            onClick = { vm.loadNotifications(loadMore = true) },
+                            enabled = !state.notificationsLoading,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                        ) {
+                            Text(if (state.notificationsLoading) "Loading more notifications..." else "Load more notifications")
                         }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
             }
+            }
+        }
         }
     }
 
-    if (info != null) InfoDialog("Tanaw", info!!) { info = null }
     state.proof?.let { bitmap ->
         val dialogBg = Color.White
         val dialogBorder = Color(0xFFE2E8F0)
@@ -1123,92 +1409,6 @@ private fun Workspace(vm: MobileWorkspaceViewModel, state: MobileState, data: Js
 }
 
 @Composable
-private fun ShipmentList(
-    rows: List<JsonObject>,
-    emptyTitle: String = "No shipments in this section",
-    emptyBody: String = "No shipments are available in this view.",
-    open: (String) -> Unit
-) {
-    if (rows.isEmpty()) {
-        WorkspaceCard {
-            Text(
-                text = emptyTitle,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            SupportingText(emptyBody)
-        }
-        return
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        rows.forEach { s ->
-            Surface(
-                onClick = { open(s.value("id")) },
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = s.value("tracking_number"),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontFamily = TanawMonoFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        StatusBadge(s.value("status"))
-                    }
-                    Text(
-                        text = "${s.value("pickup_address")} → ${s.value("dropoff_address")}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = MobilePresentation.time(s.value("created_at")),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = TanawMonoFontFamily,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        val displayAmount = s.value("final_amount").ifBlank { s.value("quoted_amount") }
-                        if (displayAmount.isNotBlank()) {
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = MobilePresentation.money(displayAmount),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontFamily = TanawMonoFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun ShipmentDetails(
     s: JsonObject,
     data: JsonObject,
@@ -1248,7 +1448,7 @@ private fun ShipmentDetails(
         strikes = customerStanding?.strikes.orEmpty()
     )
     if (isNoShowCancelled && customerStanding != null) {
-        var showSupportDialog by remember { mutableStateOf(false) }
+        var showSupportDialog by rememberSaveable { mutableStateOf(false) }
         val strikeNumber = CustomerNoShowRules.strikeNumberForShipment(s, customerStanding)
         val matchedStrike = customerStanding.strikes.firstOrNull { it.shipmentId == s.value("id") }
         val timelineSteps = remember(s, activeDelivery, detail, matchedStrike) {
@@ -1499,11 +1699,10 @@ private fun nearestRouteBearing(
 }
 
 @Composable
-private fun ProfileForm(
-    vm: MobileWorkspaceViewModel,
+private fun OnboardingProfileForm(
     state: MobileState,
     data: JsonObject,
-    isOnboardingGate: Boolean = false
+    onSaveProfile: (name: String, phone: String, address: String, city: String) -> Unit
 ) {
     val p = data.obj("profile")
     val c = data.obj("customer")
@@ -1524,147 +1723,148 @@ private fun ProfileForm(
     var province by rememberSaveable(initialAddr.province) {
         mutableStateOf(initialAddr.province.ifBlank { CustomerAddressRules.DEFAULT_PROVINCE_SUGGESTION })
     }
-    val isCustomer = p.value("role") == "customer"
-    val addressValid = !isCustomer || CustomerAddressRules.isValidAddress(street, barangay, city, province)
+    val addressValid = CustomerAddressRules.isValidAddress(street, barangay, city, province)
     val canSave = !state.busy &&
         name.trim().length in 2..200 &&
         MobileValidation.phone(phone) != null &&
         addressValid
 
     val saveProfile: () -> Unit = {
-        val (formattedAddress, formattedCity) = if (isCustomer) {
-            CustomerAddressRules.formatForRpc(street, barangay, city, province)
-        } else {
-            Pair("", "")
-        }
-        vm.profile(name, phone, formattedAddress, formattedCity)
+        val (formattedAddress, formattedCity) = CustomerAddressRules.formatForRpc(street, barangay, city, province)
+        onSaveProfile(name, phone, formattedAddress, formattedCity)
     }
 
     Text(
-        text = "Your profile",
-        style = MaterialTheme.typography.headlineSmall,
+        text = "Account details",
+        style = MaterialTheme.typography.titleLarge,
+        fontFamily = TanawDisplayFontFamily,
+        fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary
     )
     SupportingText(
         text = if (p.value("email").isNotBlank()) {
             "Sign-in email: ${p.value("email")}"
         } else {
-            "Phone-number account"
+            "Customer account"
         }
     )
+
+    val isNameError = name.isNotBlank() && name.trim().length !in 2..200
+    val isPhoneError = phone.isNotBlank() && MobileValidation.phone(phone) == null
 
     Field(
         label = "Full name",
         value = name,
         change = { name = it },
+        isError = isNameError,
+        supportingText = if (isNameError) {
+            { Text("Name must be between 2 and 200 characters.") }
+        } else null,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
     )
     Field(
-        label = "Phone",
+        label = "Mobile number",
         value = phone,
         change = { phone = it },
+        isError = isPhoneError,
+        supportingText = {
+            if (isPhoneError) {
+                Text("Enter a Philippine mobile number, e.g. 0912 345 6789.")
+            } else {
+                Text("An SMS code will be sent to verify your number.")
+            }
+        },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Phone,
-            imeAction = if (isCustomer) ImeAction.Next else ImeAction.Done
+            imeAction = ImeAction.Next
         ),
+        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+    )
+
+    val addressSummary = CustomerAddressRules.StructuredCustomerAddress(
+        streetAddress = street,
+        barangay = barangay,
+        city = city,
+        province = province
+    ).fullDisplayAddress()
+
+    AddressQuickAssistBar(
+        currentAddressSummary = addressSummary,
+        enabled = !state.busy,
+        onAddressAutofilled = { resolved ->
+            if (resolved.streetAddress.isNotBlank()) street = resolved.streetAddress
+            if (resolved.barangay.isNotBlank()) barangay = resolved.barangay
+            if (resolved.city.isNotBlank()) city = resolved.city
+            if (resolved.province.isNotBlank()) province = resolved.province
+        }
+    )
+
+    val streetInvalid = street.isNotBlank() && !CustomerAddressRules.validateStreet(street)
+    val brgyInvalid = barangay.isNotBlank() && !CustomerAddressRules.validateBarangay(barangay)
+    val cityInvalid = city.isNotBlank() && !CustomerAddressRules.validateCity(city)
+    val provInvalid = province.isNotBlank() && !CustomerAddressRules.validateProvince(province)
+
+    Field(
+        label = "House / Street address",
+        value = street,
+        change = { street = it },
+        isError = streetInvalid,
+        supportingText = if (streetInvalid) {
+            { Text("Street address must be 380 characters or fewer.") }
+        } else null,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+    )
+    Field(
+        label = "Barangay",
+        value = barangay,
+        change = { barangay = it },
+        isError = brgyInvalid,
+        supportingText = if (brgyInvalid) {
+            { Text("Barangay must be 100 characters or fewer.") }
+        } else null,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+    )
+    Field(
+        label = "City / Municipality",
+        value = city,
+        change = { city = it },
+        isError = cityInvalid,
+        supportingText = if (cityInvalid) {
+            { Text("City must be 60 characters or fewer.") }
+        } else null,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+    )
+    CitySuggestionStrip(
+        cityQuery = city,
+        enabled = !state.busy,
+        onSelectCity = { suggestion ->
+            city = suggestion.city
+            province = suggestion.province
+        }
+    )
+    Field(
+        label = "Province",
+        value = province,
+        change = { province = it },
+        isError = provInvalid,
+        supportingText = if (provInvalid) {
+            { Text("Province must be 35 characters or fewer.") }
+        } else null,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(
-            onNext = { focusManager.moveFocus(FocusDirection.Down) },
             onDone = {
                 focusManager.clearFocus()
                 if (canSave) saveProfile()
             }
         )
     )
-    if (isCustomer) {
-        Field(
-            label = "House / Street address",
-            value = street,
-            change = { street = it },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-        )
-        Field(
-            label = "Barangay",
-            value = barangay,
-            change = { barangay = it },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-        )
-        Field(
-            label = "City / Municipality",
-            value = city,
-            change = { city = it },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-        )
-        Field(
-            label = "Province",
-            value = province,
-            change = { province = it },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    focusManager.clearFocus()
-                    if (canSave) saveProfile()
-                }
-            )
-        )
-    }
-
-    val shipmentSmsEnabled = data.rows("sms_preferences").any {
-        it.value("type") == "shipment_status" && it["enabled"] == JsonPrimitive(true)
-    }
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = !state.busy && !state.offline) {
-                    vm.smsPreference(!shipmentSmsEnabled)
-                }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = "Shipment SMS updates",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Shipment SMS: ${RecoveryPolicy.sms(data, "shipment_status")} · Delay SMS: ${RecoveryPolicy.sms(data, "delay")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "SMS updates are optional and go only to your verified signup number.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Switch(
-                checked = shipmentSmsEnabled,
-                onCheckedChange = { vm.smsPreference(it) },
-                enabled = !state.busy && !state.offline
-            )
-        }
-    }
-
-    if (state.offline) {
-        SupportingText("Saved SMS status may be out of date. Reconnect and refresh.")
-    }
 
     Action(
-        label = if (isOnboardingGate) "Save and continue" else "Save profile",
+        label = "Save and continue",
         enabled = canSave,
         onClick = {
             focusManager.clearFocus()
@@ -1720,7 +1920,6 @@ private fun Field(
     label: String,
     value: String,
     change: (String) -> Unit,
-    secret: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     isError: Boolean = false,
@@ -1742,7 +1941,6 @@ private fun Field(
             unfocusedBorderColor = MaterialTheme.colorScheme.outline,
             errorBorderColor = MaterialTheme.colorScheme.error
         ),
-        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         isError = isError,
@@ -1806,6 +2004,43 @@ private fun LoadingSessionPreview() {
             state = MobileState(page = "loading", busy = true),
             onRetry = {}
         )
+    }
+}
+
+@Preview(showBackground = true, name = "Office Portal Notice")
+@Composable
+private fun OfficePortalNoticePreview() {
+    TanawTheme {
+        OfficePortalNoticeScreen(
+            role = "admin",
+            email = "dispatcher@mabutol.example",
+            state = MobileState(page = "workspace"),
+            onRetry = {},
+            onLogout = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Onboarding Profile Form")
+@Composable
+private fun OnboardingProfileFormPreview() {
+    TanawCustomerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                WorkspaceCard {
+                    OnboardingProfileForm(
+                        state = MobileState(page = "workspace"),
+                        data = buildJsonObject {
+                            put("profile", buildJsonObject {
+                                put("full_name", "Maria Santos")
+                                put("email", "maria@example.com")
+                            })
+                        },
+                        onSaveProfile = { _, _, _, _ -> }
+                    )
+                }
+            }
+        }
     }
 }
 

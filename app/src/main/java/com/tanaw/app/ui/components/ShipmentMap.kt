@@ -54,9 +54,12 @@ object MobileGeocoding {
   String(buffer.toByteArray(),Charsets.UTF_8)
  }
 
- suspend fun search(query:String):List<SelectedAddress> = withContext(Dispatchers.IO) {
+ suspend fun search(query:String,proximity:LatLng?=null):List<SelectedAddress> = withContext(Dispatchers.IO) {
   require(query.trim().length>=3 && BuildConfig.MAPTILER_KEY.isNotBlank())
-  val url=URL("https://api.maptiler.com/geocoding/${URLEncoder.encode(query.trim(),"UTF-8")}.json?country=ph&limit=5&key=${URLEncoder.encode(BuildConfig.MAPTILER_KEY,"UTF-8")}")
+  val proximityParam=if(proximity!=null && proximity.latitude.isFinite() && proximity.longitude.isFinite()) {
+   "&proximity=${String.format(java.util.Locale.US,"%.6f,%.6f",proximity.longitude,proximity.latitude)}"
+  } else ""
+  val url=URL("https://api.maptiler.com/geocoding/${URLEncoder.encode(query.trim(),"UTF-8")}.json?country=ph&limit=5$proximityParam&key=${URLEncoder.encode(BuildConfig.MAPTILER_KEY,"UTF-8")}")
   val connection=(url.openConnection() as java.net.HttpURLConnection).apply { connectTimeout=10000;readTimeout=10000 }
   val response=try {
    check(connection.responseCode in 200..299) { "Geocoding search HTTP ${connection.responseCode}" }
@@ -87,6 +90,38 @@ object MobileGeocoding {
    if(!android.location.Geocoder.isPresent()) null else android.location.Geocoder(context,java.util.Locale.ENGLISH)
     .getFromLocation(point.latitude,point.longitude,1)?.firstOrNull()?.getAddressLine(0)
   }.getOrNull()
+ }
+
+ @Suppress("DEPRECATION")
+ suspend fun reverseStructured(
+  context: android.content.Context,
+  point: LatLng
+ ): com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules.StructuredCustomerAddress? = withContext(Dispatchers.IO) {
+  val androidAddress = runCatching {
+   if (!android.location.Geocoder.isPresent()) null
+   else android.location.Geocoder(context, java.util.Locale.ENGLISH)
+    .getFromLocation(point.latitude, point.longitude, 1)?.firstOrNull()
+  }.getOrNull()
+
+  if (androidAddress != null) {
+   val parsed = com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules.fromAndroidAddressComponents(
+    featureName = androidAddress.featureName,
+    thoroughfare = androidAddress.thoroughfare,
+    subThoroughfare = androidAddress.subThoroughfare,
+    subLocality = androidAddress.subLocality,
+    locality = androidAddress.locality,
+    subAdminArea = androidAddress.subAdminArea,
+    adminArea = androidAddress.adminArea,
+    addressLine = androidAddress.getAddressLine(0)
+   )
+   if (parsed.streetAddress.isNotBlank() || parsed.city.isNotBlank() || parsed.barangay.isNotBlank()) {
+    return@withContext parsed
+   }
+  }
+
+  reverse(context, point)?.takeIf { it.isNotBlank() }?.let { label ->
+   com.tanaw.app.feature.workspace.customer.rules.CustomerAddressRules.parseFromGeocodedLabel(label)
+  }
  }
 
 }

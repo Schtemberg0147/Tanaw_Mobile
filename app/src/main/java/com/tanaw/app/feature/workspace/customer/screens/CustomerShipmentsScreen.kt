@@ -20,8 +20,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,7 +72,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.feature.workspace.customer.rules.CustomerHistoryPresentation
@@ -81,8 +83,10 @@ import com.tanaw.app.ui.theme.BorderGray
 import com.tanaw.app.ui.theme.ElectricBlueSecondary
 import com.tanaw.app.ui.theme.ExpiredRed
 import com.tanaw.app.ui.theme.ExpiredRedBg
+import com.tanaw.app.ui.theme.FormFactorPreviews
 import com.tanaw.app.ui.theme.HintGray
 import com.tanaw.app.ui.theme.InputGray
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.MapPinDestination
 import com.tanaw.app.ui.theme.MapPinPickup
 import com.tanaw.app.ui.theme.NavyPrimary
@@ -93,6 +97,7 @@ import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import com.tanaw.app.ui.theme.TextDark
+import com.tanaw.app.ui.theme.WindowWidthClass
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -173,8 +178,10 @@ internal fun CustomerShipmentsSection(
 ) {
     val palette = remember { customerShipmentsPalette() }
     val focusManager = LocalFocusManager.current
+    val windowSize = LocalTanawWindowSize.current
+    val gridColumns = if (windowSize.widthClass == WindowWidthClass.COMPACT) 1 else 2
     var offlineBannerDismissed by rememberSaveable(state.offline) { mutableStateOf(false) }
-    var pendingProofDocId by remember { mutableStateOf<String?>(null) }
+    var pendingProofDocId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.busy) {
         if (!state.busy) {
@@ -201,14 +208,26 @@ internal fun CustomerShipmentsSection(
         modifier = modifier.fillMaxSize(),
         color = palette.background
     ) {
-        LazyColumn(
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(gridColumns),
             modifier = Modifier
+                .widthIn(max = windowSize.wideContentMaxWidth)
                 .fillMaxSize()
                 .imePadding(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(
+                start = windowSize.horizontalGutter,
+                end = windowSize.horizontalGutter,
+                top = 16.dp,
+                bottom = 24.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item(key = "header") {
+            item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (showHeaderTitle) {
                         Text(
@@ -232,7 +251,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (showOfflineBanner) {
-                item(key = "offline_banner") {
+                item(key = "offline_banner", span = { GridItemSpan(maxLineSpan) }) {
                     ConnectionStatusBanner(
                         palette = palette,
                         onRetry = onRetry,
@@ -242,7 +261,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (visibleGlobalError != null) {
-                item(key = "global_error") {
+                item(key = "global_error", span = { GridItemSpan(maxLineSpan) }) {
                     ShipmentErrorBanner(
                         message = visibleGlobalError,
                         palette = palette,
@@ -252,7 +271,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (visibleListError != null) {
-                item(key = "list_error") {
+                item(key = "list_error", span = { GridItemSpan(maxLineSpan) }) {
                     ShipmentErrorBanner(
                         message = visibleListError,
                         palette = palette,
@@ -261,7 +280,7 @@ internal fun CustomerShipmentsSection(
                 }
             }
 
-            item(key = "search_bar") {
+            item(key = "search_bar", span = { GridItemSpan(maxLineSpan) }) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = onQueryChange,
@@ -314,7 +333,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (isHistoryTab) {
-                item(key = "history_filters") {
+                item(key = "history_filters", span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -365,7 +384,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (showLoadingBar) {
-                item(key = "loading_bar") {
+                item(key = "loading_bar", span = { GridItemSpan(maxLineSpan) }) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -377,7 +396,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (shipments.isEmpty() && !state.customerShipmentsLoading) {
-                item(key = "empty_state") {
+                item(key = "empty_state", span = { GridItemSpan(maxLineSpan) }) {
                     EmptyShipmentsCard(
                         isHistoryTab = isHistoryTab,
                         query = query,
@@ -412,7 +431,7 @@ internal fun CustomerShipmentsSection(
             }
 
             if (isCurrentTabLoaded && state.customerShipmentsHasMore) {
-                item(key = "load_more") {
+                item(key = "load_more", span = { GridItemSpan(maxLineSpan) }) {
                     OutlinedButton(
                         onClick = onLoadMore,
                         enabled = !state.customerShipmentsLoading,
@@ -436,6 +455,7 @@ internal fun CustomerShipmentsSection(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -964,7 +984,7 @@ private fun previewDocuments(): List<JsonObject> = listOf(
     }
 )
 
-@Preview(showBackground = true, name = "Customer History")
+@FormFactorPreviews
 @Composable
 private fun CustomerHistoryPreview() {
     TanawCustomerTheme {

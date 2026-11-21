@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -15,9 +16,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -39,6 +42,22 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private val EXPENSE_CATEGORY_PRESETS = listOf(
+    "Toll fee",
+    "Parking fee",
+    "Loading / Unloading",
+    "Helper fee",
+    "Meal allowance",
+    "Tire / Repair"
+)
+
+private val EXPENSE_AMOUNT_PRESETS = listOf(
+    "100" to "₱100",
+    "200" to "₱200",
+    "500" to "₱500",
+    "1000" to "₱1,000"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTripExpenseSheet(
@@ -53,6 +72,7 @@ fun AddTripExpenseSheet(
     owner: String = ""
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val store = remember(owner, deliveryId) { if (owner.isNotBlank()) ExpenseDraftStore(context) else null }
     val restored = remember(owner, deliveryId) {
@@ -160,12 +180,31 @@ fun AddTripExpenseSheet(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "WHAT WAS THE EXPENSE?",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    EXPENSE_CATEGORY_PRESETS.forEach { preset ->
+                        val selected = category.trim().equals(preset, ignoreCase = true)
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                val next = if (selected) "" else preset
+                                category = next
+                                persist(c = next)
+                            },
+                            enabled = !isSubmitting && !preparingReceipt,
+                            label = { Text(preset) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = category,
                     onValueChange = {
@@ -185,6 +224,7 @@ fun AddTripExpenseSheet(
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -195,12 +235,31 @@ fun AddTripExpenseSheet(
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "AMOUNT",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    EXPENSE_AMOUNT_PRESETS.forEach { (raw, label) ->
+                        val selected = amount.trim() == raw
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                val next = if (selected) "" else raw
+                                amount = next
+                                persist(a = next)
+                            },
+                            enabled = !isSubmitting && !preparingReceipt,
+                            label = { Text(label) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = amount,
                     onValueChange = {
@@ -230,6 +289,7 @@ fun AddTripExpenseSheet(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

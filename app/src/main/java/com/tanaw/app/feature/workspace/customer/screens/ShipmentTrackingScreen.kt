@@ -13,15 +13,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,6 +59,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
@@ -84,8 +92,11 @@ import com.tanaw.app.feature.workspace.tracking.PositionFreshness
 import com.tanaw.app.feature.workspace.tracking.PositionFreshnessStatus
 import com.tanaw.app.feature.workspace.tracking.ShipmentMilestoneStep
 import com.tanaw.app.feature.workspace.tracking.ShipmentTrackingPresentation
+import com.tanaw.app.feature.workspace.tracking.TrackingCargoSummary
 import com.tanaw.app.feature.workspace.tracking.TrackingDriverSummary
 import com.tanaw.app.feature.workspace.tracking.TrackingEtaPillState
+import com.tanaw.app.feature.workspace.tracking.TrackingPricingSummary
+import com.tanaw.app.feature.workspace.tracking.TrackingQuoteState
 import com.tanaw.app.feature.workspace.tracking.TrackingSheetSummary
 import com.tanaw.app.feature.workspace.viewmodel.value
 import com.tanaw.app.ui.components.KeyValueRow
@@ -94,8 +105,10 @@ import com.tanaw.app.ui.theme.BorderGray
 import com.tanaw.app.ui.theme.DestinationOrange
 import com.tanaw.app.ui.theme.ElectricBlueSecondary
 import com.tanaw.app.ui.theme.ExpiredRed
+import com.tanaw.app.ui.theme.FormFactorPreviews
 import com.tanaw.app.ui.theme.HintGray
 import com.tanaw.app.ui.theme.InputGray
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.MapPinDestination
 import com.tanaw.app.ui.theme.MapPinPickup
 import com.tanaw.app.ui.theme.NavyPrimary
@@ -105,6 +118,7 @@ import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import com.tanaw.app.ui.theme.TextDark
+import com.tanaw.app.ui.theme.WindowWidthClass
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -239,412 +253,596 @@ internal fun ShipmentTrackingScreen(
         }
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val peekHeight = if (pickupWaitState.isUrgentBannerVisible) {
-            (maxHeight * 0.56f)
-                .coerceIn(348.dp, 444.dp)
-                .coerceAtMost(maxHeight * 0.64f)
-        } else {
-            (maxHeight * 0.46f)
-                .coerceIn(286.dp, 376.dp)
-                .coerceAtMost(maxHeight * 0.56f)
-        }
-        val mapViewportHeight = (maxHeight - peekHeight + 24.dp).coerceAtLeast(220.dp)
-        val expandedSheetMaxHeight = (maxHeight - 92.dp).coerceAtLeast(320.dp)
+    val windowSize = LocalTanawWindowSize.current
+    val useSplitLayout = windowSize.isCompactLandscape || windowSize.widthClass != WindowWidthClass.COMPACT
 
-        BottomSheetScaffold(
-            scaffoldState = scaffoldState,
-            sheetPeekHeight = peekHeight,
-            sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            sheetContainerColor = TrackingSheetBg,
-            sheetContentColor = TrackingTextPrimary,
-            sheetShadowElevation = 12.dp,
-            sheetMaxWidth = androidx.compose.ui.unit.Dp.Unspecified,
-            sheetDragHandle = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = toggleSheet)
-                        .padding(top = 12.dp, bottom = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(42.dp)
-                            .height(4.dp)
-                            .clip(CircleShape)
-                            .background(TrackingHandle)
-                    )
-                }
-            },
-            sheetContent = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = expandedSheetMaxHeight)
-                ) {
-                    if (pickupWaitState.isUrgentBannerVisible) {
-                        PickupWaitRiskPanel(
-                            waitState = pickupWaitState,
-                            driverSummary = driverSummary,
-                            busy = busy,
-                            offline = offline,
-                            onNotifyOnWay = {
-                                if (pickupWaitState.deliveryId.isNotBlank()) {
-                                    onNotifyOnWay?.invoke(pickupWaitState.deliveryId)
-                                }
-                            },
-                            onCallDriver = { driverSummary.phoneNumber?.let(openDialer) }
-                        )
-                    } else {
-                        PeekStatusSection(
-                            summary = sheetSummary,
-                            driverSummary = driverSummary,
-                            isExpanded = sheetState.currentValue == SheetValue.Expanded,
-                            onToggleExpand = toggleSheet,
-                            onCallDriver = { driverSummary.phoneNumber?.let(openDialer) },
-                            onMessageDriver = { driverSummary.phoneNumber?.let(openSms) }
-                        )
-                    }
-
-                    HorizontalDivider(
-                        color = TrackingDivider,
-                        thickness = 1.dp,
-                        modifier = Modifier.padding(top = 12.dp)
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = false)
-                            .background(BackgroundGray)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                            .navigationBarsPadding(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        if (offline) {
-                            Surface(
-                                color = InputGray,
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, TrackingDivider),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = "Offline mode · showing your last loaded tracking details.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TrackingTextPrimary,
-                                    modifier = Modifier.padding(12.dp)
-                                )
-                            }
-                        }
-
-                        if (!errorMessage.isNullOrBlank()) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = errorMessage,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(12.dp)
-                                )
-                            }
-                        }
-
-                        if (detailLoaded && timelineEvents.isNotEmpty()) {
-                            OutlinedButton(
-                                onClick = { showFullEventLog = true },
-                                border = BorderStroke(1.dp, TrackingDivider),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.History,
-                                    contentDescription = null,
-                                    tint = TrackingPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "View full event log (${timelineEvents.size})",
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TrackingPrimary
-                                )
-                            }
-                        }
-
-                        SheetCard(title = "Route & Cargo") {
-                            TrackingRouteConnectorBlock(
-                                pickupAddress = formattedPickup,
-                                dropoffAddress = formattedDropoff
-                            )
-                            HorizontalDivider(color = TrackingDivider)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Text(
-                                        text = "CARGO",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = TanawMonoFontFamily,
-                                        color = TrackingTextMuted
-                                    )
-                                    Text(
-                                        text = cargoSummary.cargoText,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TrackingTextPrimary
-                                    )
-                                }
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Text(
-                                        text = "WEIGHT",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = TanawMonoFontFamily,
-                                        color = TrackingTextMuted
-                                    )
-                                    Text(
-                                        text = cargoSummary.weightText,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontFamily = TanawMonoFontFamily,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TrackingTextPrimary
-                                    )
-                                }
-                            }
-                            HorizontalDivider(
-                                color = TrackingDivider,
-                                thickness = 0.5.dp
-                            )
-                            KeyValueRow(
-                                label = "Recipient Contact",
-                                value = cargoSummary.recipientContact,
-                                boldValue = cargoSummary.recipientContact != "Not provided",
-                                valueFontFamily = if (cargoSummary.recipientContact != "Not provided") TanawMonoFontFamily else null
-                            )
-                            if (cargoSummary.deliveryNotes.isNotBlank()) {
-                                KeyValueRow(
-                                    label = "Delivery Notes",
-                                    value = cargoSummary.deliveryNotes
-                                )
-                            }
-                            if (shipment.value("cancelled_reason").isNotBlank()) {
-                                KeyValueRow(
-                                    label = "Cancellation Reason",
-                                    value = shipment.value("cancelled_reason"),
-                                    valueColor = TrackingDanger
-                                )
-                            }
-                        }
-
-                        SheetCard(title = "Schedule & Telemetry") {
-                            val scheduledArrival = shipment.value("estimated_arrival")
-                            KeyValueRow(
-                                label = "Scheduled Arrival",
-                                value = if (scheduledArrival.isNotBlank()) {
-                                    MobilePresentation.time(scheduledArrival)
-                                } else {
-                                    "Pending office schedule"
-                                },
-                                valueFontFamily = if (scheduledArrival.isNotBlank()) TanawMonoFontFamily else null
-                            )
-                            if (shipment.value("scheduled_departure").isNotBlank()) {
-                                KeyValueRow(
-                                    label = "Scheduled Departure",
-                                    value = MobilePresentation.time(shipment.value("scheduled_departure")),
-                                    valueFontFamily = TanawMonoFontFamily
-                                )
-                            }
-                            if (lastTelemetryRecordedAt.isNotBlank() && freshness != null) {
-                                KeyValueRow(
-                                    label = "Last GPS Update",
-                                    value = "${MobilePresentation.time(lastTelemetryRecordedAt)} · ${freshness.accuracyText}",
-                                    valueFontFamily = TanawMonoFontFamily
-                                )
-                            } else {
-                                KeyValueRow(
-                                    label = "GPS Signal",
-                                    value = "Awaiting driver GPS signal",
-                                    valueColor = TrackingTextSecondary
-                                )
-                            }
-                        }
-
-                        SheetCard(
-                            title = "Quotation & Pricing",
-                            badge = quoteState.badgeText
-                        ) {
-                            pricingSummary.rows.forEach { row ->
-                                KeyValueRow(
-                                    label = row.label,
-                                    value = row.value,
-                                    valueColor = if (row.isEmphasized) TrackingPrimary else TrackingTextPrimary,
-                                    boldValue = row.isEmphasized,
-                                    valueFontFamily = TanawMonoFontFamily
-                                )
-                            }
-
-                            if (quoteState.quoteExpiresAtText.isNotBlank()) {
-                                val validityValue = if (quoteState.countdownText.isNotBlank() && !quoteState.isExpired) {
-                                    "${quoteState.quoteExpiresAtText} (${quoteState.countdownText})"
-                                } else if (quoteState.isExpired) {
-                                    "${quoteState.quoteExpiresAtText} (Expired)"
-                                } else {
-                                    quoteState.quoteExpiresAtText
-                                }
-                                KeyValueRow(
-                                    label = "Quote Valid Until",
-                                    value = validityValue,
-                                    valueColor = if (quoteState.isExpired) TrackingDanger else TrackingTextPrimary,
-                                    boldValue = quoteState.isExpired,
-                                    valueFontFamily = TanawMonoFontFamily
-                                )
-                            }
-
-                            if (pricingSummary.breakdownRows.isNotEmpty()) {
-                                HorizontalDivider(color = TrackingDivider)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 48.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { showFareBreakdown = !showFareBreakdown }
-                                        .padding(vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = if (showFareBreakdown) "Hide fare breakdown" else "View fare breakdown",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TrackingSecondary
-                                    )
-                                    Icon(
-                                        imageVector = if (showFareBreakdown) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                                        contentDescription = null,
-                                        tint = TrackingSecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                if (showFareBreakdown) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        pricingSummary.breakdownRows.forEach { row ->
-                                            KeyValueRow(
-                                                label = row.label,
-                                                value = row.value,
-                                                valueColor = TrackingTextPrimary,
-                                                boldValue = row.isEmphasized,
-                                                valueFontFamily = TanawMonoFontFamily
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (quoteState.isExpired) {
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "Quotation expired. Contact the office for an updated quote.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.padding(12.dp)
-                                    )
-                                }
-                            }
-
-                            if (quoteState.canAccept && onAcceptQuote != null) {
-                                Button(
-                                    onClick = onAcceptQuote,
-                                    enabled = !busy && !offline,
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = TrackingPrimary,
-                                        contentColor = Color.White
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp)
-                                        .testTag("AcceptQuoteButton")
-                                ) {
-                                    Text(
-                                        text = "Confirm Quotation",
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        if (showCancelAction && customerCancellationSlot != null) {
-                            customerCancellationSlot()
-                        }
-                    }
-                }
-            }
-        ) {
-            Box(
+    if (useSplitLayout) {
+        Box(modifier = modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(BackgroundGray)
             ) {
-                Box(
+                MinimalTrackingTopBar(
+                    title = trackingNumber,
+                    busy = busy || detailLoading,
+                    onBack = onBack,
+                    onRefresh = onRefresh
+                )
+                Row(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .height(mapViewportHeight)
-                        .align(Alignment.TopCenter)
                 ) {
-                    mapSlot(recenterTrigger, Modifier.fillMaxSize())
+                    Box(
+                        modifier = Modifier
+                            .weight(1.15f)
+                            .fillMaxHeight()
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Start))
+                    ) {
+                        mapSlot(recenterTrigger, Modifier.fillMaxSize())
 
-                    if (!pickupWaitState.isUrgentBannerVisible) {
-                        FloatingEtaPill(
-                            etaPill = etaPill,
+                        if (!pickupWaitState.isUrgentBannerVisible) {
+                            FloatingEtaPill(
+                                etaPill = etaPill,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(top = 12.dp, start = 16.dp, end = 16.dp)
+                            )
+                        }
+
+                        RecenterMapButton(
+                            onClick = { recenterTrigger++ },
                             modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .statusBarsPadding()
-                                .padding(top = 68.dp, start = 16.dp, end = 16.dp)
+                                .align(Alignment.BottomEnd)
+                                .navigationBarsPadding()
+                                .padding(bottom = 16.dp, end = 16.dp)
                         )
                     }
 
-                    RecenterMapButton(
-                        onClick = { recenterTrigger++ },
+                    VerticalDivider(color = TrackingDivider, thickness = 1.dp)
+
+                    Surface(
+                        color = TrackingSheetBg,
+                        contentColor = TrackingTextPrimary,
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(bottom = 36.dp, end = 16.dp)
+                            .widthIn(
+                                min = 320.dp,
+                                max = if (windowSize.widthClass == WindowWidthClass.EXPANDED) 460.dp else 400.dp
+                            )
+                            .weight(0.85f)
+                            .fillMaxHeight()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End))
+                        ) {
+                            if (pickupWaitState.isUrgentBannerVisible) {
+                                PickupWaitRiskPanel(
+                                    waitState = pickupWaitState,
+                                    driverSummary = driverSummary,
+                                    busy = busy,
+                                    offline = offline,
+                                    onNotifyOnWay = {
+                                        if (pickupWaitState.deliveryId.isNotBlank()) {
+                                            onNotifyOnWay?.invoke(pickupWaitState.deliveryId)
+                                        }
+                                    },
+                                    onCallDriver = { driverSummary.phoneNumber?.let(openDialer) }
+                                )
+                            } else {
+                                Box(modifier = Modifier.padding(top = 14.dp)) {
+                                    PeekStatusSection(
+                                        summary = sheetSummary,
+                                        driverSummary = driverSummary,
+                                        isExpanded = true,
+                                        onToggleExpand = {},
+                                        onCallDriver = { driverSummary.phoneNumber?.let(openDialer) },
+                                        onMessageDriver = { driverSummary.phoneNumber?.let(openSms) },
+                                        showExpandChevron = false
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(
+                                color = TrackingDivider,
+                                thickness = 1.dp,
+                                modifier = Modifier.padding(top = 12.dp)
+                            )
+
+                            TrackingDetailsBody(
+                                shipment = shipment,
+                                freshness = freshness,
+                                lastTelemetryRecordedAt = lastTelemetryRecordedAt,
+                                detailLoaded = detailLoaded,
+                                offline = offline,
+                                busy = busy,
+                                errorMessage = errorMessage,
+                                timelineEvents = timelineEvents,
+                                formattedPickup = formattedPickup,
+                                formattedDropoff = formattedDropoff,
+                                cargoSummary = cargoSummary,
+                                pricingSummary = pricingSummary,
+                                quoteState = quoteState,
+                                showCancelAction = showCancelAction,
+                                showFareBreakdown = showFareBreakdown,
+                                onToggleFareBreakdown = { showFareBreakdown = !showFareBreakdown },
+                                onOpenEventLog = { showFullEventLog = true },
+                                onAcceptQuote = onAcceptQuote,
+                                customerCancellationSlot = customerCancellationSlot,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (showFullEventLog && timelineEvents.isNotEmpty()) {
+                EventLogModalDialog(
+                    trackingNumber = trackingNumber,
+                    timelineEvents = timelineEvents,
+                    onDismiss = { showFullEventLog = false }
+                )
+            }
+        }
+    } else {
+        BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+            val peekHeight = if (pickupWaitState.isUrgentBannerVisible) {
+                (maxHeight * 0.56f)
+                    .coerceIn(348.dp, 444.dp)
+                    .coerceAtMost(maxHeight * 0.64f)
+            } else {
+                (maxHeight * 0.46f)
+                    .coerceIn(286.dp, 376.dp)
+                    .coerceAtMost(maxHeight * 0.56f)
+            }
+            val mapViewportHeight = (maxHeight - peekHeight + 24.dp).coerceAtLeast(220.dp)
+            val expandedSheetMaxHeight = (maxHeight - 92.dp).coerceAtLeast(320.dp)
+
+            BottomSheetScaffold(
+                scaffoldState = scaffoldState,
+                sheetPeekHeight = peekHeight,
+                sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                sheetContainerColor = TrackingSheetBg,
+                sheetContentColor = TrackingTextPrimary,
+                sheetShadowElevation = 12.dp,
+                sheetMaxWidth = androidx.compose.ui.unit.Dp.Unspecified,
+                sheetDragHandle = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = toggleSheet)
+                            .padding(top = 12.dp, bottom = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(42.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(TrackingHandle)
+                        )
+                    }
+                },
+                sheetContent = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = expandedSheetMaxHeight)
+                    ) {
+                        if (pickupWaitState.isUrgentBannerVisible) {
+                            PickupWaitRiskPanel(
+                                waitState = pickupWaitState,
+                                driverSummary = driverSummary,
+                                busy = busy,
+                                offline = offline,
+                                onNotifyOnWay = {
+                                    if (pickupWaitState.deliveryId.isNotBlank()) {
+                                        onNotifyOnWay?.invoke(pickupWaitState.deliveryId)
+                                    }
+                                },
+                                onCallDriver = { driverSummary.phoneNumber?.let(openDialer) }
+                            )
+                        } else {
+                            PeekStatusSection(
+                                summary = sheetSummary,
+                                driverSummary = driverSummary,
+                                isExpanded = sheetState.currentValue == SheetValue.Expanded,
+                                onToggleExpand = toggleSheet,
+                                onCallDriver = { driverSummary.phoneNumber?.let(openDialer) },
+                                onMessageDriver = { driverSummary.phoneNumber?.let(openSms) }
+                            )
+                        }
+
+                        HorizontalDivider(
+                            color = TrackingDivider,
+                            thickness = 1.dp,
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+
+                        TrackingDetailsBody(
+                            shipment = shipment,
+                            freshness = freshness,
+                            lastTelemetryRecordedAt = lastTelemetryRecordedAt,
+                            detailLoaded = detailLoaded,
+                            offline = offline,
+                            busy = busy,
+                            errorMessage = errorMessage,
+                            timelineEvents = timelineEvents,
+                            formattedPickup = formattedPickup,
+                            formattedDropoff = formattedDropoff,
+                            cargoSummary = cargoSummary,
+                            pricingSummary = pricingSummary,
+                            quoteState = quoteState,
+                            showCancelAction = showCancelAction,
+                            showFareBreakdown = showFareBreakdown,
+                            onToggleFareBreakdown = { showFareBreakdown = !showFareBreakdown },
+                            onOpenEventLog = { showFullEventLog = true },
+                            onAcceptQuote = onAcceptQuote,
+                            customerCancellationSlot = customerCancellationSlot,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                        )
+                    }
+                }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(BackgroundGray)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(mapViewportHeight)
+                            .align(Alignment.TopCenter)
+                    ) {
+                        mapSlot(recenterTrigger, Modifier.fillMaxSize())
+
+                        if (!pickupWaitState.isUrgentBannerVisible) {
+                            FloatingEtaPill(
+                                etaPill = etaPill,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .statusBarsPadding()
+                                    .padding(top = 68.dp, start = 16.dp, end = 16.dp)
+                            )
+                        }
+
+                        RecenterMapButton(
+                            onClick = { recenterTrigger++ },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(bottom = 36.dp, end = 16.dp)
+                        )
+                    }
+                }
+            }
+
+            MinimalTrackingTopBar(
+                title = trackingNumber,
+                busy = busy || detailLoading,
+                onBack = onBack,
+                onRefresh = onRefresh,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+
+            if (showFullEventLog && timelineEvents.isNotEmpty()) {
+                EventLogModalDialog(
+                    trackingNumber = trackingNumber,
+                    timelineEvents = timelineEvents,
+                    onDismiss = { showFullEventLog = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackingDetailsBody(
+    shipment: JsonObject,
+    freshness: PositionFreshness?,
+    lastTelemetryRecordedAt: String,
+    detailLoaded: Boolean,
+    offline: Boolean,
+    busy: Boolean,
+    errorMessage: String?,
+    timelineEvents: List<Pair<String, String>>,
+    formattedPickup: String,
+    formattedDropoff: String,
+    cargoSummary: TrackingCargoSummary,
+    pricingSummary: TrackingPricingSummary,
+    quoteState: TrackingQuoteState,
+    showCancelAction: Boolean,
+    showFareBreakdown: Boolean,
+    onToggleFareBreakdown: () -> Unit,
+    onOpenEventLog: () -> Unit,
+    onAcceptQuote: (() -> Unit)?,
+    customerCancellationSlot: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(BackgroundGray)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        if (offline) {
+            Surface(
+                color = InputGray,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, TrackingDivider),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Offline mode · showing your last loaded tracking details.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TrackingTextPrimary,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+
+        if (!errorMessage.isNullOrBlank()) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+
+        if (detailLoaded && timelineEvents.isNotEmpty()) {
+            OutlinedButton(
+                onClick = onOpenEventLog,
+                border = BorderStroke(1.dp, TrackingDivider),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.History,
+                    contentDescription = null,
+                    tint = TrackingPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "View full event log (${timelineEvents.size})",
+                    fontWeight = FontWeight.SemiBold,
+                    color = TrackingPrimary
+                )
+            }
+        }
+
+        SheetCard(title = "Route & Cargo") {
+            TrackingRouteConnectorBlock(
+                pickupAddress = formattedPickup,
+                dropoffAddress = formattedDropoff
+            )
+            HorizontalDivider(color = TrackingDivider)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "CARGO",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = TanawMonoFontFamily,
+                        color = TrackingTextMuted
+                    )
+                    Text(
+                        text = cargoSummary.cargoText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TrackingTextPrimary
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "WEIGHT",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = TanawMonoFontFamily,
+                        color = TrackingTextMuted
+                    )
+                    Text(
+                        text = cargoSummary.weightText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = TanawMonoFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TrackingTextPrimary
+                    )
+                }
+            }
+            HorizontalDivider(
+                color = TrackingDivider,
+                thickness = 0.5.dp
+            )
+            KeyValueRow(
+                label = "Recipient Contact",
+                value = cargoSummary.recipientContact,
+                boldValue = cargoSummary.recipientContact != "Not provided",
+                valueFontFamily = if (cargoSummary.recipientContact != "Not provided") TanawMonoFontFamily else null
+            )
+            if (cargoSummary.deliveryNotes.isNotBlank()) {
+                KeyValueRow(
+                    label = "Delivery Notes",
+                    value = cargoSummary.deliveryNotes
+                )
+            }
+            if (shipment.value("cancelled_reason").isNotBlank()) {
+                KeyValueRow(
+                    label = "Cancellation Reason",
+                    value = shipment.value("cancelled_reason"),
+                    valueColor = TrackingDanger
+                )
+            }
+        }
+
+        SheetCard(title = "Schedule & Telemetry") {
+            val scheduledArrival = shipment.value("estimated_arrival")
+            KeyValueRow(
+                label = "Scheduled Arrival",
+                value = if (scheduledArrival.isNotBlank()) {
+                    MobilePresentation.time(scheduledArrival)
+                } else {
+                    "Pending office schedule"
+                },
+                valueFontFamily = if (scheduledArrival.isNotBlank()) TanawMonoFontFamily else null
+            )
+            if (shipment.value("scheduled_departure").isNotBlank()) {
+                KeyValueRow(
+                    label = "Scheduled Departure",
+                    value = MobilePresentation.time(shipment.value("scheduled_departure")),
+                    valueFontFamily = TanawMonoFontFamily
+                )
+            }
+            if (lastTelemetryRecordedAt.isNotBlank() && freshness != null) {
+                KeyValueRow(
+                    label = "Last GPS Update",
+                    value = "${MobilePresentation.time(lastTelemetryRecordedAt)} · ${freshness.accuracyText}",
+                    valueFontFamily = TanawMonoFontFamily
+                )
+            } else {
+                KeyValueRow(
+                    label = "GPS Signal",
+                    value = "Awaiting driver GPS signal",
+                    valueColor = TrackingTextSecondary
+                )
+            }
+        }
+
+        SheetCard(
+            title = "Quotation & Pricing",
+            badge = quoteState.badgeText
+        ) {
+            pricingSummary.rows.forEach { row ->
+                KeyValueRow(
+                    label = row.label,
+                    value = row.value,
+                    valueColor = if (row.isEmphasized) TrackingPrimary else TrackingTextPrimary,
+                    boldValue = row.isEmphasized,
+                    valueFontFamily = TanawMonoFontFamily
+                )
+            }
+
+            if (quoteState.quoteExpiresAtText.isNotBlank()) {
+                val validityValue = if (quoteState.countdownText.isNotBlank() && !quoteState.isExpired) {
+                    "${quoteState.quoteExpiresAtText} (${quoteState.countdownText})"
+                } else if (quoteState.isExpired) {
+                    "${quoteState.quoteExpiresAtText} (Expired)"
+                } else {
+                    quoteState.quoteExpiresAtText
+                }
+                KeyValueRow(
+                    label = "Quote Valid Until",
+                    value = validityValue,
+                    valueColor = if (quoteState.isExpired) TrackingDanger else TrackingTextPrimary,
+                    boldValue = quoteState.isExpired,
+                    valueFontFamily = TanawMonoFontFamily
+                )
+            }
+
+            if (pricingSummary.breakdownRows.isNotEmpty()) {
+                HorizontalDivider(color = TrackingDivider)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onToggleFareBreakdown)
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (showFareBreakdown) "Hide fare breakdown" else "View fare breakdown",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TrackingSecondary
+                    )
+                    Icon(
+                        imageVector = if (showFareBreakdown) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = null,
+                        tint = TrackingSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                if (showFareBreakdown) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pricingSummary.breakdownRows.forEach { row ->
+                            KeyValueRow(
+                                label = row.label,
+                                value = row.value,
+                                valueColor = TrackingTextPrimary,
+                                boldValue = row.isEmphasized,
+                                valueFontFamily = TanawMonoFontFamily
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (quoteState.isExpired) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Quotation expired. Contact the office for an updated quote.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            if (quoteState.canAccept && onAcceptQuote != null) {
+                Button(
+                    onClick = onAcceptQuote,
+                    enabled = !busy && !offline,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TrackingPrimary,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("AcceptQuoteButton")
+                ) {
+                    Text(
+                        text = "Confirm Quotation",
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
 
-        MinimalTrackingTopBar(
-            title = trackingNumber,
-            busy = busy || detailLoading,
-            onBack = onBack,
-            onRefresh = onRefresh,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
-
-        if (showFullEventLog && timelineEvents.isNotEmpty()) {
-            EventLogModalDialog(
-                trackingNumber = trackingNumber,
-                timelineEvents = timelineEvents,
-                onDismiss = { showFullEventLog = false }
-            )
+        if (showCancelAction && customerCancellationSlot != null) {
+            customerCancellationSlot()
         }
     }
 }
@@ -797,12 +995,13 @@ private fun PeekStatusSection(
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onCallDriver: () -> Unit,
-    onMessageDriver: () -> Unit
+    onMessageDriver: () -> Unit,
+    showExpandChevron: Boolean = true
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggleExpand)
+            .then(if (showExpandChevron) Modifier.clickable(onClick = onToggleExpand) else Modifier)
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -866,13 +1065,15 @@ private fun PeekStatusSection(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                imageVector = if (isExpanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
-                contentDescription = if (isExpanded) "Collapse details" else "Expand details",
-                tint = TrackingTextMuted,
-                modifier = Modifier.size(18.dp)
-            )
+            if (showExpandChevron) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = if (isExpanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                    contentDescription = if (isExpanded) "Collapse details" else "Expand details",
+                    tint = TrackingTextMuted,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -1368,7 +1569,7 @@ private fun TrackingRouteConnectorBlock(
     }
 }
 
-@Preview(showBackground = true, name = "Tracking Screen Peek (Assigned)")
+@FormFactorPreviews
 @Composable
 private fun ShipmentTrackingPeekPreview() {
     ShipmentTrackingPreviewContent(initialExpanded = false)

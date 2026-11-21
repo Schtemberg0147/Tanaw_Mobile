@@ -192,7 +192,8 @@ internal fun CustomerCancellationDialog(
                                 }
                             },
                             enabled = !state.busy,
-                            label = { Text(preset) }
+                            label = { Text(preset) },
+                            modifier = Modifier.heightIn(min = 48.dp)
                         )
                     }
                     val isCustomSelected = selectedPreset == "Other"
@@ -207,7 +208,8 @@ internal fun CustomerCancellationDialog(
                             }
                         },
                         enabled = !state.busy,
-                        label = { Text("Other") }
+                        label = { Text("Other") },
+                        modifier = Modifier.heightIn(min = 48.dp)
                     )
                 }
 
@@ -285,7 +287,8 @@ internal fun CustomerCancellationDialog(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError
                 ),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text("Confirm Cancellation", fontWeight = FontWeight.Bold)
             }
@@ -296,7 +299,8 @@ internal fun CustomerCancellationDialog(
                     focusManager.clearFocus()
                     onDismiss()
                 },
-                enabled = !state.busy
+                enabled = !state.busy,
+                modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text("Keep Shipment")
             }

@@ -4,7 +4,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -32,9 +35,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -44,7 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tanaw.app.R
@@ -54,10 +58,14 @@ import com.tanaw.app.feature.workspace.customer.rules.BaseLinehaulEstimate
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.feature.workspace.viewmodel.value
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawCustomerTheme
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TanawMonoFontFamily
 import kotlinx.serialization.json.JsonObject
+import java.text.NumberFormat
+import java.util.Locale
 
 // ─── Add More Details Screen (Image 1, Screen 2) ──────────────────────────────
 @Composable
@@ -83,13 +91,18 @@ fun AddMoreDetailsScreen(
     onHandlingChange: (String) -> Unit,
     onNotesChange: (String) -> Unit,
     onConfirm: () -> Unit,
-    baseLinehaulEstimate: BaseLinehaulEstimate? = null
+    baseLinehaulEstimate: BaseLinehaulEstimate? = null,
+    savedContact: String = ""
 ) {
     val parsedWeight = MobileValidation.weight(weight)
     val normalizedContact = MobileValidation.phone(contact)
+    val normalizedSavedContact = MobileValidation.phone(savedContact)
     val vehicleCap = selectedVehicle?.value("default_capacity_kg").orEmpty()
     val weightFits = selectedVehicle != null && CustomerBookingRules.weightFitsCapacity(weight, vehicleCap)
+    val weightPresets = remember(vehicleCap) { CustomerBookingRules.quickWeightPresets(vehicleCap) }
+    val numberFormat = remember { NumberFormat.getIntegerInstance(Locale.US) }
     val focusManager = LocalFocusManager.current
+    val windowSize = LocalTanawWindowSize.current
     val canConfirm = !busy &&
         pickup.trim().length in 5..500 &&
         dropoff.trim().length in 5..500 &&
@@ -146,69 +159,81 @@ fun AddMoreDetailsScreen(
                 shadowElevation = 8.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (baseLinehaulEstimate != null) "EST. BASE LINEHAUL" else stringResource(R.string.total_fee_label),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = TanawMonoFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.6.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = baseLinehaulEstimate?.formattedAmount ?: stringResource(R.string.awaiting_office_quotation),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontFamily = TanawDisplayFontFamily,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (baseLinehaulEstimate != null) {
+                    Row(
+                        modifier = Modifier
+                            .widthIn(max = windowSize.contentMaxWidth)
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = windowSize.horizontalGutter, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = stringResource(R.string.estimated_upon_review),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
+                                text = if (baseLinehaulEstimate != null) "EST. BASE LINEHAUL" else stringResource(R.string.total_fee_label),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = TanawMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = baseLinehaulEstimate?.formattedAmount ?: stringResource(R.string.awaiting_office_quotation),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontFamily = TanawDisplayFontFamily,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (baseLinehaulEstimate != null) {
+                                Text(
+                                    text = stringResource(R.string.estimated_upon_review),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = onConfirm,
+                            enabled = canConfirm,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("ConfirmDetailsButton")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.confirm_action),
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                    }
-                    Button(
-                        onClick = onConfirm,
-                        enabled = canConfirm,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier
-                            .height(48.dp)
-                            .testTag("ConfirmDetailsButton")
-                    ) {
-                        Text(
-                            text = stringResource(R.string.confirm_action),
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .imePadding(),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = windowSize.formMaxWidth)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = windowSize.horizontalGutter, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             errorMessage?.let {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
@@ -232,7 +257,58 @@ fun AddMoreDetailsScreen(
                 onEdit = onEditRoute
             )
 
-            // Cargo Details Card
+            // 1. Contact Details Card
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.order_contact_number),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = TanawMonoFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = contact,
+                        onValueChange = onContactChange,
+                        placeholder = { Text("0912 345 6789", fontFamily = TanawMonoFontFamily) },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = TanawMonoFontFamily),
+                        singleLine = true,
+                        isError = contact.isNotBlank() && normalizedContact == null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("OrderContactInput")
+                    )
+                    if (contact.isNotBlank() && normalizedContact == null) {
+                        Text(
+                            text = "Enter a valid Philippine mobile number (e.g. 0912 345 6789).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (savedContact.isNotBlank() && normalizedSavedContact != normalizedContact) {
+                        SuggestionChip(
+                            onClick = { onContactChange(savedContact) },
+                            label = { Text("Use my number ($savedContact)") },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
+            }
+
+            // 2. Cargo & Weight Card
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -253,41 +329,8 @@ fun AddMoreDetailsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
-                    // ORDER CONTACT NUMBER
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = stringResource(R.string.order_contact_number),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = TanawMonoFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.6.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedTextField(
-                            value = contact,
-                            onValueChange = onContactChange,
-                            placeholder = { Text("0912 345 6789", fontFamily = TanawMonoFontFamily) },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = TanawMonoFontFamily),
-                            singleLine = true,
-                            isError = contact.isNotBlank() && normalizedContact == null,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("OrderContactInput")
-                        )
-                        if (contact.isNotBlank() && normalizedContact == null) {
-                            Text(
-                                text = "Enter a valid Philippine mobile number (e.g. 0912 345 6789).",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-
-                    // CARGO DESCRIPTION
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // CARGO DESCRIPTION + Quick-Pick Presets
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -308,6 +351,20 @@ fun AddMoreDetailsScreen(
                                 color = if (cargo.isNotEmpty() && cargo.trim().length < 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CustomerBookingRules.COMMON_CARGO_PRESETS.forEach { preset ->
+                                val selected = cargo.trim().equals(preset, ignoreCase = true)
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onCargoChange(if (selected) "" else preset) },
+                                    label = { Text(preset) },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                )
+                            }
                         }
                         val isCargoError = cargo.isNotEmpty() && cargo.trim().length < 3
                         OutlinedTextField(
@@ -332,8 +389,8 @@ fun AddMoreDetailsScreen(
                         }
                     }
 
-                    // EST. WEIGHT (kg)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // EST. WEIGHT (kg) + Capacity-Aware Presets
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = stringResource(R.string.est_weight_label),
                             style = MaterialTheme.typography.labelSmall,
@@ -342,6 +399,26 @@ fun AddMoreDetailsScreen(
                             letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            weightPresets.forEach { presetKg ->
+                                val presetText = presetKg.toString()
+                                val selected = weight.trim() == presetText
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onWeightChange(if (selected) "" else presetText) },
+                                    label = {
+                                        Text(
+                                            text = "${numberFormat.format(presetKg)} kg",
+                                            fontFamily = TanawMonoFontFamily
+                                        )
+                                    },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                )
+                            }
+                        }
                         val isWeightInvalid = weight.isNotBlank() && (parsedWeight == null || parsedWeight <= 0 || !weightFits)
                         OutlinedTextField(
                             value = weight,
@@ -397,7 +474,8 @@ fun AddMoreDetailsScreen(
                                     larger.forEach { v ->
                                         AssistChip(
                                             onClick = { onSelectVehicle(v.value("id")) },
-                                            label = { Text("Switch to ${v.value("name")}") }
+                                            label = { Text("Switch to ${v.value("name")}") },
+                                            modifier = Modifier.heightIn(min = 48.dp)
                                         )
                                     }
                                 }
@@ -410,9 +488,24 @@ fun AddMoreDetailsScreen(
                             }
                         }
                     }
+                }
+            }
 
-                    // SPECIAL HANDLING Chips
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 3. Handling & Driver Notes Card
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // SPECIAL HANDLING Chips (wrapped so all choices remain visible)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = stringResource(R.string.special_handling_label),
                             style = MaterialTheme.typography.labelSmall,
@@ -421,9 +514,9 @@ fun AddMoreDetailsScreen(
                             letterSpacing = 0.6.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             listOf(
                                 "None",
@@ -436,14 +529,15 @@ fun AddMoreDetailsScreen(
                                 FilterChip(
                                     selected = handling == option,
                                     onClick = { onHandlingChange(option) },
-                                    label = { Text(option) }
+                                    label = { Text(option) },
+                                    modifier = Modifier.heightIn(min = 48.dp)
                                 )
                             }
                         }
                     }
 
-                    // NOTES TO DRIVER
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // NOTES TO DRIVER + Quick Starter Chips
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -464,6 +558,27 @@ fun AddMoreDetailsScreen(
                                 color = if (notes.length > 2000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 11.sp
                             )
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CustomerBookingRules.COMMON_DRIVER_NOTE_PRESETS.forEach { starter ->
+                                SuggestionChip(
+                                    onClick = {
+                                        val trimmed = notes.trim()
+                                        val updated = when {
+                                            trimmed.isEmpty() -> starter
+                                            trimmed.contains(starter, ignoreCase = true) -> notes
+                                            trimmed.endsWith(".") -> "$trimmed $starter"
+                                            else -> "$trimmed. $starter"
+                                        }
+                                        if (updated.length <= 2000) onNotesChange(updated)
+                                    },
+                                    label = { Text(starter) },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                )
+                            }
                         }
                         val isNotesError = notes.length > 2000
                         OutlinedTextField(
@@ -490,11 +605,12 @@ fun AddMoreDetailsScreen(
                     }
                 }
             }
+            }
         }
     }
 }
 
-@Preview(showBackground = true, name = "Add More Details")
+@FormFactorPreviews
 @Composable
 private fun AddMoreDetailsPreview() {
     TanawCustomerTheme {
@@ -519,7 +635,8 @@ private fun AddMoreDetailsPreview() {
             onSelectVehicle = {},
             onHandlingChange = {},
             onNotesChange = {},
-            onConfirm = {}
+            onConfirm = {},
+            savedContact = "09171234567"
         )
     }
 }

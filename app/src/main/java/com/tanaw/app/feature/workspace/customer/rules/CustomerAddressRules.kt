@@ -174,6 +174,262 @@ object CustomerAddressRules {
         return address.replace(brgyPattern, "").trim()
     }
 
+    data class CityProvinceSuggestion(
+        val city: String,
+        val province: String
+    )
+
+    val COMMON_CITIES: List<CityProvinceSuggestion> = listOf(
+        CityProvinceSuggestion("Cabanatuan City", "Nueva Ecija"),
+        CityProvinceSuggestion("Palayan City", "Nueva Ecija"),
+        CityProvinceSuggestion("Gapan City", "Nueva Ecija"),
+        CityProvinceSuggestion("San Jose City", "Nueva Ecija"),
+        CityProvinceSuggestion("Science City of Muñoz", "Nueva Ecija"),
+        CityProvinceSuggestion("Talavera", "Nueva Ecija"),
+        CityProvinceSuggestion("Santa Rosa", "Nueva Ecija"),
+        CityProvinceSuggestion("Guimba", "Nueva Ecija"),
+        CityProvinceSuggestion("San Leonardo", "Nueva Ecija"),
+        CityProvinceSuggestion("Cabiao", "Nueva Ecija"),
+        CityProvinceSuggestion("San Antonio", "Nueva Ecija"),
+        CityProvinceSuggestion("Jaen", "Nueva Ecija"),
+        CityProvinceSuggestion("Zaragoza", "Nueva Ecija"),
+        CityProvinceSuggestion("Aliaga", "Nueva Ecija"),
+        CityProvinceSuggestion("Bongabon", "Nueva Ecija"),
+        CityProvinceSuggestion("Manila", "Metro Manila"),
+        CityProvinceSuggestion("Quezon City", "Metro Manila"),
+        CityProvinceSuggestion("Valenzuela City", "Metro Manila"),
+        CityProvinceSuggestion("Caloocan City", "Metro Manila"),
+        CityProvinceSuggestion("Pasig City", "Metro Manila"),
+        CityProvinceSuggestion("Taguig City", "Metro Manila"),
+        CityProvinceSuggestion("Makati City", "Metro Manila"),
+        CityProvinceSuggestion("Malolos City", "Bulacan"),
+        CityProvinceSuggestion("Meycauayan City", "Bulacan"),
+        CityProvinceSuggestion("Balagtas", "Bulacan"),
+        CityProvinceSuggestion("San Fernando City", "Pampanga"),
+        CityProvinceSuggestion("Angeles City", "Pampanga"),
+        CityProvinceSuggestion("Tarlac City", "Tarlac"),
+        CityProvinceSuggestion("Dagupan City", "Pangasinan"),
+        CityProvinceSuggestion("Baguio City", "Benguet")
+    )
+
+    private val plusCodePrefixRegex =
+        Regex("^[23456789CFGHJMPQRVWX]{2,8}\\+[23456789CFGHJMPQRVWX]{2,3}(?:\\s+(.*))?$", RegexOption.IGNORE_CASE)
+    private val leadingPostalCodeRegex = Regex("^\\d{4}\\s+")
+    private val trailingPostalCodeRegex = Regex("\\s+\\d{4}$")
+    private val streetHintRegex =
+        Regex("(?i)(?:^\\d|^#|\\b(?:st\\.?|street|ave\\.?|avenue|rd\\.?|road|hwy\\.?|highway|blvd\\.?|boulevard|dr\\.?|drive|ln\\.?|lane|purok|sitio|subd\\.?|subdivision|lot|block|blk|phase|unit|floor|flr|bldg\\.?|building|market|harbor|complex|zone|terminal)\\b)")
+    private val barangaySegmentRegex =
+        Regex("(?i)^(?:brgy\\.?|barangay)\\s+(.+)$")
+
+    fun suggestCities(query: String, limit: Int = 5): List<CityProvinceSuggestion> {
+        if (limit <= 0) return emptyList()
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return COMMON_CITIES.take(limit)
+
+        val startsWithMatches = COMMON_CITIES.filter {
+            it.city.startsWith(trimmed, ignoreCase = true) ||
+                it.province.startsWith(trimmed, ignoreCase = true)
+        }
+        val containsMatches = COMMON_CITIES.filter {
+            it !in startsWithMatches && (
+                it.city.contains(trimmed, ignoreCase = true) ||
+                    it.province.contains(trimmed, ignoreCase = true)
+                )
+        }
+        return (startsWithMatches + containsMatches).take(limit)
+    }
+
+    fun lookupProvinceForCity(city: String): String? {
+        val clean = city.trim().removeSuffix(" City").trim()
+        if (clean.isBlank()) return null
+        return COMMON_CITIES.firstOrNull { suggestion ->
+            suggestion.city.equals(city.trim(), ignoreCase = true) ||
+                suggestion.city.removeSuffix(" City").equals(clean, ignoreCase = true)
+        }?.province
+    }
+
+    /**
+     * Parses a geocoded address label (from MapTiler search, reverse geocoding, or Location Picker)
+     * into structured street, barangay, city, and province fields bounded to RPC column limits.
+     */
+    fun parseFromGeocodedLabel(
+        label: String,
+        defaultProvince: String = DEFAULT_PROVINCE_SUGGESTION
+    ): StructuredCustomerAddress {
+        val rawSegments = label
+            .split(",")
+            .mapNotNull { raw ->
+                var seg = raw.trim()
+                val plusMatch = plusCodePrefixRegex.matchEntire(seg)
+                if (plusMatch != null) {
+                    seg = plusMatch.groupValues[1].trim()
+                }
+                seg = seg
+                    .replace(leadingPostalCodeRegex, "")
+                    .replace(trailingPostalCodeRegex, "")
+                    .trim()
+                seg.takeIf {
+                    it.isNotBlank() &&
+                        !it.equals("Philippines", ignoreCase = true) &&
+                        !it.equals("PH", ignoreCase = true)
+                }
+            }
+
+        if (rawSegments.isEmpty()) {
+            return StructuredCustomerAddress(province = defaultProvince)
+        }
+
+        var extractedBarangay = ""
+        val remaining = mutableListOf<String>()
+        for (seg in rawSegments) {
+            val brgyMatch = barangaySegmentRegex.matchEntire(seg)
+            if (brgyMatch != null && extractedBarangay.isBlank()) {
+                extractedBarangay = cleanBarangayName(brgyMatch.groupValues[1])
+            } else {
+                remaining.add(seg)
+            }
+        }
+
+        if (remaining.isEmpty()) {
+            return StructuredCustomerAddress(
+                barangay = extractedBarangay.take(MAX_BARANGAY_LENGTH),
+                province = defaultProvince
+            )
+        }
+
+        val knownProvinces = COMMON_CITIES.map { it.province }.toSet()
+        fun isKnownProvince(value: String): Boolean =
+            knownProvinces.any { it.equals(value, ignoreCase = true) }
+
+        val street: String
+        val city: String
+        val province: String
+
+        when (remaining.size) {
+            1 -> {
+                val single = remaining[0]
+                val matchedProv = lookupProvinceForCity(single)
+                if (matchedProv != null) {
+                    street = ""
+                    city = single
+                    province = matchedProv
+                } else {
+                    street = single
+                    city = ""
+                    province = defaultProvince
+                }
+            }
+            2 -> {
+                val first = remaining[0]
+                val second = remaining[1]
+                val secondIsProvince = isKnownProvince(second)
+                val firstHasStreetHint = streetHintRegex.containsMatchIn(first)
+                when {
+                    secondIsProvince && !firstHasStreetHint -> {
+                        street = ""
+                        city = first
+                        province = second
+                    }
+                    else -> {
+                        street = first
+                        city = second
+                        province = lookupProvinceForCity(second) ?: defaultProvince
+                    }
+                }
+            }
+            else -> {
+                val last = remaining.last()
+                val secondLast = remaining[remaining.size - 2]
+                val lastIsProvince = isKnownProvince(last) ||
+                    (!streetHintRegex.containsMatchIn(last) && lookupProvinceForCity(secondLast) != null)
+                if (lastIsProvince || remaining.size >= 3) {
+                    province = last
+                    city = secondLast
+                    street = remaining.dropLast(2).joinToString(", ")
+                } else {
+                    province = lookupProvinceForCity(last) ?: defaultProvince
+                    city = last
+                    street = remaining.dropLast(1).joinToString(", ")
+                }
+            }
+        }
+
+        val resolvedProvince = province.ifBlank {
+            lookupProvinceForCity(city) ?: defaultProvince
+        }
+
+        return StructuredCustomerAddress(
+            streetAddress = street.trim().take(MAX_STREET_LENGTH),
+            barangay = extractedBarangay.trim().take(MAX_BARANGAY_LENGTH),
+            city = city.trim().take(MAX_CITY_LENGTH),
+            province = resolvedProvince.trim().take(MAX_PROVINCE_LENGTH)
+        )
+    }
+
+    /**
+     * Converts Android Geocoder address fields into structured customer address components,
+     * falling back to [parseFromGeocodedLabel] for any missing values.
+     */
+    fun fromAndroidAddressComponents(
+        featureName: String?,
+        thoroughfare: String?,
+        subThoroughfare: String?,
+        subLocality: String?,
+        locality: String?,
+        subAdminArea: String?,
+        adminArea: String?,
+        addressLine: String?
+    ): StructuredCustomerAddress {
+        val fallback = addressLine?.takeIf { it.isNotBlank() }?.let { parseFromGeocodedLabel(it) }
+            ?: StructuredCustomerAddress()
+
+        val cleanSubThoroughfare = subThoroughfare?.trim().orEmpty()
+        val cleanThoroughfare = thoroughfare?.trim().orEmpty()
+        val cleanFeature = featureName?.trim().orEmpty().takeIf { feat ->
+            feat.isNotBlank() &&
+                !feat.equals(cleanSubThoroughfare, ignoreCase = true) &&
+                !feat.equals(cleanThoroughfare, ignoreCase = true) &&
+                !plusCodePrefixRegex.matches(feat) &&
+                !feat.all { it.isDigit() }
+        }.orEmpty()
+
+        val combinedStreet = listOfNotNull(
+            listOf(cleanSubThoroughfare, cleanThoroughfare)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+                .takeIf { it.isNotBlank() },
+            cleanFeature.takeIf { it.isNotBlank() }
+        ).distinct().joinToString(", ")
+
+        val street = combinedStreet.ifBlank { fallback.streetAddress }
+        val barangay = cleanBarangayName(subLocality.orEmpty()).ifBlank { fallback.barangay }
+        val city = locality?.trim().orEmpty().ifBlank { fallback.city }
+
+        val rawAdmin = adminArea?.trim().orEmpty()
+        val normalizedAdmin = when {
+            rawAdmin.equals("National Capital Region", ignoreCase = true) ||
+                rawAdmin.equals("Metro Manila", ignoreCase = true) ||
+                rawAdmin.equals("NCR", ignoreCase = true) -> "Metro Manila"
+            rawAdmin.contains("Region", ignoreCase = true) ||
+                rawAdmin.equals("Central Luzon", ignoreCase = true) ||
+                rawAdmin.equals("Calabarzon", ignoreCase = true) ||
+                rawAdmin.equals("Ilocos Region", ignoreCase = true) -> ""
+            else -> rawAdmin
+        }
+
+        val province = subAdminArea?.trim().orEmpty()
+            .ifBlank { normalizedAdmin }
+            .ifBlank { lookupProvinceForCity(city).orEmpty() }
+            .ifBlank { fallback.province }
+
+        return StructuredCustomerAddress(
+            streetAddress = street.take(MAX_STREET_LENGTH),
+            barangay = barangay.take(MAX_BARANGAY_LENGTH),
+            city = city.take(MAX_CITY_LENGTH),
+            province = province.take(MAX_PROVINCE_LENGTH)
+        )
+    }
+
     fun validateStreet(street: String): Boolean = street.trim().length in 1..MAX_STREET_LENGTH
     fun validateBarangay(barangay: String): Boolean = barangay.trim().length in 1..MAX_BARANGAY_LENGTH
     fun validateCity(city: String): Boolean = city.trim().length in 1..MAX_CITY_LENGTH

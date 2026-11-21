@@ -104,7 +104,11 @@ fun TanawTheme(
         }
     }
 
-    CompositionLocalProvider(LocalExtendedColors provides ExtendedLightColors) {
+    val windowSize = rememberTanawWindowSize()
+    CompositionLocalProvider(
+        LocalExtendedColors provides ExtendedLightColors,
+        LocalTanawWindowSize provides windowSize
+    ) {
         MaterialTheme(
             colorScheme = LightColorScheme,
             typography  = Typography,
@@ -127,7 +131,11 @@ fun TanawCustomerTheme(
         }
     }
 
-    CompositionLocalProvider(LocalExtendedColors provides CustomerExtendedLightColors) {
+    val windowSize = rememberTanawWindowSize()
+    CompositionLocalProvider(
+        LocalExtendedColors provides CustomerExtendedLightColors,
+        LocalTanawWindowSize provides windowSize
+    ) {
         MaterialTheme(
             colorScheme = CustomerLightColorScheme,
             typography  = Typography,

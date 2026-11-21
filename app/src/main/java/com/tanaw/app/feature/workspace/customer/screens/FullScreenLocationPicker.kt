@@ -15,16 +15,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -67,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -76,14 +84,20 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tanaw.app.BuildConfig
 import com.tanaw.app.R
+import com.tanaw.app.feature.workspace.customer.components.fetchBestDeviceLatLng
+import com.tanaw.app.feature.workspace.customer.components.findCachedDeviceLatLng
+import com.tanaw.app.feature.workspace.customer.components.hasLocationPermission
 import com.tanaw.app.feature.workspace.customer.rules.CustomerBookingRules
 import com.tanaw.app.feature.workspace.model.RoutePreview
 import com.tanaw.app.ui.components.MobileGeocoding
 import com.tanaw.app.ui.components.SelectedAddress
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawDisplayFontFamily
 import com.tanaw.app.ui.theme.TanawMonoFontFamily
+import com.tanaw.app.ui.theme.WindowWidthClass
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -91,6 +105,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
+import androidx.compose.runtime.rememberCoroutineScope
 
 // ─── Full-Screen Location Picker (Images 2 & 3) ──────────────────────────────
 @SuppressLint("MissingPermission", "ClickableViewAccessibility")
@@ -105,14 +120,37 @@ fun FullScreenLocationPicker(
     routePreview: RoutePreview?,
     routeLoading: Boolean,
     onBack: () -> Unit,
-    onConfirm: (SelectedAddress) -> Unit
+    onConfirm: (SelectedAddress) -> Unit,
+    confirmButtonLabel: String? = null,
+    userOriginPoint: LatLng? = null,
+    userOriginAddress: String = ""
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val windowSize = LocalTanawWindowSize.current
+    val scope = rememberCoroutineScope()
 
-    var currentCenter by remember { mutableStateOf(initialPoint) }
-    var currentAddress by rememberSaveable { mutableStateOf(initialAddress.ifBlank { "Moving map pin…" }) }
-    var preserveExplicitAddress by remember { mutableStateOf(initialAddress.isNotBlank()) }
+    val resolvedInitialPoint = remember(initialAddress, initialPoint, userOriginPoint) {
+        if (initialAddress.isNotBlank()) {
+            initialPoint
+        } else {
+            userOriginPoint ?: findCachedDeviceLatLng(context) ?: initialPoint
+        }
+    }
+
+    var currentCenterLat by rememberSaveable { mutableDoubleStateOf(resolvedInitialPoint.latitude) }
+    var currentCenterLng by rememberSaveable { mutableDoubleStateOf(resolvedInitialPoint.longitude) }
+    val currentCenter = LatLng(currentCenterLat, currentCenterLng)
+    var currentAddress by rememberSaveable {
+        mutableStateOf(
+            initialAddress.ifBlank {
+                if (userOriginPoint != null && userOriginAddress.isNotBlank()) userOriginAddress
+                else "Moving map pin…"
+            }
+        )
+    }
+    var preserveExplicitAddress by rememberSaveable { mutableStateOf(initialAddress.isNotBlank()) }
+    var hasMovedToOrigin by rememberSaveable { mutableStateOf(initialAddress.isNotBlank()) }
     var reverseBusy by remember { mutableStateOf(false) }
     var searchMode by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf(initialAddress) }
@@ -124,6 +162,32 @@ fun FullScreenLocationPicker(
     var fallbackStyle by remember { mutableStateOf(BuildConfig.MAPTILER_KEY.isBlank()) }
     var styleReady by remember { mutableStateOf(false) }
     val mapView = remember { MapLibre.getInstance(context); MapView(context).apply { onCreate(null) } }
+
+    fun moveCameraToOrigin(loc: LatLng) {
+        preserveExplicitAddress = false
+        currentCenterLat = loc.latitude
+        currentCenterLng = loc.longitude
+        mapView.getMapAsync { map ->
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(loc, 15.5))
+        }
+    }
+
+    // Automatically center on user's origin location first when picking a new pickup or destination
+    LaunchedEffect(initialAddress, userOriginPoint?.latitude, userOriginPoint?.longitude) {
+        if (initialAddress.isNotBlank() || hasMovedToOrigin) return@LaunchedEffect
+        val immediateOrigin = userOriginPoint ?: findCachedDeviceLatLng(context)
+        if (immediateOrigin != null) {
+            hasMovedToOrigin = true
+            moveCameraToOrigin(immediateOrigin)
+        }
+        if (hasLocationPermission(context)) {
+            val freshOrigin = fetchBestDeviceLatLng(context)
+            if (freshOrigin != null) {
+                hasMovedToOrigin = true
+                moveCameraToOrigin(freshOrigin)
+            }
+        }
+    }
 
     // Camera-idle reverse geocoding (only when not preserving an explicit searched/initial address)
     LaunchedEffect(currentCenter.latitude, currentCenter.longitude, preserveExplicitAddress) {
@@ -162,22 +226,32 @@ fun FullScreenLocationPicker(
     }
 
     // Live debounced search results in Search Mode (Image 3)
-    LaunchedEffect(searchMode, searchQuery) {
+    LaunchedEffect(searchMode, searchQuery, userOriginPoint?.latitude, userOriginPoint?.longitude, currentCenter.latitude, currentCenter.longitude) {
         if (!searchMode) return@LaunchedEffect
         searchError = null
         val trimmed = searchQuery.trim()
+        val originCoord = userOriginPoint ?: currentCenter
         if (trimmed.length < 3) {
+            val currentOriginOption = if (userOriginAddress.length >= 5 && userOriginPoint != null) {
+                listOf(SelectedAddress(userOriginAddress, userOriginPoint.latitude, userOriginPoint.longitude))
+            } else if (currentAddress.length >= 5 && currentAddress != "Moving map pin…") {
+                listOf(SelectedAddress(currentAddress, currentCenter.latitude, currentCenter.longitude))
+            } else {
+                emptyList()
+            }
             val saved = savedProfileAddress.takeIf { it.length >= 5 }?.let {
-                listOf(SelectedAddress(it, initialPoint.latitude, initialPoint.longitude))
+                listOf(SelectedAddress(it, originCoord.latitude, originCoord.longitude))
             }.orEmpty()
-            searchResults = saved + CustomerBookingRules.defaultSuggestions
+            searchResults = (currentOriginOption + saved + CustomerBookingRules.defaultSuggestions).distinctBy { it.label }
             searchBusy = false
             return@LaunchedEffect
         }
         searchBusy = true
         try {
             delay(300.milliseconds)
-            val remote = runCatching { MobileGeocoding.search(trimmed) }.getOrNull().orEmpty()
+            val remote = runCatching {
+                MobileGeocoding.search(trimmed, proximity = originCoord)
+            }.getOrNull().orEmpty()
             val localMatches = CustomerBookingRules.defaultSuggestions.filter {
                 it.label.contains(trimmed, ignoreCase = true)
             }
@@ -206,10 +280,13 @@ fun FullScreenLocationPicker(
             grants[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
             findDeviceLocation(context)?.let { loc ->
-                preserveExplicitAddress = false
-                currentCenter = loc
-                mapView.getMapAsync { map ->
-                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(loc, 15.5))
+                hasMovedToOrigin = true
+                moveCameraToOrigin(loc)
+            }
+            scope.launch {
+                fetchBestDeviceLatLng(context)?.let { freshLoc ->
+                    hasMovedToOrigin = true
+                    moveCameraToOrigin(freshLoc)
                 }
             }
         }
@@ -217,11 +294,12 @@ fun FullScreenLocationPicker(
 
     DisposableEffect(mapView, lifecycle) {
         mapView.getMapAsync { map ->
-            map.cameraPosition = CameraPosition.Builder().target(initialPoint).zoom(15.0).build()
+            map.cameraPosition = CameraPosition.Builder().target(LatLng(currentCenterLat, currentCenterLng)).zoom(15.0).build()
             map.addOnCameraIdleListener {
                 val target = map.cameraPosition.target
                 if (target != null && !preserveExplicitAddress) {
-                    currentCenter = LatLng(target.latitude, target.longitude)
+                    currentCenterLat = target.latitude
+                    currentCenterLng = target.longitude
                 }
             }
         }
@@ -345,7 +423,9 @@ fun FullScreenLocationPicker(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                 .padding(horizontal = 16.dp, vertical = 12.dp)
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .testTag("TopFloatingAddressCard")
         ) {
@@ -405,6 +485,8 @@ fun FullScreenLocationPicker(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                .widthIn(max = if (windowSize.widthClass == WindowWidthClass.COMPACT) Dp.Unspecified else 560.dp)
                 .fillMaxWidth()
         ) {
             Row(
@@ -425,10 +507,13 @@ fun FullScreenLocationPicker(
                         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                         if (fineGranted || coarseGranted) {
                             findDeviceLocation(context)?.let { loc ->
-                                preserveExplicitAddress = false
-                                currentCenter = loc
-                                mapView.getMapAsync { map ->
-                                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(loc, 15.5))
+                                hasMovedToOrigin = true
+                                moveCameraToOrigin(loc)
+                            }
+                            scope.launch {
+                                fetchBestDeviceLatLng(context)?.let { freshLoc ->
+                                    hasMovedToOrigin = true
+                                    moveCameraToOrigin(freshLoc)
                                 }
                             }
                         } else {
@@ -594,7 +679,7 @@ fun FullScreenLocationPicker(
                             .testTag("ConfirmLocationButton")
                     ) {
                         Text(
-                            text = if (isDestination) stringResource(R.string.confirm_destination)
+                            text = confirmButtonLabel ?: if (isDestination) stringResource(R.string.confirm_destination)
                             else stringResource(R.string.confirm_pickup_location),
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
@@ -614,11 +699,17 @@ fun FullScreenLocationPicker(
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxSize()
             ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
                 Column(
                     modifier = Modifier
+                        .widthIn(max = windowSize.formMaxWidth)
                         .fillMaxSize()
                         .statusBarsPadding()
                         .navigationBarsPadding()
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                         .imePadding()
                 ) {
                     // Top Rounded Search Input Card (Image 3)
@@ -725,7 +816,8 @@ fun FullScreenLocationPicker(
                                         preserveExplicitAddress = true
                                         reverseBusy = false
                                         currentAddress = item.label
-                                        currentCenter = LatLng(item.latitude, item.longitude)
+                                        currentCenterLat = item.latitude
+                                        currentCenterLng = item.longitude
                                         searchMode = false
                                         mapView.getMapAsync { map ->
                                             map.animateCamera(
@@ -777,6 +869,7 @@ fun FullScreenLocationPicker(
                             }
                         }
                     }
+                }
                 }
             }
         }

@@ -14,9 +14,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.feature.workspace.rules.MobilePresentation
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawTheme
 
 @Composable
@@ -97,7 +98,11 @@ fun TanawSubScreenTopBar(
         modifier = modifier.fillMaxWidth(),
         color    = MaterialTheme.colorScheme.surface
     ) {
-        Column(modifier = Modifier.statusBarsPadding()) {
+        Column(
+            modifier = Modifier.windowInsetsPadding(
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -156,30 +161,51 @@ fun KeyValueRow(
     boldValue: Boolean = false,
     valueFontFamily: FontFamily? = null
 ) {
-    Row(
-        modifier              = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment     = Alignment.Top
-    ) {
-        Text(
-            text     = label,
-            style    = MaterialTheme.typography.bodyMedium,
-            color    = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.42f)
-        )
-        Text(
-            text       = value,
-            style      = MaterialTheme.typography.bodyMedium,
-            fontFamily = valueFontFamily ?: MaterialTheme.typography.bodyMedium.fontFamily,
-            fontWeight = if (boldValue) FontWeight.Bold else FontWeight.Medium,
-            color      = valueColor,
-            textAlign  = TextAlign.End,
-            modifier   = Modifier.weight(0.58f)
-        )
+    val windowSize = LocalTanawWindowSize.current
+    if (windowSize.isLargeFontScale || windowSize.isNarrowPhone) {
+        Column(
+            modifier            = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text  = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text       = value,
+                style      = MaterialTheme.typography.bodyMedium,
+                fontFamily = valueFontFamily ?: MaterialTheme.typography.bodyMedium.fontFamily,
+                fontWeight = if (boldValue) FontWeight.Bold else FontWeight.Medium,
+                color      = valueColor
+            )
+        }
+    } else {
+        Row(
+            modifier              = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment     = Alignment.Top
+        ) {
+            Text(
+                text     = label,
+                style    = MaterialTheme.typography.bodyMedium,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(0.42f)
+            )
+            Text(
+                text       = value,
+                style      = MaterialTheme.typography.bodyMedium,
+                fontFamily = valueFontFamily ?: MaterialTheme.typography.bodyMedium.fontFamily,
+                fontWeight = if (boldValue) FontWeight.Bold else FontWeight.Medium,
+                color      = valueColor,
+                textAlign  = TextAlign.End,
+                modifier   = Modifier.weight(0.58f)
+            )
+        }
     }
 }
 
-@Preview(showBackground = true, name = "Workspace Design")
+@FormFactorPreviews
 @Composable
 private fun WorkspaceDesignLightPreview() {
     TanawTheme {

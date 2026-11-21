@@ -41,13 +41,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tanaw.app.R
 import com.tanaw.app.core.validation.MobileValidation
 import com.tanaw.app.feature.workspace.state.MobileState
 import com.tanaw.app.feature.workspace.viewmodel.MobileWorkspaceViewModel
 import com.tanaw.app.ui.components.SupportingText
+import com.tanaw.app.ui.theme.FormFactorPreviews
+import com.tanaw.app.ui.theme.LocalTanawWindowSize
 import com.tanaw.app.ui.theme.TanawTheme
 
 @Composable
@@ -147,9 +148,10 @@ fun OtpCodeInputRow(
     }
     val focusRequesters = remember(otpLength) { List(otpLength) { FocusRequester() } }
     val focusManager = LocalFocusManager.current
+    val windowSize = LocalTanawWindowSize.current
 
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (windowSize.isNarrowPhone) 5.dp else 8.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         repeat(otpLength) { index ->
@@ -273,6 +275,8 @@ fun VerificationCodeScreen(
     statusMessage: String? = null,
 ) {
     val focusManager = LocalFocusManager.current
+    val windowSize = LocalTanawWindowSize.current
+    val horizontalPad = if (windowSize.isNarrowPhone) 16.dp else 24.dp
     var showTokenField by rememberSaveable { mutableStateOf(code.length > 6) }
 
     Column(
@@ -281,8 +285,10 @@ fun VerificationCodeScreen(
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             .imePadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
@@ -311,8 +317,9 @@ fun VerificationCodeScreen(
 
         Column(
             modifier = Modifier
+                .widthIn(max = windowSize.authMaxWidth)
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = horizontalPad)
                 .padding(top = 12.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -546,6 +553,8 @@ fun ForgotPasswordCardScreen(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    val windowSize = LocalTanawWindowSize.current
+    val horizontalPad = if (windowSize.isNarrowPhone) 16.dp else 24.dp
     var email by rememberSaveable(state.email) { mutableStateOf(state.email) }
     val recoveryValid = MobileValidation.email(email) || MobileValidation.phone(email) != null
     val isRecoveryError = email.isNotBlank() && !recoveryValid
@@ -556,13 +565,16 @@ fun ForgotPasswordCardScreen(
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 24.dp),
+            .padding(horizontal = horizontalPad, vertical = 24.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .widthIn(max = windowSize.authMaxWidth)
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             RecoveryNotices(busy = state.busy, error = state.error, message = state.message)
@@ -768,11 +780,13 @@ fun VerifyRecoveryCodeScreen(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
-    var code by remember(state.recoveryCode) { mutableStateOf(state.recoveryCode.orEmpty()) }
-    var password by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var confirmVisible by remember { mutableStateOf(false) }
+    val windowSize = LocalTanawWindowSize.current
+    val horizontalPad = if (windowSize.isNarrowPhone) 16.dp else 24.dp
+    var code by rememberSaveable(state.recoveryCode) { mutableStateOf(state.recoveryCode.orEmpty()) }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirm by rememberSaveable { mutableStateOf("") }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var confirmVisible by rememberSaveable { mutableStateOf(false) }
 
     val codeValid = vm.canVerify(code, "recovery")
     val isCodeError = code.isNotBlank() && !codeValid
@@ -786,8 +800,10 @@ fun VerifyRecoveryCodeScreen(
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
             .imePadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
@@ -816,8 +832,9 @@ fun VerifyRecoveryCodeScreen(
 
         Column(
             modifier = Modifier
+                .widthIn(max = windowSize.authMaxWidth)
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = horizontalPad)
                 .padding(top = 12.dp, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -1018,6 +1035,8 @@ fun VerifyRecoveryCodeScreen(
                 } else null
             )
 
+            PasswordStrengthChecklist(password = password)
+
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedTextField(
@@ -1119,7 +1138,7 @@ fun VerifyRecoveryCodeScreen(
     }
 }
 
-@Preview(showBackground = true, name = "Verification Code")
+@FormFactorPreviews
 @Composable
 private fun VerificationCodeScreenLightPreview() {
     TanawTheme {
